@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Protocol, cast
 
+from .collection_repository_status import collection_stage_snapshot
+
 Record = dict[str, object]
 
 
@@ -27,9 +29,8 @@ class StatusIndex(Protocol):
 class StatusRepository(Protocol):
     enabled: bool
 
-
-class StatusAnalysis(Protocol):
-    def health_snapshot(self, *, lightweight: bool) -> Record: ...
+    def stage_status_counts(self) -> dict[str, int]: ...
+    def search_task_counts(self) -> dict[str, int]: ...
 
 
 class StatusMetrics(Protocol):
@@ -44,7 +45,6 @@ class CollectionStatusHost(Protocol):
     DATA_DIR: str | Path
     DISPATCH_COOLDOWN_SECONDS: int
     DB_REPOSITORY: StatusRepository
-    AVM_SERVICE: StatusAnalysis
     llm_helper: StatusMetrics
 
     def _collection_runtime_index(self) -> StatusIndex: ...
@@ -56,8 +56,6 @@ class CollectionStatusHost(Protocol):
     def _utc_now(self) -> datetime: ...
     def _as_utc_timestamp(self, value: object) -> datetime | None: ...
     def _seed_collection_service(self) -> StatusSeeds: ...
-    def _db_collection_stage_snapshot(self) -> Record: ...
-    def _avm_operator_eval_summary(self, root: Path) -> Record: ...
     def _collection_runtime_snapshot(self) -> Record: ...
     def _db_data_supply_snapshot(self, hours: int) -> Record: ...
 
@@ -155,13 +153,7 @@ def bind_collection_status(host: CollectionStatusHost) -> CollectionStatusHandle
                     "done_locations": legacy_counts.get("search_done", 0),
                 }
             api_metrics = host.llm_helper.get_api_metrics()
-            collection_stage_snapshot = host._db_collection_stage_snapshot()
-            avm_status = {
-                **host.AVM_SERVICE.health_snapshot(lightweight=True),
-                **host._avm_operator_eval_summary(
-                    Path(getattr(host.AVM_SERVICE, "data_dir", host.DATA_DIR))
-                ),
-            }
+            stage_snapshot = collection_stage_snapshot(host.DB_REPOSITORY)
             runtime_snapshot = host._collection_runtime_snapshot()
             handler.send_json(
                 {
@@ -189,14 +181,13 @@ def bind_collection_status(host: CollectionStatusHost) -> CollectionStatusHandle
                     "data_supply_recent_24h": host._db_data_supply_snapshot(24)
                     if host.DB_REPOSITORY.enabled
                     else {},
-                    "avm": avm_status,
-                    "collection_stage": collection_stage_snapshot,
+                    "collection_stage": stage_snapshot,
                 }
             )
         except Exception as error:  # noqa: BLE001 - preserve status HTTP boundary
             handler.send_error_json(
                 status=500,
-                code="AVM_STATUS_FAILED",
+                code="COLLECTION_STATUS_FAILED",
                 message="状态概览生成失败",
                 details={"error": str(error)},
             )

@@ -117,7 +117,6 @@ def build_lightweight_status(
         "auth_recovery": runtime_snapshot["auth_recovery"],
         "collection_scopes": runtime_snapshot["collection_scopes"],
         "data_supply_recent_24h": {},
-        "avm": {"lightweight_skipped": True},
         "collection_stage": {
             "lightweight": True,
             "seed_queue": seed_queue_counts,

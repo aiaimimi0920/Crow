@@ -3,12 +3,49 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from src.storage.repository import PropertyRepository
 
 logger = logging.getLogger(__name__)
+
+
+class CollectionStageRepository(Protocol):
+    enabled: bool
+
+    def stage_status_counts(self) -> dict[str, int]: ...
+    def search_task_counts(self) -> dict[str, int]: ...
+
+
+def collection_stage_snapshot(
+    repository: CollectionStageRepository,
+) -> dict[str, object]:
+    """Read persisted collection stages without analysis readiness or reports."""
+    if not repository.enabled:
+        return {"seed_stage": {}, "detail_stage": {}, "search_tasks": {}}
+    try:
+        counts = repository.stage_status_counts()
+        search_counts = repository.search_task_counts()
+    except Exception:  # Preserve degraded stage-status availability.
+        logger.exception("[DB] Collection stage query failed")
+        counts = {}
+        search_counts = {}
+    return {
+        "seed_stage": {"stored": counts.get("seed_stored", 0)},
+        "detail_stage": {
+            name: counts.get(f"detail_{name}", 0)
+            for name in (
+                "pending",
+                "archived",
+                "enriched",
+                "blocked",
+                "failed",
+                "replay_requested",
+            )
+        },
+        "search_tasks": search_counts,
+    }
 
 
 def pending_candidates(

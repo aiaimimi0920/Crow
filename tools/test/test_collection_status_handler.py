@@ -33,7 +33,11 @@ def status(monkeypatch, tmp_path):
     )
     values = {
         "DATA_DIR": tmp_path,
-        "DB_REPOSITORY": SimpleNamespace(enabled=False),
+        "DB_REPOSITORY": SimpleNamespace(
+            enabled=False,
+            stage_status_counts=Mock(return_value={"detail_enriched": 3}),
+            search_task_counts=Mock(return_value={"search_pending": 4}),
+        ),
         "DISPATCH_COOLDOWN_SECONDS": 60,
         "_collection_runtime_index": Mock(return_value=index),
         "_collection_api_lightweight_status_enabled": Mock(return_value=False),
@@ -109,7 +113,23 @@ def test_status_counts_preview_and_no_mutation(status, database, repository_enab
     assert payload["sniff_queue_count"] == 4
     assert payload["sniff_done_count"] == 5
     assert payload["paused"] is True
-    assert payload["avm"] == {"health": True, "summary": True}
+    assert "avm" not in payload
+    assert "analysis_stage" not in payload["collection_stage"]
+    assert payload["collection_stage"]["detail_stage"] == (
+        {
+            "pending": 0,
+            "archived": 0,
+            "enriched": 3,
+            "blocked": 0,
+            "failed": 0,
+            "replay_requested": 0,
+        }
+        if repository_enabled
+        else {}
+    )
+    host.AVM_SERVICE.health_snapshot.assert_not_called()
+    host._avm_operator_eval_summary.assert_not_called()
+    host._db_collection_stage_snapshot.assert_not_called()
     assert index.state_snapshot.return_value == before
     handler.send_error_json.assert_not_called()
     if database:
@@ -127,6 +147,19 @@ def test_status_lightweight_shortcut_still_acquires_index(status):
     host._prefer_db_task_reads.assert_not_called()
     host.AVM_SERVICE.health_snapshot.assert_not_called()
     handler.send_json.assert_called_once_with({"light": True})
+
+
+@pytest.mark.parametrize("query", ["stage_status_counts", "search_task_counts"])
+def test_status_remains_available_when_stage_query_fails(status, query):
+    host, handler, _, _ = status
+    host.DB_REPOSITORY.enabled = True
+    getattr(host.DB_REPOSITORY, query).side_effect = RuntimeError("stage unavailable")
+    host._get_status(handler, None, "/api/status", {})
+    payload = handler.send_json.call_args.args[0]
+    assert payload["collection_stage"]["seed_stage"] == {"stored": 0}
+    assert payload["collection_stage"]["search_tasks"] == {}
+    assert "ai_finalized_count" in payload
+    handler.send_error_json.assert_not_called()
 
 
 def test_legacy_status_does_not_preview_beyond_first_hundred(status):
@@ -197,7 +230,7 @@ def test_status_payload_failure_maps_to_http_error(status, callback):
     host._get_status(handler, None, "/api/status", {})
     assert handler.send_error_json.call_args.kwargs == {
         "status": 500,
-        "code": "AVM_STATUS_FAILED",
+        "code": "COLLECTION_STATUS_FAILED",
         "message": "状态概览生成失败",
         "details": {"error": "payload failed"},
     }

@@ -11,7 +11,10 @@ from src.auth_recovery_progress import captured_detail_count, pending_detail_cou
 from src.collection_index_loader import load_collection_index
 from src.server_collection_status import CollectionStatusReaders
 from src.server_module_exports import ModuleExports
-from src.server_native_bindings import bind_native_handler_owners, bind_native_server_owners
+from src.server_native_bindings import (
+    bind_native_handler_owners,
+    bind_native_server_owners,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +112,7 @@ _EXPORTS.publish(
         auth_recovery=lambda: NAS_AUTH_RECOVERY.snapshot(),
         status=lambda: _collection_api_lightweight_status_payload(),
         control=lambda: RUNTIME.control.snapshot(),
-        data_root=lambda: Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+        data_root=lambda: Path(DATA_DIR),
         restart=lambda: _engine_restart_status(),
         challenge_metrics=lambda root: _hybrid_collection_challenge_metrics_summary(
             root

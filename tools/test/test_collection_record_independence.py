@@ -22,6 +22,7 @@ def test_seed_detail_storage_without_postprocessing(
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "collection status HTTP passed without postprocessing" in result.stdout
     assert (
         "seed/detail persisted, legacy retained, postprocessing absent" in result.stdout
     )

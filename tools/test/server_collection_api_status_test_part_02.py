@@ -323,7 +323,8 @@ def test_collection_observer_overview_exposes_challenge_metrics_and_auth_watcher
 
     monkeypatch.setattr(server, "DB_REPOSITORY", FakeRepository())
     monkeypatch.setattr(server.RUNTIME.control, "paused", False)
-    monkeypatch.setattr(server, "AVM_SERVICE", type("FakeService", (), {"data_dir": str(data_root)})())
+    monkeypatch.setattr(server, "DATA_DIR", str(data_root))
+    monkeypatch.setattr(server, "AVM_SERVICE", type("FakeService", (), {"data_dir": str(tmp_path / "unrelated-analysis")})())
 
     payload = server._collection_observer_overview_payload()
 

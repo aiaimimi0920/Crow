@@ -163,6 +163,9 @@ def run(data_root: Path, source: str) -> None:
         assert audit.analysis_model_version == "external-model"
         assert audit.analysis_last_scored_at == scored_at
     assert reopened.claim_seed_detail_item("next-worker") is None
+    from collection_status_isolation_probe import exercise_status
+
+    exercise_status(reopened, data_root)
     assert not guard.attempts, guard.attempts
     assert not any(
         name == "src.avm" or name.startswith("src.avm.") for name in sys.modules
