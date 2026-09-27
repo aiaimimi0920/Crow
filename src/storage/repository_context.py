@@ -13,8 +13,6 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from sqlalchemy import and_, case, create_engine, func, not_, select, text
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy import or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError

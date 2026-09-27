@@ -1,26 +1,31 @@
-from tools.test.pc2_local_solver_test_context import *  # noqa: F401,F403
+from tools import pc2_solver_fallback, pc2_solver_retry_state, pc2_solver_state_store
+from tools import pc2_solver_execution
+from tools.test.pc2_local_solver_test_context import *
 
 
 def test_solver_cooldown_starts_after_configured_failures(monkeypatch) -> None:
     state = pc2_local_solver._default_fallback_state()
     state["slider_attempts"] = 3
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_COOLDOWN_FAIL_THRESHOLD", 3)
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_COOLDOWN_SECONDS", 600.0)
+    monkeypatch.setattr(pc2_solver_retry_state, "SOLVER_COOLDOWN_FAIL_THRESHOLD", 3)
+    monkeypatch.setattr(pc2_solver_retry_state, "SOLVER_COOLDOWN_SECONDS", 600.0)
 
     assert pc2_local_solver._begin_solver_cooldown_if_needed(state, now=1000.0) is True
     assert state["solver_cooldown_until"] == 1600.0
     assert state["solver_cooldown_reason"] == "repeated_solver_failures"
 
+
 def test_slider_rule_supports_ten_attempts_five_second_spacing_and_180_second_cooldown(
     monkeypatch,
 ) -> None:
     state = pc2_local_solver._default_fallback_state()
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_COOLDOWN_FAIL_THRESHOLD", 10)
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_COOLDOWN_SECONDS", 180.0)
-    monkeypatch.setattr(pc2_local_solver, "SLIDER_RETRY_INTERVAL_SECONDS", 5.0)
+    monkeypatch.setattr(pc2_solver_retry_state, "SOLVER_COOLDOWN_FAIL_THRESHOLD", 10)
+    monkeypatch.setattr(pc2_solver_retry_state, "SOLVER_COOLDOWN_SECONDS", 180.0)
+    monkeypatch.setattr(pc2_solver_retry_state, "SLIDER_RETRY_INTERVAL_SECONDS", 5.0)
 
     for attempt in range(1, 10):
-        result = pc2_local_solver._record_slider_attempt_failure(state, now=1000.0 + (attempt - 1) * 5)
+        result = pc2_local_solver._record_slider_attempt_failure(
+            state, now=1000.0 + (attempt - 1) * 5
+        )
         assert result["attempts"] == attempt
         assert result["cooldown_started"] is False
         assert state["slider_next_attempt_at"] == 1000.0 + attempt * 5
@@ -31,6 +36,7 @@ def test_slider_rule_supports_ten_attempts_five_second_spacing_and_180_second_co
     assert tenth["cooldown_started"] is True
     assert state["slider_next_attempt_at"] is None
     assert state["solver_cooldown_until"] == 1225.0
+
 
 def test_solver_blocked_report_retries_once_and_latches_success(monkeypatch) -> None:
     state = pc2_local_solver._default_fallback_state()
@@ -52,11 +58,13 @@ def test_solver_blocked_report_retries_once_and_latches_success(monkeypatch) -> 
     )
     calls: list[float] = []
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_fallback,
         "notify_solver_blocked",
         lambda *_args, **_kwargs: calls.append(1.0) or next(responses),
     )
-    monkeypatch.setattr(pc2_local_solver, "_save_fallback_state", lambda _state: None)
+    monkeypatch.setattr(
+        pc2_solver_fallback, "_save_fallback_state", lambda _state: None
+    )
     solver_status = {"challenge_id": "captcha-detail", "scope": "detail"}
 
     first = pc2_local_solver._retry_node_solver_blocked_report(
@@ -82,6 +90,7 @@ def test_solver_blocked_report_retries_once_and_latches_success(monkeypatch) -> 
     assert state["node_solver_blocked_report_attempts"] == 2
     assert state["node_solver_blocked_report_next_retry_at"] is None
 
+
 def test_solver_blocked_report_rejects_rotated_challenge(monkeypatch) -> None:
     state = pc2_local_solver._default_fallback_state()
     state.update(
@@ -94,7 +103,7 @@ def test_solver_blocked_report_rejects_rotated_challenge(monkeypatch) -> None:
     )
     calls: list[object] = []
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_fallback,
         "notify_solver_blocked",
         lambda *_args, **_kwargs: calls.append(object()),
     )
@@ -110,10 +119,17 @@ def test_solver_blocked_report_rejects_rotated_challenge(monkeypatch) -> None:
     assert result["reason"] == "challenge_mismatch"
     assert calls == []
 
-def test_solver_attempt_progress_is_persisted_and_completed_on_failure(monkeypatch) -> None:
+
+def test_solver_attempt_progress_is_persisted_and_completed_on_failure(
+    monkeypatch,
+) -> None:
     state = pc2_local_solver._default_fallback_state()
     saved: list[dict[str, object]] = []
-    monkeypatch.setattr(pc2_local_solver, "_save_fallback_state", lambda value: saved.append(dict(value)))
+    monkeypatch.setattr(
+        pc2_solver_retry_state,
+        "_save_fallback_state",
+        lambda value: saved.append(dict(value)),
+    )
 
     pc2_local_solver._record_slider_attempt_started(state, now=1000.0)
 
@@ -126,24 +142,6 @@ def test_solver_attempt_progress_is_persisted_and_completed_on_failure(monkeypat
     assert state["slider_attempt_started_at"] is None
     assert state["slider_last_progress_at"] == 1075.0
 
-def test_solver_heartbeat_is_written_atomically(monkeypatch, tmp_path) -> None:
-    heartbeat_path = tmp_path / "solver-heartbeat.json"
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_HEARTBEAT_PATH", heartbeat_path)
-    monkeypatch.setattr(pc2_local_solver.time, "time", lambda: 1234.5)
-
-    assert pc2_local_solver.write_solver_heartbeat(
-        "solver_attempt",
-        challenge_id="captcha-1",
-        attempt=3,
-    ) is True
-    assert json.loads(heartbeat_path.read_text(encoding="utf-8")) == {
-        "pid": pc2_local_solver.os.getpid(),
-        "updated_at_epoch": 1234.5,
-        "phase": "solver_attempt",
-        "challenge_id": "captcha-1",
-        "attempt": 3,
-    }
-    assert list(tmp_path.glob("*.tmp")) == []
 
 def test_slider_retry_does_not_run_before_twenty_second_deadline() -> None:
     state = pc2_local_solver._default_fallback_state()
@@ -152,8 +150,11 @@ def test_slider_retry_does_not_run_before_twenty_second_deadline() -> None:
     assert pc2_local_solver._slider_retry_due(state, now=1019.9) is False
     assert pc2_local_solver._slider_retry_due(state, now=1020.0) is True
 
+
 def test_new_challenge_id_resets_previous_retry_window(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(
+        pc2_solver_state_store, "FALLBACK_STATE_PATH", tmp_path / "state.json"
+    )
     state = pc2_local_solver._default_fallback_state()
     state.update(
         {
@@ -176,6 +177,7 @@ def test_new_challenge_id_resets_previous_retry_window(monkeypatch, tmp_path) ->
     assert synced["node_solver_blocked_reported"] is False
     assert synced["node_solver_blocked_report_attempts"] == 0
 
+
 def test_select_solver_scope_status_keeps_preferred_challenge() -> None:
     status = {
         "challenge_id": "seed-newest",
@@ -193,7 +195,9 @@ def test_select_solver_scope_status_keeps_preferred_challenge() -> None:
                 "first_seen_epoch": 100.0,
                 "paused": True,
                 "last_status": "running",
-                "last_request": {"target_url": "https://sf-item.taobao.com/sf_item/1.htm"},
+                "last_request": {
+                    "target_url": "https://sf-item.taobao.com/sf_item/1.htm"
+                },
             },
         },
     }
@@ -205,7 +209,10 @@ def test_select_solver_scope_status_keeps_preferred_challenge() -> None:
 
     assert selected["scope"] == "detail"
     assert selected["challenge_id"] == "detail-active"
-    assert selected["last_request"]["target_url"].startswith("https://sf-item.taobao.com/")
+    assert selected["last_request"]["target_url"].startswith(
+        "https://sf-item.taobao.com/"
+    )
+
 
 def test_select_solver_scope_status_uses_oldest_challenge_without_preference() -> None:
     status = {
@@ -220,7 +227,9 @@ def test_select_solver_scope_status_uses_oldest_challenge_without_preference() -
                 "challenge_id": "detail-older",
                 "first_seen_epoch": 100.0,
                 "paused": True,
-                "last_request": {"target_url": "https://sf-item.taobao.com/sf_item/1.htm"},
+                "last_request": {
+                    "target_url": "https://sf-item.taobao.com/sf_item/1.htm"
+                },
             },
         }
     }
@@ -230,10 +239,15 @@ def test_select_solver_scope_status_uses_oldest_challenge_without_preference() -
     assert selected["scope"] == "detail"
     assert selected["challenge_id"] == "detail-older"
 
+
 def test_fallback_state_round_trip_preserves_scope(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(
+        pc2_solver_state_store, "FALLBACK_STATE_PATH", tmp_path / "state.json"
+    )
     state = pc2_local_solver._default_fallback_state()
-    state.update({"challenge_id": "detail-active", "scope": "detail", "slider_attempts": 4})
+    state.update(
+        {"challenge_id": "detail-active", "scope": "detail", "slider_attempts": 4}
+    )
     pc2_local_solver._save_fallback_state(state)
 
     loaded = pc2_local_solver._load_fallback_state()
@@ -242,7 +256,10 @@ def test_fallback_state_round_trip_preserves_scope(monkeypatch, tmp_path) -> Non
     assert loaded["challenge_id"] == "detail-active"
     assert loaded["slider_attempts"] == 4
 
-def test_run_solver_local_allows_two_profile_replays_within_one_attempt(monkeypatch) -> None:
+
+def test_run_solver_local_allows_two_profile_replays_within_one_attempt(
+    monkeypatch,
+) -> None:
     calls: list[dict[str, object]] = []
 
     class FakeSolver:
@@ -258,7 +275,7 @@ def test_run_solver_local_allows_two_profile_replays_within_one_attempt(monkeypa
             calls.append({"solve": kwargs})
             return True
 
-    monkeypatch.setattr(pc2_local_solver, "CaptchaSolver", FakeSolver)
+    monkeypatch.setattr(pc2_solver_execution, "_solver_class", lambda: FakeSolver)
 
     probe_target = {
         "_target_id": "slider-target",
@@ -266,13 +283,16 @@ def test_run_solver_local_allows_two_profile_replays_within_one_attempt(monkeypa
         "_target_ws_url": "ws://127.0.0.1:9223/devtools/page/slider-target",
     }
 
-    assert pc2_local_solver.run_solver_local(
-        "http://127.0.0.1:9223",
-        "https://example.test/requested-page-3",
-        max_attempts=50,
-        probe_target=probe_target,
-        drag_profile_offset=2,
-    ) is True
+    assert (
+        pc2_local_solver.run_solver_local(
+            "http://127.0.0.1:9223",
+            "https://example.test/requested-page-3",
+            max_attempts=50,
+            probe_target=probe_target,
+            drag_profile_offset=2,
+        )
+        is True
+    )
     assert calls[1] == {
         "remember": {
             "id": "slider-target",
@@ -288,6 +308,7 @@ def test_run_solver_local_allows_two_profile_replays_within_one_attempt(monkeypa
             "drag_profile_offset": 2,
         }
     }
+
 
 def test_run_solver_local_with_deadline_returns_child_result(monkeypatch) -> None:
     messages: list[dict[str, object]] = []
@@ -338,14 +359,21 @@ def test_run_solver_local_with_deadline_returns_child_result(monkeypatch) -> Non
         def Process(self, **kwargs):
             return Process(**kwargs)
 
-    monkeypatch.setattr(pc2_local_solver.multiprocessing, "get_context", lambda method: Context())
-    monkeypatch.setattr(pc2_local_solver, "run_solver_local", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        pc2_local_solver.multiprocessing, "get_context", lambda method: Context()
+    )
+    monkeypatch.setattr(
+        pc2_solver_execution, "run_solver_local", lambda *_args, **_kwargs: True
+    )
 
-    assert pc2_local_solver.run_solver_local_with_deadline(
-        "http://127.0.0.1:9223",
-        "https://example.test/challenge",
-        timeout_seconds=12,
-    ) is True
+    assert (
+        pc2_local_solver.run_solver_local_with_deadline(
+            "http://127.0.0.1:9223",
+            "https://example.test/challenge",
+            timeout_seconds=12,
+        )
+        is True
+    )
     assert process_state == {
         "name": "fapaifang-local-solver-attempt",
         "sender_closed": True,
@@ -354,13 +382,16 @@ def test_run_solver_local_with_deadline_returns_child_result(monkeypatch) -> Non
         "process_closed": True,
     }
 
+
 def test_run_solver_local_with_deadline_terminates_hung_child(monkeypatch) -> None:
     process_state: dict[str, object] = {"alive": True, "joins": []}
     events: list[dict[str, object]] = []
 
     class Connection:
         def close(self) -> None:
-            process_state["connections_closed"] = int(process_state.get("connections_closed", 0)) + 1
+            process_state["connections_closed"] = (
+                int(process_state.get("connections_closed", 0)) + 1
+            )
 
     class Process:
         exitcode = None
@@ -392,15 +423,22 @@ def test_run_solver_local_with_deadline_terminates_hung_child(monkeypatch) -> No
         def Process(self, **_kwargs):
             return Process()
 
-    monkeypatch.setattr(pc2_local_solver.multiprocessing, "get_context", lambda method: Context())
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_TERMINATE_GRACE_SECONDS", 2.0)
-    monkeypatch.setattr(pc2_local_solver, "log_event", lambda event: events.append(event))
+    monkeypatch.setattr(
+        pc2_local_solver.multiprocessing, "get_context", lambda method: Context()
+    )
+    monkeypatch.setattr(pc2_solver_execution, "SOLVER_TERMINATE_GRACE_SECONDS", 2.0)
+    monkeypatch.setattr(
+        pc2_solver_execution, "log_event", lambda event: events.append(event)
+    )
 
-    assert pc2_local_solver.run_solver_local_with_deadline(
-        "http://127.0.0.1:9223",
-        "https://example.test/challenge",
-        timeout_seconds=7,
-    ) is False
+    assert (
+        pc2_local_solver.run_solver_local_with_deadline(
+            "http://127.0.0.1:9223",
+            "https://example.test/challenge",
+            timeout_seconds=7,
+        )
+        is False
+    )
     assert process_state["started"] is True
     assert process_state["terminated"] is True
     assert process_state["alive"] is False

@@ -1,4 +1,6 @@
-from tools.test.pc2_local_solver_test_context import *  # noqa: F401,F403
+from tools import pc2_solver_scope
+from tools import pc2_solver_execution
+from tools.test.pc2_local_solver_test_context import *
 
 
 def test_manual_challenge_report_uses_canonical_taobao_target(monkeypatch) -> None:
@@ -6,9 +8,12 @@ def test_manual_challenge_report_uses_canonical_taobao_target(monkeypatch) -> No
 
     def fake_post(url, payload, timeout):
         captured.update({"url": url, "payload": payload, "timeout": timeout})
-        return {"status": "manual_required", "captcha_solver": {"challenge_id": "captcha-1"}}
+        return {
+            "status": "manual_required",
+            "captcha_solver": {"challenge_id": "captcha-1"},
+        }
 
-    monkeypatch.setattr(pc2_local_solver, "post_json", fake_post)
+    monkeypatch.setattr(pc2_solver_scope, "post_json", fake_post)
     result = pc2_local_solver.notify_manual_challenge(
         "http://192.168.15.200:8001/api",
         {
@@ -36,6 +41,7 @@ def test_manual_challenge_report_uses_canonical_taobao_target(monkeypatch) -> No
         "timestamp": captured["payload"]["timestamp"],
     }
 
+
 def test_rotate_failed_challenge_replaces_same_scope_duplicates_with_one_fresh_target(
     monkeypatch,
 ) -> None:
@@ -47,7 +53,7 @@ def test_rotate_failed_challenge_replaces_same_scope_duplicates_with_one_fresh_t
     )
 
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_execution,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -108,9 +114,10 @@ def test_rotate_failed_challenge_replaces_same_scope_duplicates_with_one_fresh_t
     assert "secret" not in result["probe_target"]["_target_url"]
     assert "discarded" not in result["probe_target"]["_target_url"]
 
+
 def test_rotate_failed_challenge_preserves_existing_login_window(monkeypatch) -> None:
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_execution,
         "fetch_json",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("login window must be preserved without CDP tab rotation")
@@ -131,12 +138,13 @@ def test_rotate_failed_challenge_preserves_existing_login_window(monkeypatch) ->
         "reason": "login_window_preserved",
     }
 
+
 def test_rebuild_missing_challenge_target_opens_one_identity_first_canonical_target(
     monkeypatch,
 ) -> None:
     opened_urls: list[str] = []
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_execution,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -178,9 +186,12 @@ def test_rebuild_missing_challenge_target_opens_one_identity_first_canonical_tar
     ]
     assert "discarded" not in result["probe_target"]["_target_url"]
 
-def test_rebuild_missing_challenge_target_reuses_matching_loading_route(monkeypatch) -> None:
+
+def test_rebuild_missing_challenge_target_reuses_matching_loading_route(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_execution,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -213,6 +224,7 @@ def test_rebuild_missing_challenge_target_reuses_matching_loading_route(monkeypa
     assert result["reason"] == "request_target_already_present"
     assert result["probe_target"]["_target_id"] == "detail-loading"
 
+
 def test_solver_blocked_report_uses_canonical_target_and_challenge(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -220,7 +232,7 @@ def test_solver_blocked_report_uses_canonical_target_and_challenge(monkeypatch) 
         captured.update({"url": url, "payload": payload, "timeout": timeout})
         return {"status": "node_solver_blocked", "captcha_solver": {}}
 
-    monkeypatch.setattr(pc2_local_solver, "post_json", fake_post)
+    monkeypatch.setattr(pc2_solver_scope, "post_json", fake_post)
     result = pc2_local_solver.notify_solver_blocked(
         "http://192.168.15.200:8001/api",
         {
@@ -259,7 +271,10 @@ def test_solver_blocked_report_uses_canonical_target_and_challenge(monkeypatch) 
         "scope": "detail",
     }
 
-def test_manual_challenge_registration_repairs_legacy_pause_without_challenge_id() -> None:
+
+def test_manual_challenge_registration_repairs_legacy_pause_without_challenge_id() -> (
+    None
+):
     status = {
         "manual_only": True,
         "manual_required": True,
@@ -268,11 +283,17 @@ def test_manual_challenge_registration_repairs_legacy_pause_without_challenge_id
     }
 
     assert pc2_local_solver.manual_challenge_registration_needed(status) is True
-    assert pc2_local_solver.manual_challenge_registration_needed(
-        {**status, "challenge_id": "captcha-current"}
-    ) is False
+    assert (
+        pc2_local_solver.manual_challenge_registration_needed(
+            {**status, "challenge_id": "captcha-current"}
+        )
+        is False
+    )
 
-def test_node_solver_execution_gate_requires_fresh_exclusive_ownership(monkeypatch) -> None:
+
+def test_node_solver_execution_gate_requires_fresh_exclusive_ownership(
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", raising=False)
     owned = {
         "running": False,
@@ -282,45 +303,66 @@ def test_node_solver_execution_gate_requires_fresh_exclusive_ownership(monkeypat
         },
     }
 
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        owned,
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) is None
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {**owned, "running": True},
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "nas_solver_running"
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {**owned, "manual_only": True},
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "manual_only"
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {
-            **owned,
-            "manual_only": False,
-            "last_request": {
-                **owned["last_request"],
-                "target_url": "https://sf.taobao.com/list/50025969__2.htm",
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            owned,
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        is None
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {**owned, "running": True},
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "nas_solver_running"
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {**owned, "manual_only": True},
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "manual_only"
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {
+                **owned,
+                "manual_only": False,
+                "last_request": {
+                    **owned["last_request"],
+                    "target_url": "https://sf.taobao.com/list/50025969__2.htm",
+                },
             },
-        },
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "manual_only"
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {"error": "status unavailable"},
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "status_unavailable"
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {"running": False, "last_request": {"node_id": "pc3"}},
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "request_owned_elsewhere"
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "manual_only"
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {"error": "status unavailable"},
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "status_unavailable"
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {"running": False, "last_request": {"node_id": "pc3"}},
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "request_owned_elsewhere"
+    )
 
-def test_node_solver_execution_gate_allows_explicit_real_taobao_auto_mode(monkeypatch) -> None:
+
+def test_node_solver_execution_gate_allows_explicit_real_taobao_auto_mode(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", "1")
     owned = {
         "running": False,
@@ -332,18 +374,27 @@ def test_node_solver_execution_gate_allows_explicit_real_taobao_auto_mode(monkey
         },
     }
 
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        owned,
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) is None
-    assert pc2_local_solver.node_solver_execution_block_reason(
-        {**owned, "manual_only": True},
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "manual_only"
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            owned,
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        is None
+    )
+    assert (
+        pc2_local_solver.node_solver_execution_block_reason(
+            {**owned, "manual_only": True},
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "manual_only"
+    )
 
-def test_completion_challenge_id_follows_same_owned_request_rotation(monkeypatch) -> None:
+
+def test_completion_challenge_id_follows_same_owned_request_rotation(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", "1")
     target_url = "https://sf.taobao.com/list/200782003__2.htm?__captcha_solver_bg=1"
     started = {
@@ -360,15 +411,21 @@ def test_completion_challenge_id_follows_same_owned_request_rotation(monkeypatch
         "manual_only": False,
     }
 
-    assert pc2_local_solver._completion_challenge_id(
-        started,
-        latest,
-        target_url,
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "captcha-current"
+    assert (
+        pc2_local_solver._completion_challenge_id(
+            started,
+            latest,
+            target_url,
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "captcha-current"
+    )
 
-def test_completion_challenge_id_rejects_different_request_rotation(monkeypatch) -> None:
+
+def test_completion_challenge_id_rejects_different_request_rotation(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", "1")
     target_url = "https://sf.taobao.com/list/200782003__2.htm?__captcha_solver_bg=1"
     started = {
@@ -389,44 +446,61 @@ def test_completion_challenge_id_rejects_different_request_rotation(monkeypatch)
         },
     }
 
-    assert pc2_local_solver._completion_challenge_id(
-        started,
-        latest,
-        target_url,
-        "http://127.0.0.1:9223",
-        "pc2",
-    ) == "captcha-old"
+    assert (
+        pc2_local_solver._completion_challenge_id(
+            started,
+            latest,
+            target_url,
+            "http://127.0.0.1:9223",
+            "pc2",
+        )
+        == "captcha-old"
+    )
+
 
 def test_manual_fallback_is_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED", raising=False)
 
     assert pc2_local_solver.manual_fallback_enabled() is False
-    assert pc2_local_solver._manual_fallback_latch_active(
-        {"manual_pushed": True},
-        manual_required=True,
-    ) is False
+    assert (
+        pc2_local_solver._manual_fallback_latch_active(
+            {"manual_pushed": True},
+            manual_required=True,
+        )
+        is False
+    )
+
 
 def test_manual_fallback_latch_requires_explicit_enable(monkeypatch) -> None:
     monkeypatch.setenv("FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED", "1")
 
     assert pc2_local_solver.manual_fallback_enabled() is True
-    assert pc2_local_solver._manual_fallback_latch_active(
-        {"manual_pushed": True},
-        manual_required=True,
-    ) is True
-    assert pc2_local_solver._manual_fallback_latch_active(
-        {"manual_pushed": True},
-        manual_required=False,
-    ) is False
+    assert (
+        pc2_local_solver._manual_fallback_latch_active(
+            {"manual_pushed": True},
+            manual_required=True,
+        )
+        is True
+    )
+    assert (
+        pc2_local_solver._manual_fallback_latch_active(
+            {"manual_pushed": True},
+            manual_required=False,
+        )
+        is False
+    )
+
 
 def test_solver_cooldown_is_active_until_persisted_deadline(monkeypatch) -> None:
     state = pc2_local_solver._default_fallback_state()
-    state.update({
-        "consecutive_failures": 3,
-        "window_started_at": 900.0,
-        "solver_cooldown_until": 1100.0,
-        "solver_cooldown_reason": "repeated_solver_failures",
-    })
+    state.update(
+        {
+            "consecutive_failures": 3,
+            "window_started_at": 900.0,
+            "solver_cooldown_until": 1100.0,
+            "solver_cooldown_reason": "repeated_solver_failures",
+        }
+    )
 
     assert pc2_local_solver._solver_cooldown_active(state, now=1099.0) is True
     assert pc2_local_solver._solver_cooldown_active(state, now=1100.0) is False

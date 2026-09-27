@@ -84,6 +84,16 @@
   `utils`/`common` dumping ground.
 - Never satisfy the checker by deleting useful tests, excluding product source,
   minifying code, or moving logic into generated/runtime-data directories.
+
+## Vertical-closure-first development and test execution
+
+- Work in a vertical slice: choose one user-visible behavior or runtime boundary, implement the smallest complete path, and verify that path before starting another slice. A slice is complete only when its production code, focused regression, and relevant static checks agree on the same behavior.
+- Select tests by change impact, not by habit. After a small local edit, run the focused regression and the cheapest applicable import, syntax, formatter, type, or contract check first. Expand to an affected suite only when the focused checks pass or when the change crosses a shared contract, concurrency boundary, security boundary, or persistence boundary.
+- Do not run the full historical suite after every small change. Run `fast`, `security`, PostgreSQL, desktop, or release-scale suites at a milestone, before a release/deployment candidate, after a cross-cutting change, or when the user explicitly asks for broad acceptance. A previous fresh result may be reused when the relevant code and test inputs have not changed; record its scope, commit/worktree state, and skipped conditions.
+- Before a broad run, state why it is needed, what it covers, its expected time budget, and its data/isolation boundary. If a focused check fails, fix that slice before spending the broad-suite budget. Do not rerun an unchanged broad suite only to refresh a number.
+- Keep the longitudinal loop visible in reports: behavior path, focused test, affected-boundary test, then milestone-wide acceptance. Never combine results from different worktree states or different times and describe them as one full pass; report partial, skipped, and unverified gates explicitly.
+- This strategy reduces redundant test work; it does not permit weakening security checks, deleting useful tests, changing thresholds, or claiming release/runtime acceptance from focused tests alone.
+
 - Required local gates for relevant changes:
   - `node --test scripts/tests/effective-code-lines.test.mjs`
   - `node scripts/effective-code-lines.mjs --mode ratchet --json artifacts/effective-code-lines.json`

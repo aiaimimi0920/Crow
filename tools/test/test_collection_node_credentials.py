@@ -1,6 +1,7 @@
 """Exercise node role routing without reading installed credentials or sending writes."""
 
 import os
+
 import pytest
 import requests
 

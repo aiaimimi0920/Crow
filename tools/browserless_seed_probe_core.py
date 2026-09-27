@@ -3,13 +3,7 @@
 from __future__ import annotations
 
 from tools.browserless_seed_probe_context import *
-
-
-def redact_taobao_sensitive_text(value: str) -> str:
-    redacted = value
-    for pattern in _SENSITIVE_INLINE_PATTERNS:
-        redacted = pattern.sub("taobao_security_value=<redacted>", redacted)
-    return redacted
+from src.collection.adapters.taobao_health import redact_taobao_sensitive_text
 
 
 def normalize_seed_item_url(value: Any) -> str:

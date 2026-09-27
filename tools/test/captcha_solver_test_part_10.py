@@ -1,4 +1,10 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import random
+import sys
+import time
+import types
+
+from src import captcha_solver
+from tools.test.captcha_solver_test_context import set_solver_platform
 
 
 def test_os_drag_rejects_x11_mapping_when_cursor_does_not_reach_slider(monkeypatch) -> None:
@@ -17,9 +23,9 @@ def test_os_drag_rejects_x11_mapping_when_cursor_does_not_reach_slider(monkeypat
         def __getattr__(self, name):
             raise AssertionError(f"unexpected pyautogui call: {name}")
 
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGUI())
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._focus_os_window = lambda: True
     solver._ensure_os_left_button_released = lambda _mapped: True
@@ -100,7 +106,7 @@ def test_viewport_origin_retries_full_screen_after_regional_locate_miss(monkeypa
 
 def test_os_drag_track_produces_monotonic_eased_steps(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(captcha_solver.random, "uniform", lambda start, end: (start + end) / 2)
+    monkeypatch.setattr(random, "uniform", lambda start, end: (start + end) / 2)
     profile = solver._os_drag_profile()
 
     fracs, dwells = solver._os_drag_track(320, profile)
@@ -109,12 +115,12 @@ def test_os_drag_track_produces_monotonic_eased_steps(monkeypatch) -> None:
     assert len(fracs) >= profile["steps"][0]
     assert fracs[0] > 0
     assert fracs[-1] == 1.0
-    assert all(left < right for left, right in zip(fracs, fracs[1:]))
+    assert all(left < right for left, right in zip(fracs, fracs[1:], strict=False))
     assert all(0.006 <= dwell <= 0.09 for dwell in dwells)
 
 def test_os_drag_release_plan_releases_at_target(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(captcha_solver.random, "uniform", lambda start, end: (start + end) / 2)
+    monkeypatch.setattr(random, "uniform", lambda start, end: (start + end) / 2)
     profile = solver._os_drag_profile()
 
     peak_x, settle_xs, release_x = solver._os_drag_release_plan(100.0, 300.0, profile)
@@ -123,7 +129,7 @@ def test_os_drag_release_plan_releases_at_target(monkeypatch) -> None:
     assert release_x == 400.0
     assert settle_xs
     assert settle_xs[-1] == release_x
-    assert all(left >= right for left, right in zip(settle_xs, settle_xs[1:]))
+    assert all(left >= right for left, right in zip(settle_xs, settle_xs[1:], strict=False))
 
 def test_os_drag_profile_switches_variants_by_index() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
@@ -143,8 +149,8 @@ def test_os_drag_profile_switches_variants_by_index() -> None:
 
 def test_os_drag_warmup_points_respect_profile(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(captcha_solver.random, "uniform", lambda start, end: (start + end) / 2)
-    monkeypatch.setattr(captcha_solver.random, "gauss", lambda mean, _sigma: mean)
+    monkeypatch.setattr(random, "uniform", lambda start, end: (start + end) / 2)
+    monkeypatch.setattr(random, "gauss", lambda mean, _sigma: mean)
     profile = solver._os_drag_profile(0)
 
     points = solver._os_drag_warmup_points(100.0, 200.0, profile)
@@ -178,7 +184,7 @@ def test_reset_failed_nc_challenge_tries_multiple_click_points_until_slider_retu
     }
     solver._click_css_point = lambda x, y, **_kwargs: clicks.append((x, y)) or True
     solver._nc_retry_outcome = lambda timeout_seconds=8.0: outcomes.pop(0)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver._reset_failed_nc_challenge() is True
     assert len(clicks) == 2
@@ -196,7 +202,7 @@ def test_nc_retry_outcome_waits_for_three_stable_slider_samples(monkeypatch) -> 
         return {"x": x, "y": 200.0, "width": 42.0, "height": 30.0}
 
     solver._find_slider = find_slider
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     outcome = solver._nc_retry_outcome(timeout_seconds=1.0)
 

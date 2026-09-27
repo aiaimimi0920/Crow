@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from src.avm_config import DEFAULT_AVM_CONFIG
+from src.collection_job_control import JobStopped, job_checkpoint
 from tools.apply_avm_calibration_patch import (
     apply_command_chain_next_action_policy,
     apply_avm_calibration_patch,
@@ -78,14 +79,22 @@ class AVMPipelineManager:
         }
 
     def _run_task(self, task_name: str, fn) -> None:
+        job_checkpoint()
         started = datetime.now(timezone.utc).isoformat()
         with self._lock:
             self._state["current_task"] = task_name
             self._state["tasks"].append({"name": task_name, "status": "in_progress", "started_at": started})
 
+        stopped_reason = None
         try:
             result = fn()
+            job_checkpoint()
             status = "completed"
+            error = None
+        except JobStopped as stopped:
+            result = None
+            status = stopped.reason
+            stopped_reason = stopped.reason
             error = None
         except Exception as exc:
             result = None
@@ -105,6 +114,8 @@ class AVMPipelineManager:
             if status == "failed":
                 self._state["error"] = error
                 raise RuntimeError(error)
+        if stopped_reason is not None:
+            raise JobStopped(stopped_reason)
 
     def _execute(self, config: AVMPipelineConfig) -> None:
         try:

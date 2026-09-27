@@ -1,4 +1,6 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import time
+
+from src import captcha_solver
 
 
 def test_preflight_keeps_connected_target_while_slider_is_still_loading() -> None:
@@ -74,6 +76,6 @@ def test_solver_uses_existing_cdp_connection_when_slider_appears_after_preflight
     solver._do_drag = lambda _x, _y, distance: distance
     solver._wait_for_verification_success = lambda: True
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is True

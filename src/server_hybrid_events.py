@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+from src.status_snapshot_values import (
+    _coerce_optional_bool,
+    _coerce_optional_int,
+    _coerce_optional_mapping,
+    _coerce_optional_text,
+    _load_jsonl_snapshots,
+)
+
 
 def _hybrid_collection_operator_digest_stability_summary(
     digest_trend_summary: dict[str, Any],
@@ -21,12 +31,24 @@ def _hybrid_collection_operator_digest_stability_summary(
             "operator_readable_explanation": None,
         }
 
-    current_digest_status = _coerce_optional_text(digest_trend_summary.get("current_digest_status"))
-    current_digest_priority = _coerce_optional_text(digest_trend_summary.get("current_digest_priority"))
-    current_digest_message = _coerce_optional_text(digest_trend_summary.get("current_digest_message"))
-    previous_digest_status = _coerce_optional_text(digest_trend_summary.get("previous_distinct_digest_status"))
-    previous_digest_message = _coerce_optional_text(digest_trend_summary.get("previous_distinct_digest_message"))
-    recent_change_count = _coerce_optional_int(digest_trend_summary.get("recent_change_count")) or 0
+    current_digest_status = _coerce_optional_text(
+        digest_trend_summary.get("current_digest_status")
+    )
+    current_digest_priority = _coerce_optional_text(
+        digest_trend_summary.get("current_digest_priority")
+    )
+    current_digest_message = _coerce_optional_text(
+        digest_trend_summary.get("current_digest_message")
+    )
+    previous_digest_status = _coerce_optional_text(
+        digest_trend_summary.get("previous_distinct_digest_status")
+    )
+    previous_digest_message = _coerce_optional_text(
+        digest_trend_summary.get("previous_distinct_digest_message")
+    )
+    recent_change_count = (
+        _coerce_optional_int(digest_trend_summary.get("recent_change_count")) or 0
+    )
     if recent_change_count < 0:
         recent_change_count = 0
     last_change_at = _coerce_optional_text(digest_trend_summary.get("last_change_at"))
@@ -42,7 +64,9 @@ def _hybrid_collection_operator_digest_stability_summary(
     if recent_change_count >= 2:
         stability_status = "digest_flapping"
         stability_severity = "warning"
-        operator_readable_explanation = "Operator digest changed multiple times recently."
+        operator_readable_explanation = (
+            "Operator digest changed multiple times recently."
+        )
     elif (
         current_digest_priority in {"warning", "high"}
         and recent_change_count > 0
@@ -51,17 +75,19 @@ def _hybrid_collection_operator_digest_stability_summary(
     ):
         stability_status = "digest_recently_shifted"
         stability_severity = "high" if current_digest_priority == "high" else "warning"
-        operator_readable_explanation = (
-            f"Operator digest recently shifted from {previous_digest_status} to {current_digest_status}."
-        )
+        operator_readable_explanation = f"Operator digest recently shifted from {previous_digest_status} to {current_digest_status}."
     elif current_digest_priority in {"warning", "high"} and recent_change_count == 0:
         stability_status = "persistent_noninfo_digest"
         stability_severity = "high" if current_digest_priority == "high" else "warning"
-        operator_readable_explanation = "Operator digest remains non-info with no recent message changes."
+        operator_readable_explanation = (
+            "Operator digest remains non-info with no recent message changes."
+        )
     elif current_digest_priority == "info" and recent_change_count == 0:
         stability_status = "stable_digest"
         stability_severity = "info"
-        operator_readable_explanation = "Operator digest remains stable with no recent message changes."
+        operator_readable_explanation = (
+            "Operator digest remains stable with no recent message changes."
+        )
     else:
         stability_status = "digest_transitioning"
         stability_severity = "warning"
@@ -85,8 +111,13 @@ def _hybrid_collection_operator_digest_stability_summary(
         "operator_readable_explanation": operator_readable_explanation,
     }
 
-def _hybrid_collection_operator_intervention_trend_summary(data_root: Path, *, limit: int = 20) -> dict[str, Any]:
-    entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_collection_runtime_history.jsonl")
+
+def _hybrid_collection_operator_intervention_trend_summary(
+    data_root: Path, *, limit: int = 20
+) -> dict[str, Any]:
+    entries = _load_jsonl_snapshots(
+        data_root / "avm" / "hybrid_seed_collection_runtime_history.jsonl"
+    )
     if not entries:
         return {
             "available": False,
@@ -143,14 +174,21 @@ def _hybrid_collection_operator_intervention_trend_summary(data_root: Path, *, l
             last_change_at = generated_at
         previous_status = status
 
-    current_generated_at, current_intervention_status, current_intervention_priority, current_intervention_reason = status_entries[-1]
+    (
+        current_generated_at,
+        current_intervention_status,
+        current_intervention_priority,
+        current_intervention_reason,
+    ) = status_entries[-1]
     previous_distinct_intervention_status = None
     for _generated_at, status, _priority, _reason in reversed(status_entries[:-1]):
         if status != current_intervention_status:
             previous_distinct_intervention_status = status
             break
 
-    top_intervention_status = sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+    top_intervention_status = sorted(
+        status_counts.items(), key=lambda item: (-item[1], item[0])
+    )[0][0]
     return {
         "available": True,
         "recent_status_entry_count": len(status_entries),
@@ -165,8 +203,13 @@ def _hybrid_collection_operator_intervention_trend_summary(data_root: Path, *, l
         "last_change_at": last_change_at,
     }
 
-def _hybrid_collection_mode_switch_event_summary(data_root: Path, *, limit: int = 20) -> dict[str, Any]:
-    entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_mode_switch_events.jsonl")
+
+def _hybrid_collection_mode_switch_event_summary(
+    data_root: Path, *, limit: int = 20
+) -> dict[str, Any]:
+    entries = _load_jsonl_snapshots(
+        data_root / "avm" / "hybrid_seed_mode_switch_events.jsonl"
+    )
     if not entries:
         return {
             "available": False,
@@ -192,11 +235,15 @@ def _hybrid_collection_mode_switch_event_summary(data_root: Path, *, limit: int 
         guidance_status = _coerce_optional_text(entry.get("guidance_status"))
         if guidance_status:
             status_key = guidance_status
-            guidance_status_counts[status_key] = guidance_status_counts.get(status_key, 0) + 1
+            guidance_status_counts[status_key] = (
+                guidance_status_counts.get(status_key, 0) + 1
+            )
         guidance_reason = _coerce_optional_text(entry.get("top_guidance_reason"))
         if guidance_reason:
             reason_key = guidance_reason
-            guidance_reason_counts[reason_key] = guidance_reason_counts.get(reason_key, 0) + 1
+            guidance_reason_counts[reason_key] = (
+                guidance_reason_counts.get(reason_key, 0) + 1
+            )
 
     top_target_mode = (
         sorted(target_mode_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
@@ -204,7 +251,9 @@ def _hybrid_collection_mode_switch_event_summary(data_root: Path, *, limit: int 
         else None
     )
     top_guidance_reason = (
-        sorted(guidance_reason_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        sorted(guidance_reason_counts.items(), key=lambda item: (-item[1], item[0]))[0][
+            0
+        ]
         if guidance_reason_counts
         else None
     )
@@ -221,8 +270,13 @@ def _hybrid_collection_mode_switch_event_summary(data_root: Path, *, limit: int 
         "last_switch_session_id": _coerce_optional_text(last_entry.get("session_id")),
     }
 
-def _hybrid_collection_recovery_policy_event_summary(data_root: Path, *, limit: int = 20) -> dict[str, Any]:
-    entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_recovery_policy_events.jsonl")
+
+def _hybrid_collection_recovery_policy_event_summary(
+    data_root: Path, *, limit: int = 20
+) -> dict[str, Any]:
+    entries = _load_jsonl_snapshots(
+        data_root / "avm" / "hybrid_seed_recovery_policy_events.jsonl"
+    )
     if not entries:
         return {
             "available": False,
@@ -245,19 +299,27 @@ def _hybrid_collection_recovery_policy_event_summary(data_root: Path, *, limit: 
         transition_kind = _coerce_optional_text(entry.get("transition_kind"))
         if transition_kind:
             transition_key = transition_kind
-            transition_kind_counts[transition_key] = transition_kind_counts.get(transition_key, 0) + 1
+            transition_kind_counts[transition_key] = (
+                transition_kind_counts.get(transition_key, 0) + 1
+            )
         to_policy_status = _coerce_optional_text(entry.get("to_policy_status"))
         if to_policy_status:
             status_key = to_policy_status
-            to_policy_status_counts[status_key] = to_policy_status_counts.get(status_key, 0) + 1
+            to_policy_status_counts[status_key] = (
+                to_policy_status_counts.get(status_key, 0) + 1
+            )
 
     top_transition_kind = (
-        sorted(transition_kind_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        sorted(transition_kind_counts.items(), key=lambda item: (-item[1], item[0]))[0][
+            0
+        ]
         if transition_kind_counts
         else None
     )
     top_to_policy_status = (
-        sorted(to_policy_status_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        sorted(to_policy_status_counts.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
         if to_policy_status_counts
         else None
     )
@@ -271,13 +333,24 @@ def _hybrid_collection_recovery_policy_event_summary(data_root: Path, *, limit: 
         "top_transition_kind": top_transition_kind,
         "top_to_policy_status": top_to_policy_status,
         "last_transition_at": _coerce_optional_text(last_entry.get("generated_at")),
-        "last_transition_session_id": _coerce_optional_text(last_entry.get("session_id")),
-        "last_transition_kind": _coerce_optional_text(last_entry.get("transition_kind")),
-        "last_to_policy_status": _coerce_optional_text(last_entry.get("to_policy_status")),
+        "last_transition_session_id": _coerce_optional_text(
+            last_entry.get("session_id")
+        ),
+        "last_transition_kind": _coerce_optional_text(
+            last_entry.get("transition_kind")
+        ),
+        "last_to_policy_status": _coerce_optional_text(
+            last_entry.get("to_policy_status")
+        ),
     }
 
-def _hybrid_collection_operator_escalation_event_summary(data_root: Path, *, limit: int = 20) -> dict[str, Any]:
-    entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_operator_escalation_events.jsonl")
+
+def _hybrid_collection_operator_escalation_event_summary(
+    data_root: Path, *, limit: int = 20
+) -> dict[str, Any]:
+    entries = _load_jsonl_snapshots(
+        data_root / "avm" / "hybrid_seed_operator_escalation_events.jsonl"
+    )
     if not entries:
         return {
             "available": False,
@@ -303,23 +376,35 @@ def _hybrid_collection_operator_escalation_event_summary(data_root: Path, *, lim
         escalation_kind = _coerce_optional_text(entry.get("escalation_kind"))
         if escalation_kind:
             kind_key = escalation_kind
-            escalation_kind_counts[kind_key] = escalation_kind_counts.get(kind_key, 0) + 1
-        escalation_source = _coerce_optional_text(entry.get("operator_escalation_source"))
+            escalation_kind_counts[kind_key] = (
+                escalation_kind_counts.get(kind_key, 0) + 1
+            )
+        escalation_source = _coerce_optional_text(
+            entry.get("operator_escalation_source")
+        )
         if escalation_source:
             source_key = escalation_source
-            escalation_source_counts[source_key] = escalation_source_counts.get(source_key, 0) + 1
+            escalation_source_counts[source_key] = (
+                escalation_source_counts.get(source_key, 0) + 1
+            )
         policy_status = _coerce_optional_text(entry.get("policy_status"))
         if policy_status:
             status_key = policy_status
-            policy_status_counts[status_key] = policy_status_counts.get(status_key, 0) + 1
+            policy_status_counts[status_key] = (
+                policy_status_counts.get(status_key, 0) + 1
+            )
 
     top_escalation_kind = (
-        sorted(escalation_kind_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        sorted(escalation_kind_counts.items(), key=lambda item: (-item[1], item[0]))[0][
+            0
+        ]
         if escalation_kind_counts
         else None
     )
     top_operator_escalation_source = (
-        sorted(escalation_source_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        sorted(escalation_source_counts.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
         if escalation_source_counts
         else None
     )
@@ -341,14 +426,21 @@ def _hybrid_collection_operator_escalation_event_summary(data_root: Path, *, lim
         "top_policy_status": top_policy_status,
         "last_event_at": _coerce_optional_text(last_entry.get("generated_at")),
         "last_event_session_id": _coerce_optional_text(last_entry.get("session_id")),
-        "last_operator_escalation_source": _coerce_optional_text(last_entry.get("operator_escalation_source")),
+        "last_operator_escalation_source": _coerce_optional_text(
+            last_entry.get("operator_escalation_source")
+        ),
         "last_operator_escalation_audit_message": _coerce_optional_text(
             last_entry.get("operator_escalation_audit_message")
         ),
     }
 
-def _hybrid_collection_operator_escalation_event_trend_summary(data_root: Path, *, limit: int = 20) -> dict[str, Any]:
-    entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_operator_escalation_events.jsonl")
+
+def _hybrid_collection_operator_escalation_event_trend_summary(
+    data_root: Path, *, limit: int = 20
+) -> dict[str, Any]:
+    entries = _load_jsonl_snapshots(
+        data_root / "avm" / "hybrid_seed_operator_escalation_events.jsonl"
+    )
     if not entries:
         return {
             "available": False,
@@ -375,7 +467,9 @@ def _hybrid_collection_operator_escalation_event_trend_summary(data_root: Path, 
                     generated_at,
                     source.strip(),
                     _coerce_optional_text(entry.get("escalation_kind")),
-                    _coerce_optional_text(entry.get("operator_escalation_audit_message")),
+                    _coerce_optional_text(
+                        entry.get("operator_escalation_audit_message")
+                    ),
                 )
             )
 
@@ -405,14 +499,18 @@ def _hybrid_collection_operator_escalation_event_trend_summary(data_root: Path, 
             last_source_change_at = generated_at
         previous_source = source
 
-    _current_generated_at, current_source, current_kind, current_audit = source_entries[-1]
+    _current_generated_at, current_source, current_kind, current_audit = source_entries[
+        -1
+    ]
     previous_distinct_source = None
     for _generated_at, source, _kind, _audit in reversed(source_entries[:-1]):
         if source != current_source:
             previous_distinct_source = source
             break
 
-    top_source = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+    top_source = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))[0][
+        0
+    ]
     return {
         "available": True,
         "recent_event_entry_count": len(source_entries),
@@ -427,4 +525,12 @@ def _hybrid_collection_operator_escalation_event_trend_summary(data_root: Path, 
         "last_source_change_at": last_source_change_at,
     }
 
-__all__ = ["_hybrid_collection_operator_digest_stability_summary", "_hybrid_collection_operator_intervention_trend_summary", "_hybrid_collection_mode_switch_event_summary", "_hybrid_collection_recovery_policy_event_summary", "_hybrid_collection_operator_escalation_event_summary", "_hybrid_collection_operator_escalation_event_trend_summary"]
+
+__all__ = [
+    "_hybrid_collection_operator_digest_stability_summary",
+    "_hybrid_collection_operator_intervention_trend_summary",
+    "_hybrid_collection_mode_switch_event_summary",
+    "_hybrid_collection_recovery_policy_event_summary",
+    "_hybrid_collection_operator_escalation_event_summary",
+    "_hybrid_collection_operator_escalation_event_trend_summary",
+]

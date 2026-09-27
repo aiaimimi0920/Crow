@@ -1,7 +1,12 @@
-from tools.test.pc2_local_solver_test_context import *  # noqa: F401,F403
+from tools import pc2_solver_cdp
+from tools import pc2_solver_execution
+from tools.test.pc2_local_solver_test_context import *
+from tools.test.pc2_loop_test_dependencies import patch_loop_dependency
 
 
-def test_run_solver_local_with_deadline_exits_if_child_survives_kill(monkeypatch) -> None:
+def test_run_solver_local_with_deadline_exits_if_child_survives_kill(
+    monkeypatch,
+) -> None:
     events: list[dict[str, object]] = []
 
     class Connection:
@@ -37,9 +42,13 @@ def test_run_solver_local_with_deadline_exits_if_child_survives_kill(monkeypatch
         def Process(self, **_kwargs):
             return Process()
 
-    monkeypatch.setattr(pc2_local_solver.multiprocessing, "get_context", lambda method: Context())
-    monkeypatch.setattr(pc2_local_solver, "SOLVER_TERMINATE_GRACE_SECONDS", 0.0)
-    monkeypatch.setattr(pc2_local_solver, "log_event", lambda event: events.append(event))
+    monkeypatch.setattr(
+        pc2_local_solver.multiprocessing, "get_context", lambda method: Context()
+    )
+    monkeypatch.setattr(pc2_solver_execution, "SOLVER_TERMINATE_GRACE_SECONDS", 0.0)
+    monkeypatch.setattr(
+        pc2_solver_execution, "log_event", lambda event: events.append(event)
+    )
 
     with pytest.raises(SystemExit, match="survived terminate and kill"):
         pc2_local_solver.run_solver_local_with_deadline(
@@ -54,12 +63,19 @@ def test_run_solver_local_with_deadline_exits_if_child_survives_kill(monkeypatch
         "terminated": False,
     }
 
-def test_run_solver_local_with_deadline_real_spawn_returns_for_unreachable_cdp() -> None:
-    assert pc2_local_solver.run_solver_local_with_deadline(
-        "http://127.0.0.1:1",
-        "https://example.invalid/challenge",
-        timeout_seconds=15,
-    ) is False
+
+def test_run_solver_local_with_deadline_real_spawn_returns_for_unreachable_cdp() -> (
+    None
+):
+    assert (
+        pc2_local_solver.run_solver_local_with_deadline(
+            "http://127.0.0.1:1",
+            "https://example.invalid/challenge",
+            timeout_seconds=15,
+        )
+        is False
+    )
+
 
 def test_cdp_slider_probe_scans_pages_and_returns_target_identity(monkeypatch) -> None:
     sockets: list[FakeWebSocket] = []
@@ -88,7 +104,9 @@ def test_cdp_slider_probe_scans_pages_and_returns_target_identity(monkeypatch) -
                     "height": 30,
                     "selector": "#nc_1_n1z",
                 }
-                return json.dumps({"id": message_id, "result": {"result": {"value": value}}})
+                return json.dumps(
+                    {"id": message_id, "result": {"result": {"value": value}}}
+                )
             return json.dumps({"id": message_id, "result": {}})
 
         def close(self) -> None:
@@ -114,7 +132,7 @@ def test_cdp_slider_probe_scans_pages_and_returns_target_identity(monkeypatch) -
             "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/slider-target",
         },
     ]
-    monkeypatch.setattr(pc2_local_solver, "fetch_json", lambda *_args, **_kwargs: tabs)
+    monkeypatch.setattr(pc2_solver_cdp, "fetch_json", lambda *_args, **_kwargs: tabs)
 
     def fake_create_connection(ws_url: str, **_kwargs: object) -> FakeWebSocket:
         socket = FakeWebSocket(ws_url)
@@ -130,13 +148,17 @@ def test_cdp_slider_probe_scans_pages_and_returns_target_identity(monkeypatch) -
     assert result is not None
     assert result["selector"] == "#nc_1_n1z"
     assert result["_target_id"] == "slider-target"
-    assert result["_target_url"] == "https://example.test/visible-slider?__captcha_solver_bg=1"
+    assert (
+        result["_target_url"]
+        == "https://example.test/visible-slider?__captcha_solver_bg=1"
+    )
     assert result["_target_ws_url"] == "ws://127.0.0.1:9223/devtools/page/slider-target"
     assert [socket.ws_url for socket in sockets] == [
         "ws://127.0.0.1:9223/devtools/page/plain-target",
         "ws://127.0.0.1:9223/devtools/page/slider-target",
     ]
     assert all(socket.closed for socket in sockets)
+
 
 def test_cdp_challenge_probe_returns_existing_target_identity(monkeypatch) -> None:
     challenge = {
@@ -147,7 +169,7 @@ def test_cdp_challenge_probe_returns_existing_target_identity(monkeypatch) -> No
         "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/punish-target",
     }
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda *_args, **_kwargs: [
             {"id": "blank", "type": "page", "url": "about:blank"},
@@ -155,7 +177,9 @@ def test_cdp_challenge_probe_returns_existing_target_identity(monkeypatch) -> No
         ],
     )
 
-    result = pc2_local_solver.check_cdp_browser_for_challenge_page("http://127.0.0.1:9223")
+    result = pc2_local_solver.check_cdp_browser_for_challenge_page(
+        "http://127.0.0.1:9223"
+    )
 
     assert result == {
         "_target_id": "punish-target",
@@ -163,7 +187,10 @@ def test_cdp_challenge_probe_returns_existing_target_identity(monkeypatch) -> No
         "_target_ws_url": "ws://127.0.0.1:9223/devtools/page/punish-target",
     }
 
-def test_cdp_challenge_probe_prefers_requested_route_over_unrelated_detail(monkeypatch) -> None:
+
+def test_cdp_challenge_probe_prefers_requested_route_over_unrelated_detail(
+    monkeypatch,
+) -> None:
     unrelated = {
         "id": "detail-challenge",
         "type": "page",
@@ -179,7 +206,7 @@ def test_cdp_challenge_probe_prefers_requested_route_over_unrelated_detail(monke
         "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/list-challenge",
     }
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda *_args, **_kwargs: [unrelated, requested],
     )
@@ -194,8 +221,13 @@ def test_cdp_challenge_probe_prefers_requested_route_over_unrelated_detail(monke
 
     assert result["_target_id"] == "list-challenge"
 
-@pytest.mark.parametrize("evidence_key", ["challengePresent", "explicitFailure", "hardBlock", "hasSlider"])
-def test_cdp_challenge_probe_uses_route_scoped_dom_evidence(monkeypatch, evidence_key) -> None:
+
+@pytest.mark.parametrize(
+    "evidence_key", ["challengePresent", "explicitFailure", "hardBlock", "hasSlider"]
+)
+def test_cdp_challenge_probe_uses_route_scoped_dom_evidence(
+    monkeypatch, evidence_key
+) -> None:
     closed_targets: list[str | None] = []
 
     class FakeSolver:
@@ -218,9 +250,9 @@ def test_cdp_challenge_probe_uses_route_scoped_dom_evidence(monkeypatch, evidenc
         def _close_solver_ws(self):
             closed_targets.append(self.current_target)
 
-    monkeypatch.setattr(pc2_local_solver, "CaptchaSolver", FakeSolver)
+    monkeypatch.setattr(pc2_solver_cdp, "_create_probe_solver", FakeSolver)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -253,7 +285,10 @@ def test_cdp_challenge_probe_uses_route_scoped_dom_evidence(monkeypatch, evidenc
     }
     assert "requested" in closed_targets
 
-def test_cdp_challenge_probe_stays_fail_closed_without_dom_evidence(monkeypatch) -> None:
+
+def test_cdp_challenge_probe_stays_fail_closed_without_dom_evidence(
+    monkeypatch,
+) -> None:
     close_calls = 0
 
     class FakeSolver:
@@ -276,9 +311,9 @@ def test_cdp_challenge_probe_stays_fail_closed_without_dom_evidence(monkeypatch)
             nonlocal close_calls
             close_calls += 1
 
-    monkeypatch.setattr(pc2_local_solver, "CaptchaSolver", FakeSolver)
+    monkeypatch.setattr(pc2_solver_cdp, "_create_probe_solver", FakeSolver)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -291,13 +326,19 @@ def test_cdp_challenge_probe_stays_fail_closed_without_dom_evidence(monkeypatch)
         ],
     )
 
-    assert pc2_local_solver.check_cdp_browser_for_challenge_page(
-        "http://127.0.0.1:9223",
-        target_url="https://example.test/requested",
-    ) is None
+    assert (
+        pc2_local_solver.check_cdp_browser_for_challenge_page(
+            "http://127.0.0.1:9223",
+            target_url="https://example.test/requested",
+        )
+        is None
+    )
     assert close_calls >= 1
 
-def test_paused_api_trigger_probes_and_passes_existing_slider_target(monkeypatch) -> None:
+
+def test_paused_api_trigger_probes_and_passes_existing_slider_target(
+    monkeypatch,
+) -> None:
     probe_target = {
         "found": True,
         "_target_id": "slider-target",
@@ -332,35 +373,55 @@ def test_paused_api_trigger_probes_and_passes_existing_slider_target(monkeypatch
                 "challenge_id": "detail-challenge",
                 "first_seen_epoch": 100.0,
                 "paused": True,
-                "last_request": {"target_url": "https://detail.example.test/item"},
+                "last_request": {
+                    "target_url": "https://detail.example.test/item",
+                    "cdp_endpoint": pc2_local_solver.DEFAULT_CDP_ENDPOINT,
+                },
             },
         },
     }
 
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_healthy", lambda _endpoint: True)
-    monkeypatch.setattr(pc2_local_solver, "_retry_pending_auth_confirmation", lambda _api: {})
-    monkeypatch.setattr(pc2_local_solver, "_retry_pending_collection_resume", lambda _api: {})
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
+    patch_loop_dependency(
+        monkeypatch, "_retry_pending_auth_confirmation", lambda _api: {}
+    )
+    patch_loop_dependency(
+        monkeypatch, "_retry_pending_collection_resume", lambda _api: {}
+    )
+    patch_loop_dependency(
+        monkeypatch,
         "read_solver_status",
         lambda _api: aggregate_status,
     )
-    monkeypatch.setattr(pc2_local_solver, "_load_fallback_state", lambda: dict(state))
-    monkeypatch.setattr(pc2_local_solver, "_save_fallback_state", lambda _state: None)
-    monkeypatch.setattr(pc2_local_solver, "_sync_challenge_state", lambda value, _challenge, scope=None: (value, False))
-    monkeypatch.setattr(pc2_local_solver, "node_owns_last_request", lambda *_args, **_kwargs: True)
+    patch_loop_dependency(monkeypatch, "_load_fallback_state", lambda: dict(state))
+    patch_loop_dependency(monkeypatch, "_save_fallback_state", lambda _state: None)
+    patch_loop_dependency(
+        monkeypatch,
+        "_sync_challenge_state",
+        lambda value, _challenge, scope=None: (value, False),
+    )
+
+    def unexpected_sleep(_seconds):
+        raise AssertionError("owned challenge must reach the solver without waiting")
+
+    monkeypatch.setattr(pc2_local_solver.time, "sleep", unexpected_sleep)
+
     def fake_slider_probe(_endpoint, *, target_url=None):
         probed_urls.append(target_url)
         return probe_target
 
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_browser_for_slider", fake_slider_probe)
+    patch_loop_dependency(
+        monkeypatch, "check_cdp_browser_for_slider", fake_slider_probe
+    )
 
     def fake_run_solver(_endpoint, target_url, **kwargs) -> bool:
         solved_urls.append(target_url)
         captured.append(kwargs)
         raise SystemExit
 
-    monkeypatch.setattr(pc2_local_solver, "run_solver_local_with_deadline", fake_run_solver)
+    patch_loop_dependency(
+        monkeypatch, "run_solver_local_with_deadline", fake_run_solver
+    )
 
     with pytest.raises(SystemExit):
         pc2_local_solver.local_solver_loop(poll_seconds=1)
@@ -369,6 +430,7 @@ def test_paused_api_trigger_probes_and_passes_existing_slider_target(monkeypatch
     assert captured[0]["drag_profile_offset"] == 1
     assert probed_urls == ["https://detail.example.test/item"]
     assert solved_urls == ["https://detail.example.test/item"]
+
 
 def test_solver_request_target_urls_preserve_priority_and_remove_duplicates() -> None:
     last_request = {

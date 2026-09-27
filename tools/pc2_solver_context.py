@@ -12,7 +12,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-if str(REPO_ROOT) not in sys.path: sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.captcha_solver import CaptchaSolver
 
@@ -20,67 +21,26 @@ from tools.internal_api_http import fetch_json, post_json
 
 from tools.pc2_auth_recovery import process_nas_auth_recovery_once
 
-# Remote API addresses must come from the runtime environment.  Loopback is a
-# safe development fallback and avoids embedding a deployment topology in the
-# solver image.
-DEFAULT_API_BASE_URL = os.environ.get("FAPAI_API_BASE_URL", "http://127.0.0.1:8001/api")
-
-DEFAULT_CDP_ENDPOINT = os.environ.get("FAPAI_CDP_ENDPOINT", "http://127.0.0.1:9223")
-
-DEFAULT_POLL_SECONDS = int(os.environ.get("FAPAI_LOCAL_SOLVER_POLL_SECONDS", "5"))
-
-DEFAULT_MAX_ATTEMPTS = 1
-
-DEFAULT_DRAG_PROFILE_VARIANTS = 3
-
-AUTH_COMPLETE_REQUEST_ATTEMPTS = int(os.environ.get("FAPAI_AUTH_COMPLETE_REQUEST_ATTEMPTS", "3"))
-
-AUTH_COMPLETE_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("FAPAI_AUTH_COMPLETE_REQUEST_TIMEOUT_SECONDS", "15"))
-
-AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS = float(os.environ.get("FAPAI_AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS", "1"))
-
-AUTH_COMPLETE_RETRY_BASE_SECONDS = float(os.environ.get("FAPAI_AUTH_COMPLETE_RETRY_BASE_SECONDS", "5"))
-
-AUTH_COMPLETE_RETRY_MAX_SECONDS = float(os.environ.get("FAPAI_AUTH_COMPLETE_RETRY_MAX_SECONDS", "60"))
-
-AUTH_COMPLETE_PENDING_MAX_SECONDS = float(
-    os.environ.get("FAPAI_AUTH_COMPLETE_PENDING_MAX_SECONDS", "120")
-)
-
-RECENT_HEALTHY_AUTH_MAX_AGE_SECONDS = float(
-    os.environ.get("FAPAI_RECENT_HEALTHY_AUTH_MAX_AGE_SECONDS", "3600")
-)
-
-POST_AUTH_CDP_PROBE_GRACE_SECONDS = float(
-    os.environ.get("FAPAI_POST_AUTH_CDP_PROBE_GRACE_SECONDS", "180")
-)
-
-SOLVER_EXECUTION_TIMEOUT_SECONDS = float(
-    os.environ.get("FAPAI_LOCAL_SOLVER_EXECUTION_TIMEOUT_SECONDS", "180")
-)
-
-SOLVER_TERMINATE_GRACE_SECONDS = float(
-    os.environ.get("FAPAI_LOCAL_SOLVER_TERMINATE_GRACE_SECONDS", "5")
-)
-
-SOLVER_HEARTBEAT_PATH = Path(
-    os.environ.get("FAPAI_LOCAL_SOLVER_HEARTBEAT_PATH", "/tmp/fapaifang-local-solver-heartbeat.json")
-)
-
-AUTH_RECOVERY_SNAPSHOT_PATH = Path(
-    os.environ.get("FAPAI_NAS_AUTH_RECOVERY_SNAPSHOT_PATH")
-    or os.environ.get("FAPAI_COOKIE_SNAPSHOT", "/data/secrets/nodes/pc2/taobao-cookies.json")
-)
-
-AUTH_RECOVERY_MARKER_PATH = Path(
-    os.environ.get(
-        "FAPAI_NAS_AUTH_RECOVERY_MARKER_PATH",
-        str(REPO_ROOT / ".codex-temp" / "bridge-control" / "pc2-auth-recovery.json"),
-    )
-)
-
-AUTH_RECOVERY_TOKEN_PATH = Path(
-    os.environ.get("FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE", "/data/secrets/nas-auth-recovery.token")
+from tools.pc2_solver_config import (
+    AUTH_COMPLETE_PENDING_MAX_SECONDS,
+    AUTH_COMPLETE_REQUEST_ATTEMPTS,
+    AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS,
+    AUTH_COMPLETE_REQUEST_TIMEOUT_SECONDS,
+    AUTH_COMPLETE_RETRY_BASE_SECONDS,
+    AUTH_COMPLETE_RETRY_MAX_SECONDS,
+    AUTH_RECOVERY_MARKER_PATH,
+    AUTH_RECOVERY_SNAPSHOT_PATH,
+    AUTH_RECOVERY_TOKEN_PATH,
+    DEFAULT_API_BASE_URL,
+    DEFAULT_CDP_ENDPOINT,
+    DEFAULT_DRAG_PROFILE_VARIANTS,
+    DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_POLL_SECONDS,
+    POST_AUTH_CDP_PROBE_GRACE_SECONDS,
+    RECENT_HEALTHY_AUTH_MAX_AGE_SECONDS,
+    SOLVER_EXECUTION_TIMEOUT_SECONDS,
+    SOLVER_HEARTBEAT_PATH,
+    SOLVER_TERMINATE_GRACE_SECONDS,
 )
 
 __all__ = [name for name in globals() if not name.startswith("__")]

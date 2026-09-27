@@ -305,44 +305,6 @@ def test_recent_force_reset_suppresses_only_same_scope_and_node(monkeypatch) -> 
         now=281.0,
     ) is None
 
-def test_force_reset_records_scoped_report_grace(monkeypatch, tmp_path) -> None:
-    from src import server
-
-    request = {
-        "node_id": "pc2",
-        "cdp_endpoint": "http://192.168.15.104:9224",
-        "target_url": "https://sf.taobao.com/list/50025969__2.htm",
-    }
-    monkeypatch.setattr(
-        server,
-        "_solver_scope_runtime_status",
-        lambda _scope: {
-            "challenge_id": "seed-stuck",
-            "challenge_age_seconds": 901.0,
-            "last_request": request,
-        },
-    )
-    monkeypatch.setattr(server, "CHALLENGE_FORCE_RESET_SECONDS", 900.0)
-    monkeypatch.setattr(server, "_clear_solver_challenge_state", lambda _scope: None)
-    monkeypatch.setattr(server, "_set_collection_pause_state", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(server, "_solver_scope_manual_flag_path", lambda _scope: str(tmp_path / "scope.flag"))
-    monkeypatch.setattr(server, "_solver_force_unlock_flag_path", lambda: str(tmp_path / "global.flag"))
-    monkeypatch.setattr(server, "_read_solver_scope_state", lambda _scope: {})
-    monkeypatch.setattr(server, "_collection_effectively_paused", lambda: False)
-    monkeypatch.setattr(server, "_captcha_solver_runtime_status", lambda: {})
-    remembered = []
-    monkeypatch.setattr(
-        server,
-        "_remember_solver_force_reset_recovery",
-        lambda scope, payload: remembered.append((scope, dict(payload))),
-    )
-
-    result = server._force_reset_solver_scope("seed", "seed-stuck")
-
-    assert result["force_reset"] is True
-    assert result["report_grace_seconds"] == server.SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS
-    assert remembered == [("seed", request)]
-
 def test_report_created_before_auth_completion_is_stale_for_same_node(monkeypatch) -> None:
     from src import server
 

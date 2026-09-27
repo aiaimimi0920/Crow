@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src import manual_review_status
 from tools.test.avm_http_contract_context import *  # noqa: F401,F403
 
 
@@ -65,13 +66,13 @@ class AVMHttpContractPart07:
         self.assertRegex(body['error']['details']['error_id'], r'^[a-f0-9]{16}$')
 
     def test_manual_review_control_plane_status_records_integrity_once_per_request(self):
-        original = server_module.record_manual_review_control_plane_integrity
+        original = manual_review_status.record_manual_review_control_plane_integrity
         calls = []
 
         def _spy(data_root, integrity):
             calls.append(dict(integrity))
             return original(data_root, integrity)
-        with mock.patch.object(server_module, 'record_manual_review_control_plane_integrity', side_effect=_spy):
+        with mock.patch.object(manual_review_status, 'record_manual_review_control_plane_integrity', side_effect=_spy):
             (status, payload) = self._get_json('/api/avm/manual_review_control_plane_status')
         self.assertEqual(status, 200)
         self.assertEqual(payload['manual_review_control_plane_integrity']['integrity_status'], 'healthy_json_runtime')
@@ -147,13 +148,13 @@ class AVMHttpContractPart07:
                     self.assertEqual(payload['applied_filters']['limit'], 0)
 
     def test_analysis_manual_review_control_plane_status_records_integrity_once_per_request(self):
-        original = server_module.record_manual_review_control_plane_integrity
+        original = manual_review_status.record_manual_review_control_plane_integrity
         calls = []
 
         def _spy(data_root, integrity):
             calls.append(dict(integrity))
             return original(data_root, integrity)
-        with mock.patch.object(server_module, 'record_manual_review_control_plane_integrity', side_effect=_spy):
+        with mock.patch.object(manual_review_status, 'record_manual_review_control_plane_integrity', side_effect=_spy):
             (status, payload) = self._get_json('/api/analysis/manual_review_control_plane_status')
         self.assertEqual(status, 200)
         self.assertEqual(payload['manual_review_control_plane_integrity']['integrity_status'], 'healthy_json_runtime')

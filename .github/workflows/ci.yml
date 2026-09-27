@@ -65,9 +65,97 @@ jobs:
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/archive_json_io.py src/collection_jobs.py src/collection_maintenance_jobs.py tools/test/collection_job_checks.py tools/test/test_collection_jobs.py tools/test/test_collection_job_http.py tools/test/test_archive_json_preservation.py tools/test/test_server_source_contract.py
       - run: python -m ruff format --check src/archive_json_io.py src/collection_jobs.py src/collection_maintenance_jobs.py tools/test/collection_job_checks.py tools/test/test_collection_jobs.py tools/test/test_collection_job_http.py tools/test/test_archive_json_preservation.py tools/test/test_server_source_contract.py
       - run: python -m mypy --strict --follow-imports skip src/collection_http_server.py src/collection_jobs.py src/collection_maintenance_jobs.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection_job_control.py tools/test/test_collection_job_lifecycle.py tools/test/test_collection_job_cancel_http.py tools/test/test_collection_job_stop_boundaries.py
+      - run: python -m ruff format --check src/collection_job_control.py tools/test/test_collection_job_lifecycle.py tools/test/test_collection_job_cancel_http.py tools/test/test_collection_job_stop_boundaries.py
+      - run: python -m mypy --strict --follow-imports skip src/collection_job_control.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B conftest.py tools/test/test_quality_collection_runtime.py tools/test/test_legacy_dispatch_utc.py
+      - run: python -m ruff format --check conftest.py tools/test/test_quality_collection_runtime.py tools/test/test_legacy_dispatch_utc.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_engine_control.py tools/test/test_collection_engine_restart.py
+      - run: python -m ruff format --check src/server_engine_control.py tools/test/test_collection_engine_restart.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/server_engine_control.py
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/solver_execution_state.py tools/test/test_server_solver_run_ownership.py tools/test/test_manual_review_job_http.py tools/test/test_report_job_http.py
       - run: python -m ruff format --check src/solver_execution_state.py tools/test/test_server_solver_run_ownership.py tools/test/test_manual_review_job_http.py tools/test/test_report_job_http.py
       - run: python -m mypy --strict --follow-imports skip src/solver_execution_state.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_request_guard.py src/server_collection_settings.py src/server_auto_tuning.py src/server_desktop_auth.py tools/test/test_server_request_guard_ownership.py tools/test/test_collection_settings.py tools/test/test_control_plane_error_contracts.py
+      - run: python -m ruff format --check src/server_request_guard.py src/server_collection_settings.py src/server_auto_tuning.py src/server_desktop_auth.py tools/test/test_server_request_guard_ownership.py tools/test/test_collection_settings.py tools/test/test_control_plane_error_contracts.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/server_request_guard.py src/server_collection_settings.py src/server_auto_tuning.py src/server_desktop_auth.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_runtime_paths.py src/collection/__init__.py src/collection/adapters/__init__.py tools/test/test_server_native_imports.py tools/test/test_stage_auth_recovery.py
+      - run: python -m ruff format --check src/server_runtime_paths.py src/collection/__init__.py src/collection/adapters/__init__.py tools/test/test_server_native_imports.py tools/test/test_stage_auth_recovery.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/server_runtime_paths.py src/collection/__init__.py src/collection/adapters/__init__.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_http_responses.py src/server_collection_jobs.py
+      - run: python -m ruff format --check src/server_http_responses.py src/server_collection_jobs.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/server_request_guard.py src/server_http_responses.py src/server_collection_jobs.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/solver_scope_runtime.py src/server_solver_scope.py tools/test/test_solver_scope_runtime.py
+      - run: python -m ruff format --check src/solver_scope_runtime.py src/server_solver_scope.py tools/test/test_solver_scope_runtime.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/solver_scope_runtime.py src/server_solver_scope.py src/collection/adapters/taobao_solver_target.py src/solver_request_payload.py src/collection_control_state.py src/runtime_state.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B tools/pc2_solver_config.py tools/pc2_solver_transport.py tools/pc2_solver_manual_handoff.py tools/test/test_pc2_solver_transport.py tools/test/test_pc2_solver_defaults.py
+      - run: python -m ruff format --check tools/pc2_solver_config.py tools/pc2_solver_transport.py tools/pc2_solver_manual_handoff.py tools/test/test_pc2_solver_transport.py tools/test/test_pc2_solver_defaults.py tools/pc2_solver_context.py tools/pc2_local_solver.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_config.py tools/pc2_solver_transport.py tools/pc2_solver_manual_handoff.py
+      - run: python -m ruff check tools/pc2_solver_scope_policy.py tools/test/test_pc2_solver_scope_policy.py
+      - run: python -m ruff format --check tools/pc2_solver_scope_policy.py tools/test/test_pc2_solver_scope_policy.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_scope_policy.py
+      - run: python -m ruff check tools/pc2_solver_scope.py tools/test/test_pc2_scope_io.py
+      - run: python -m ruff format --check tools/pc2_solver_scope.py tools/test/test_pc2_scope_io.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_scope.py
+      - run: python -m ruff check tools/pc2_solver_state_store.py tools/test/test_pc2_solver_state_store.py
+      - run: python -m ruff format --check tools/pc2_solver_state_store.py tools/test/test_pc2_solver_state_store.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_state_store.py
+      - run: python -m ruff check tools/pc2_solver_retry_state.py tools/test/test_pc2_solver_retry_state.py
+      - run: python -m ruff format --check tools/pc2_solver_retry_state.py tools/test/test_pc2_solver_retry_state.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_retry_state.py
+      - run: python -m ruff check tools/pc2_solver_fallback.py tools/pc2_solver_auth_pending.py tools/test/test_pc2_pending_lifecycle.py
+      - run: python -m ruff format --check tools/pc2_solver_fallback.py tools/pc2_solver_auth_pending.py tools/test/test_pc2_pending_lifecycle.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_fallback.py tools/pc2_solver_auth_pending.py
+      - run: python -m ruff check tools/pc2_solver_cdp.py tools/test/test_pc2_cdp_probes.py
+      - run: python -m ruff format --check tools/pc2_solver_cdp.py tools/test/test_pc2_cdp_probes.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_cdp.py
+      - run: python -m ruff check tools/pc2_solver_execution.py tools/test/test_pc2_execution_owner.py
+      - run: python -m ruff format --check tools/pc2_solver_execution.py tools/test/test_pc2_execution_owner.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_execution.py
+      - run: python -m ruff check tools/pc2_solver_loop.py tools/pc2_solver_loop_control.py tools/pc2_solver_loop_probe.py tools/pc2_solver_loop_failure.py tools/test/test_pc2_loop_cadence.py tools/test/test_pc2_loop_control.py tools/test/pc2_loop_test_dependencies.py
+      - run: python -m ruff format --check tools/pc2_solver_loop.py tools/pc2_solver_loop_control.py tools/pc2_solver_loop_probe.py tools/pc2_solver_loop_failure.py tools/test/test_pc2_loop_cadence.py tools/test/test_pc2_loop_control.py tools/test/pc2_loop_test_dependencies.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip tools/pc2_solver_loop.py tools/pc2_solver_loop_control.py tools/pc2_solver_loop_probe.py tools/pc2_solver_loop_failure.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/avm/service.py src/avm/service_context.py src/avm/service_data.py src/avm/service_prediction.py src/avm/service_health.py tools/test/test_avm_service_ownership.py
+      - run: python -m ruff format --check src/avm/service.py src/avm/service_context.py src/avm/service_data.py src/avm/service_prediction.py src/avm/service_health.py tools/test/test_avm_service_ownership.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection/detail_archive_fetch.py tools/fetch_missing_detail_archives.py tools/test/test_detail_fetch_entrypoints.py
+      - run: python -m ruff format --check src/collection/detail_archive_fetch.py tools/fetch_missing_detail_archives.py tools/test/test_detail_fetch_entrypoints.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/collection/detail_archive_fetch.py tools/fetch_missing_detail_archives.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/status_snapshot_values.py src/server_hybrid_history.py src/server_hybrid_lifecycle.py src/collection_status_snapshots.py src/server_hybrid_escalation_overview.py tools/test/test_hybrid_summary_ownership.py
+      - run: python -m ruff format --check src/status_snapshot_values.py src/server_hybrid_history.py src/server_hybrid_lifecycle.py src/collection_status_snapshots.py src/server_hybrid_escalation_overview.py src/server_hybrid_context.py src/server_hybrid_runtime.py tools/test/test_hybrid_summary_ownership.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/status_snapshot_values.py src/server_hybrid_history.py src/server_hybrid_lifecycle.py src/collection_status_snapshots.py src/server_hybrid_escalation_overview.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_hybrid_events.py src/server_hybrid_escalation.py src/server_hybrid_operator_summary.py src/server_hybrid_policy.py src/server_hybrid_overview.py tools/test/test_hybrid_policy_ownership.py tools/test/test_hybrid_timestamp_utc.py
+      - run: python -m ruff format --check src/server_hybrid_events.py src/server_hybrid_escalation.py src/server_hybrid_operator_summary.py src/server_hybrid_policy.py src/server_hybrid_overview.py tools/test/test_hybrid_policy_ownership.py tools/test/test_hybrid_timestamp_utc.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/status_snapshot_values.py src/server_hybrid_events.py src/server_hybrid_escalation.py src/server_hybrid_operator_summary.py src/server_hybrid_policy.py src/server_hybrid_overview.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/avm/operator_evaluation.py src/manual_review_status.py src/manual_review_context.py src/manual_review_validation.py src/server_hybrid_context.py src/server_hybrid_runtime.py tools/test/test_operator_evaluation_ownership.py tools/test/test_manual_review_runtime_ownership.py
+      - run: python -m ruff format --check src/avm/operator_evaluation.py src/manual_review_status.py src/manual_review_context.py src/manual_review_validation.py tools/test/test_operator_evaluation_ownership.py tools/test/test_manual_review_runtime_ownership.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/avm/operator_evaluation.py src/manual_review_status.py src/manual_review_context.py src/manual_review_validation.py src/server_hybrid_context.py src/server_hybrid_runtime.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection_stage_status.py src/hybrid_collection_status.py src/server_manual_review.py tools/test/test_collection_stage_status_ownership.py
+      - run: python -m ruff format --check src/collection_stage_status.py src/hybrid_collection_status.py src/server_manual_review.py tools/test/test_collection_stage_status_ownership.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/collection_stage_status.py src/hybrid_collection_status.py src/server_manual_review.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/utc_timestamps.py tools/test/test_utc_timestamps.py tools/test/test_hybrid_import_isolation.py
+      - run: python -m ruff format --check src/utc_timestamps.py tools/test/test_utc_timestamps.py tools/test/test_hybrid_import_isolation.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/utc_timestamps.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/solver_request_payload.py src/solver_request_runtime.py src/collection/adapters/taobao_solver_target.py tools/test/test_solver_request_payload.py tools/test/test_solver_request_runtime.py
+      - run: python -m ruff format --check src/solver_request_payload.py src/solver_request_runtime.py src/collection/adapters/taobao_solver_target.py tools/test/test_solver_request_payload.py tools/test/test_solver_request_runtime.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/solver_request_payload.py src/solver_request_runtime.py src/collection/adapters/taobao_solver_target.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B scripts/run_quality_tests.py tools/test/test_quality_runner.py
+      - run: python -m ruff format --check scripts/run_quality_tests.py tools/test/test_quality_runner.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/server_collection_status.py src/auth_cookie_snapshot_jobs.py src/server_module_exports.py tools/test/test_server_module_exports.py
+      - run: python -m ruff format --check src/server_collection_status.py src/auth_cookie_snapshot_jobs.py src/server_module_exports.py tools/test/test_server_module_exports.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/server_collection_status.py src/auth_cookie_snapshot_jobs.py src/server_module_exports.py src/auth_cookie_snapshot_scheduler.py src/auth_cookie_snapshot_retry.py src/collection_repository_status.py src/collection_queue_counts.py src/collection_status_payload.py
+      - run: python -m ruff check src/auth_cookie_snapshot_scheduler.py tools/test/test_auth_cookie_snapshot_scheduler.py src/auth_cookie_snapshot_retry.py tools/test/test_auth_cookie_snapshot_retry.py src/collection_repository_status.py tools/test/test_collection_repository_status.py src/collection_queue_counts.py src/collection_status_payload.py src/auth_completion_store.py src/collection_observer_queries.py src/collection_observer_commands.py tools/test/test_solver_challenge_durability.py tools/test/test_collection_observer_commands.py tools/test/test_collection_resume_commit.py tools/test/test_server_native_imports.py
+      - run: python -m ruff format --check src/auth_cookie_snapshot_scheduler.py tools/test/test_auth_cookie_snapshot_scheduler.py src/auth_cookie_snapshot_retry.py tools/test/test_auth_cookie_snapshot_retry.py src/collection_repository_status.py tools/test/test_collection_repository_status.py src/collection_queue_counts.py src/collection_status_payload.py src/auth_completion_store.py src/collection_observer_queries.py src/collection_observer_commands.py tools/test/test_solver_challenge_durability.py tools/test/test_collection_observer_commands.py tools/test/test_collection_resume_commit.py tools/test/test_server_native_imports.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/auth_cookie_snapshot_scheduler.py src/auth_cookie_snapshot_retry.py src/collection_repository_status.py src/collection_queue_counts.py src/collection_status_payload.py src/auth_completion_store.py src/collection_observer_queries.py src/collection_observer_commands.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/data_fixer.py tools/test/test_data_fixer_app.py tools/test/test_data_fixer_community_prompt.py
+      - run: python -m ruff format --check src/data_fixer.py tools/test/test_data_fixer_app.py tools/test/test_data_fixer_community_prompt.py
+      - run: python -m ruff check --select E9,E722,F63,F7,F821 src/data_fixer_context.py src/data_fixer_app_part_01.py src/data_fixer_app_part_02.py src/data_fixer_app_part_03.py src/data_fixer_app_part_04.py src/data_fixer_app_part_05.py src/data_fixer_runtime.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/captcha_solver.py src/captcha_context.py tools/test/test_captcha_native_imports.py tools/test/test_captcha_solver_improvements.py tools/test/test_pc2_retryable_challenges.py tools/test/test_pc2_linux_window_focus.py tools/test/test_pc2_x11_button_recovery.py
+      - run: python -m ruff check --select E9,E722,F63,F7,F821 --config 'include=["**/captcha_*.py"]' src
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B --config 'include=["**/captcha_solver_test_*.py"]' tools/test
+      - run: python -m ruff format --check src/captcha_solver.py src/captcha_context.py tools/test/captcha_solver_test_context.py tools/test/test_captcha_native_imports.py tools/test/test_captcha_solver_improvements.py tools/test/test_pc2_retryable_challenges.py tools/test/test_pc2_linux_window_focus.py tools/test/test_pc2_x11_button_recovery.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/llm_helper.py tools/test/test_llm_native_ownership.py tools/test/llm_helper_openai_compatible_test_context.py tools/test/llm_helper_openai_compatible_test_part_01.py tools/test/llm_helper_openai_compatible_test_part_02.py
+      - run: python -m ruff format --check src/llm_helper.py tools/test/test_llm_native_ownership.py tools/test/llm_helper_openai_compatible_test_context.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/llm_helper.py
       - run: python -m ruff check --select E9,E722,F63,F7,F82,B src/server_routes.py src/storage/seed_scan_candidates.py src/storage/repository_seed_scan_pages.py
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B --config 'include=["**/repository_*.py"]' --exclude 'repository_context.py' src/storage
       - run: python -m ruff format --check src/server_routes.py src/storage/seed_scan_candidates.py tools/test/test_seed_candidate_windows.py
@@ -76,6 +164,8 @@ jobs:
       - run: python -m mypy --strict --follow-imports skip src/captcha_budget.py src/llm_evidence_prompt.py scripts/quality_suites.py src/server_routes.py src/storage/seed_scan_candidates.py
       - run: python scripts/run_quality_tests.py --suite fast
       - run: python scripts/run_quality_tests.py --suite security
+      - run: python scripts/run_quality_tests.py --suite captcha
+      - run: python scripts/run_quality_tests.py --suite llm
       - run: python scripts/run_quality_tests.py --suite postgres
         env:
           CROW_TEST_POSTGRES_URL: postgresql+psycopg://quality:isolated_ci_only@127.0.0.1:5432/crow_quality

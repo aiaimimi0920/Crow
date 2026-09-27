@@ -158,7 +158,6 @@ def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp
         extract_auction_data=extract_auction_data,
         extract_avm_risk_features=extract_avm_risk_features,
         log_prediction_event=lambda **_kwargs: None,
-        current_processing=set(),
         queue_pending=lambda _item_id: True,
         set_seen=lambda *_args: None,
         remove_pending=lambda candidate_id: state["pending_tasks"].remove(candidate_id),

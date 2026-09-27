@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import copy
-from collections.abc import Iterator
 import ipaddress
-from pathlib import Path
 import socket
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
-
 
 _AVM_HTTP_CONTRACT = "test_avm_http_contract.py"
 _HYBRID_SEED_TEST = "test_run_hybrid_seed_collection.py"
@@ -39,10 +37,28 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+@pytest.fixture(autouse=True)
+def _isolate_pc2_fallback_state(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not Path(str(request.node.path)).name.startswith("test_pc2_"):
+        return
+    from tools import pc2_solver_state_store
+
+    tmp_path: Path = request.getfixturevalue("tmp_path")
+    monkeypatch.setattr(
+        pc2_solver_state_store, "FALLBACK_STATE_PATH", tmp_path / "pc2-state.json"
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     if config.getoption("--allow-live-network"):
         return
-    skip_live = pytest.mark.skip(reason="live network tests require --allow-live-network")
+    skip_live = pytest.mark.skip(
+        reason="live network tests require --allow-live-network"
+    )
     for item in items:
         if item.get_closest_marker("live_network") is not None:
             item.add_marker(skip_live)
@@ -51,7 +67,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 def _network_host_is_local(host: Any) -> bool:
     if host is None:
         return True
-    normalized = str(host.decode() if isinstance(host, bytes) else host).strip().strip("[]")
+    normalized = (
+        str(host.decode() if isinstance(host, bytes) else host).strip().strip("[]")
+    )
     if not normalized or normalized.lower() == "localhost":
         return True
     try:
@@ -107,7 +125,9 @@ def _deny_external_network(
     def checked_create_connection(address: Any, *args: Any, **kwargs: Any) -> Any:
         host = address[0] if isinstance(address, tuple) and address else address
         if not _network_host_is_local(host):
-            raise OSError(f"external network disabled during tests (create_connection): {host}")
+            raise OSError(
+                f"external network disabled during tests (create_connection): {host}"
+            )
         return original_create_connection(address, *args, **kwargs)
 
     def checked_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
@@ -117,7 +137,9 @@ def _deny_external_network(
         if str(host or "").lower() == "localhost":
             for result in results:
                 address = result[4]
-                resolved_host = address[0] if isinstance(address, tuple) and address else address
+                resolved_host = (
+                    address[0] if isinstance(address, tuple) and address else address
+                )
                 if not _network_host_is_local(resolved_host):
                     raise OSError(
                         f"localhost resolved outside loopback during tests: {resolved_host}"
@@ -156,6 +178,7 @@ def _deny_external_network(
 
 def pytest_itemcollected(item: pytest.Item) -> None:
     from scripts.quality_suites import UNIT_FILES
+
     path = Path(str(item.path))
     if path.name in UNIT_FILES:
         item.add_marker(pytest.mark.unit)
@@ -197,16 +220,19 @@ def _deny_unmocked_hybrid_seed_http(
 def _use_fast_local_server_poll(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> Iterator[None]:
     """Isolate HTTP state and avoid the BaseServer 500 ms shutdown tax."""
 
     module_name = Path(str(request.node.path)).name
-    collection_status = module_name == "test_server_collection_api_status.py" or module_name.startswith("server_collection_api_status_test_part_")
+    collection_status = (
+        module_name == "test_server_collection_api_status.py"
+        or module_name.startswith("server_collection_api_status_test_part_")
+    )
     if module_name != _AVM_HTTP_CONTRACT and not collection_status:
         yield
         return
 
+    tmp_path: Path = request.getfixturevalue("tmp_path")
     from src import server as server_module
     from src.runtime_state import RuntimeState
 
@@ -217,70 +243,21 @@ def _use_fast_local_server_poll(
         original_serve_forever(server, poll_interval=poll_interval)
 
     monkeypatch.setattr(ReusableTCPServer, "serve_forever", serve_forever)
-    isolated_names = (
-        "AUTH_COMPLETION_LOCK",
-        "AUTH_COMPLETION_CONFIRMATIONS",
-        "AUTH_COMPLETION_FINALIZE_LOCK",
-        "AUTH_COOKIE_SNAPSHOT_LOCK",
-        "AUTH_COOKIE_SNAPSHOT_STATE",
-        "AUTH_COOKIE_SNAPSHOT_THREAD",
-        "DATA_LOCK",
-        "DATA_DIR",
-        "DISPATCHED_TASKS",
-        "PENDING_TASKS",
-        "SEEN_IDS",
-        "RUNTIME",
-    )
-    original_state = {
-        name: copy.deepcopy(value) if isinstance(value, (dict, list, set)) else value
-        for name in isolated_names
-        if (value := getattr(server_module, name, None)) is not None or hasattr(server_module, name)
-    }
     runtime_root = tmp_path / "server-runtime"
     runtime_root.mkdir(parents=True, exist_ok=True)
     if collection_status:
         monkeypatch.chdir(runtime_root)
         monkeypatch.delenv("FAPAI_SOLVER_STATE_DIR", raising=False)
     neutral_runtime = RuntimeState()
-    neutral_state = {
-        "AUTH_COMPLETION_LOCK": neutral_runtime.recovery.lock,
-        "AUTH_COMPLETION_CONFIRMATIONS": {},
-        "AUTH_COMPLETION_FINALIZE_LOCK": neutral_runtime.recovery.finalize_lock,
-        "AUTH_COOKIE_SNAPSHOT_LOCK": neutral_runtime.cookie_snapshot.lock,
-        "AUTH_COOKIE_SNAPSHOT_STATE": {
-            "status": "idle",
-            "completion_id": None,
-            "attempts": 0,
-            "max_attempts": 0,
-            "refreshed": False,
-            "retry_queued": False,
-        },
-        "AUTH_COOKIE_SNAPSHOT_THREAD": None,
-        "DATA_LOCK": neutral_runtime.collection.lock,
-        "DATA_DIR": str(runtime_root),
-        "DISPATCHED_TASKS": {},
-        "PENDING_TASKS": [],
-        "SEEN_IDS": {},
-        "RUNTIME": neutral_runtime,
-    }
-    for name, value in neutral_state.items():
-        setattr(server_module, name, value)
+    monkeypatch.setattr(server_module, "RUNTIME", neutral_runtime)
+    monkeypatch.setattr(server_module, "DATA_DIR", str(runtime_root))
     try:
         yield
     finally:
-        snapshot_thread = getattr(server_module, "AUTH_COOKIE_SNAPSHOT_THREAD", None)
-        leaked_snapshot_thread = None
-        if (
-            snapshot_thread is not None
-            and snapshot_thread is not original_state.get("AUTH_COOKIE_SNAPSHOT_THREAD")
-            and snapshot_thread.is_alive()
-        ):
+        snapshot_thread = neutral_runtime.cookie_snapshot.active_thread()
+        if snapshot_thread is not None:
             snapshot_thread.join(timeout=1.0)
             if snapshot_thread.is_alive():
-                leaked_snapshot_thread = snapshot_thread.name
-        for name, value in original_state.items():
-            setattr(server_module, name, value)
-        if leaked_snapshot_thread is not None:
-            raise AssertionError(
-                f"AVM HTTP contract leaked background thread: {leaked_snapshot_thread}"
-            )
+                raise AssertionError(
+                    f"AVM HTTP contract leaked background thread: {snapshot_thread.name}"
+                )

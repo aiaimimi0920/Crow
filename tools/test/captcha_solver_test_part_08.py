@@ -1,4 +1,5 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+from src import captcha_solver
+from tools.test.captcha_solver_test_context import set_solver_platform
 
 
 def test_map_css_to_screen_prefers_render_widget_over_screenshot() -> None:
@@ -158,7 +159,7 @@ def test_map_css_to_screen_rejects_implausible_screenshot_after_target_activatio
     assert mapped["activation_verified"] is True
 
 def test_map_css_to_screen_bounds_template_search_around_expected_slider(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "nt")
+    set_solver_platform(monkeypatch, "nt")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {
@@ -190,7 +191,7 @@ def test_map_css_to_screen_bounds_template_search_around_expected_slider(monkeyp
     assert mapped["activation_verified"] is True
 
 def test_linux_map_requires_screenshot_match_for_slider(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {
@@ -212,7 +213,7 @@ def test_linux_map_requires_screenshot_match_for_slider(monkeypatch) -> None:
     assert solver.last_failure_reason == "screen_mapping_unverified"
 
 def test_linux_x11_mapping_matches_the_exact_cdp_window(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._linux_window_id = "101"
@@ -252,7 +253,7 @@ def test_linux_x11_mapping_matches_the_exact_cdp_window(monkeypatch) -> None:
     assert mapped["frame_bottom"] == 32.0
 
 def test_linux_x11_mapping_falls_back_when_frame_extents_are_unavailable(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._linux_window_id = "101"
@@ -284,7 +285,7 @@ def test_linux_x11_mapping_falls_back_when_frame_extents_are_unavailable(monkeyp
     assert mapped["frame_bottom"] == 0.0
 
 def test_linux_map_accepts_verified_x11_geometry_when_gpu_screenshot_is_opaque(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {
@@ -318,7 +319,7 @@ def test_linux_map_accepts_verified_x11_geometry_when_gpu_screenshot_is_opaque(m
     assert mapped["activation_verified"] is True
 
 def test_linux_map_trusts_nearby_screenshot_over_dpr_fallback(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {
@@ -353,7 +354,7 @@ def test_linux_map_trusts_nearby_screenshot_over_dpr_fallback(monkeypatch) -> No
     assert mapped["located"] is True
 
 def test_linux_map_rechecks_full_viewport_after_far_clipped_match(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {

@@ -1,0 +1,73 @@
+"""Explicit dependencies for the legacy server solver execution lifecycle."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Container, Mapping
+from logging import Logger
+from typing import TYPE_CHECKING, Protocol
+
+from .solver_execution_guard import SolverExecutionHost
+
+if TYPE_CHECKING:
+    from .solver_execution_state import SolverExecution
+
+SolverRequest = dict[str, object] | None
+
+
+class SolverClock(Protocol):
+    def monotonic(self) -> float: ...
+    def time(self) -> float: ...
+
+
+class SolverPath(Protocol):
+    def exists(self, path: str) -> bool: ...
+
+
+class SolverFilesystem(Protocol):
+    path: SolverPath
+
+
+class SolverWorker(Protocol):
+    solve_deadline: float
+    cancel_checker: Callable[[], bool]
+    last_failure_reason: str | None
+
+    def _preflight_current_challenge(self) -> Mapping[str, object]: ...
+    def solve(self) -> bool: ...
+
+
+class SolverRunHost(SolverExecutionHost, Protocol):
+    CHALLENGE_SCOPES: Container[str]
+    time: SolverClock
+    os: SolverFilesystem
+    logger: Logger
+
+    def _challenge_scope_for_request(self, request: SolverRequest) -> str: ...
+    def _captcha_solver_runtime_status(self) -> Mapping[str, object]: ...
+    def _solver_scope_runtime_status(self, scope: str) -> Mapping[str, object]: ...
+    def _build_solver_for_request(self, request: SolverRequest) -> SolverWorker: ...
+    def _clear_auth_lock_after_solver_success(self, *, scope: str | None) -> object: ...
+    def _release_solver_submission(self, token: object) -> object: ...
+    def _activate_solver_submission(
+        self, request: SolverRequest, token: object
+    ) -> tuple[bool, str, float]: ...
+    def _solver_max_runtime_seconds(self) -> float: ...
+    def _solver_execution_cancelled(self, execution: SolverExecution) -> bool: ...
+    def _set_collection_pause_state(
+        self, paused: bool, reason: str | None = None, *, scope: str | None
+    ) -> object: ...
+    def _solver_worker_quiesce_seconds(self) -> float: ...
+    def _mark_solver_manual_required(self, *, scope: str | None) -> str | None: ...
+    def _wait_for_solver_cdp_ready(
+        self,
+        request: SolverRequest,
+        *,
+        deadline: float,
+        cancel_checker: Callable[[], bool],
+    ) -> bool: ...
+    def _solver_force_unlock_flag_path(self) -> str: ...
+    def _clear_solver_manual_required_state(self) -> object: ...
+    def _clear_solver_challenge_state(self, scope: str | None) -> str | None: ...
+    def _wait_for_solver_manual_poll(
+        self, execution: SolverExecution, deadline: float
+    ) -> bool: ...

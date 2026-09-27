@@ -18,7 +18,7 @@ from src.collection.seed_scan_policy import (
 
 from .models import FapaiSeedScanJob, FapaiSeedScanProgress
 from .repository_context import _normalized_seed_text, _utc_now
-
+from .seed_scan_job_status import apply_job_status, refresh_job_statuses
 
 SEED_SCAN_MAINTENANCE_BATCH_SIZE = 128
 _TAOBAO_SOURCE_PLATFORMS = frozenset({"taobao", "taobao_judicial", "taobao_sf", "sf.taobao.com"})
@@ -150,34 +150,21 @@ class RepositorySeedScanJobsMixin:
             _normalized_seed_text(job.job_key),
         )
 
-    def _refresh_seed_scan_job_status(self, session: Session, job_key: str, now: datetime | None = None) -> None:
+    def _refresh_seed_scan_job_status(
+        self, session: Session, job_key: str, now: datetime | None = None
+    ) -> None:
         now = now or _utc_now()
         job = session.get(FapaiSeedScanJob, job_key)
         if job is None:
             return
-        statuses = set(session.scalars(
-            select(FapaiSeedScanProgress.status)
-            .where(FapaiSeedScanProgress.job_key == job_key)
-            .distinct()
-        ))
-        if not statuses:
-            job.status = "pending"
-            job.completed_at = None
-            session.add(job)
-            return
-        if statuses and statuses.issubset({"exhausted"}):
-            job.status = "completed"
-            job.completed_at = job.completed_at or now
-        elif "blocked" in statuses and statuses.issubset({"exhausted", "blocked"}):
-            job.status = "blocked"
-            job.completed_at = None
-        elif "in_progress" in statuses:
-            job.status = "in_progress"
-            job.completed_at = None
-        else:
-            job.status = "pending"
-            job.completed_at = None
-        session.add(job)
+        statuses = set(
+            session.scalars(
+                select(FapaiSeedScanProgress.status)
+                .where(FapaiSeedScanProgress.job_key == job_key)
+                .distinct()
+            )
+        )
+        apply_job_status(session, job, statuses, now)
 
     def ensure_seed_scan_job(
         self,
@@ -403,8 +390,7 @@ class RepositorySeedScanJobsMixin:
                     row.updated_at = now
                     session.add(row)
                 session.flush()
-                for job_key in job_keys:
-                    self._refresh_seed_scan_job_status(session, job_key, now)
+                refresh_job_statuses(session, job_keys, now)
                 session.flush()
                 released += len(rows)
                 # Do not retain ORM rows from a completed batch in a long-lived

@@ -16,7 +16,9 @@ def test_concurrent_first_use_initializes_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resource: str
 ) -> None:
     repo = PropertyRepository(
-        DatabaseSettings(url=f"sqlite:///{tmp_path / 'concurrent.sqlite'}", auto_create=True)
+        DatabaseSettings(
+            url=f"sqlite:///{tmp_path / 'concurrent.sqlite'}", auto_create=True
+        )
     )
     owner, name = {
         "engine": (repository_core, "create_engine"),
@@ -77,4 +79,49 @@ def test_failed_schema_setup_can_retry(
         assert calls == 2
         assert inspect(repo.engine).has_table("property_listing")
     finally:
+        repo.engine.dispose()
+
+
+def test_interrupted_sqlite_schema_creation_rolls_back_only_new_tables(tmp_path):
+    from sqlalchemy import event
+
+    repo = PropertyRepository(
+        DatabaseSettings(
+            url=f"sqlite:///{tmp_path / 'atomic.sqlite'}", auto_create=True
+        )
+    )
+    with repo.engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE preserved (value TEXT)")
+        connection.exec_driver_sql("INSERT INTO preserved VALUES ('existing data')")
+    created = []
+
+    def interrupt(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("CREATE TABLE"):
+            created.append(statement)
+            if len(created) == 2:
+                raise RuntimeError("interrupted schema creation")
+
+    event.listen(repo.engine, "after_cursor_execute", interrupt)
+    try:
+        with pytest.raises(RuntimeError, match="interrupted schema creation"):
+            repo.initialize()
+        assert repo._initialized is False
+        assert inspect(repo.engine).get_table_names() == ["preserved"]
+        with repo.engine.connect() as connection:
+            assert (
+                connection.exec_driver_sql("SELECT value FROM preserved").scalar()
+                == "existing data"
+            )
+        event.remove(repo.engine, "after_cursor_execute", interrupt)
+        repo.initialize()
+        assert inspect(repo.engine).has_table("manual_review_receipt")
+        assert repo._initialized is True
+        with repo.engine.connect() as connection:
+            assert (
+                connection.exec_driver_sql("SELECT value FROM preserved").scalar()
+                == "existing data"
+            )
+    finally:
+        if event.contains(repo.engine, "after_cursor_execute", interrupt):
+            event.remove(repo.engine, "after_cursor_execute", interrupt)
         repo.engine.dispose()

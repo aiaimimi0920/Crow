@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import server
+from src import server, server_request_guard
 
 
 pytestmark = pytest.mark.security
@@ -17,12 +17,12 @@ WORKER_HEADERS = {"X-FAPAI-Collection-Token": WORKER_TOKEN}
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(server, "_engine_tokens", SimpleNamespace(token=lambda _role: ""))
+    monkeypatch.setattr(server_request_guard, "_engine_tokens", SimpleNamespace(token=lambda _role: ""))
     monkeypatch.setenv("FAPAI_CONTROL_PLANE_TOKEN", "test-operator")
     token_file = tmp_path / "worker.token"
     token_file.write_text(WORKER_TOKEN, encoding="utf-8")
     monkeypatch.setenv("FAPAI_COLLECTION_WORKER_TOKEN_FILE", str(token_file))
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", tmp_path / "missing-token")
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", tmp_path / "missing-token")
     with server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler) as httpd:
         thread = Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
@@ -106,9 +106,9 @@ def test_real_status_handler_redacts_recovery_snapshot(api, monkeypatch):
     }
     monkeypatch.setattr(server, "_collection_api_lightweight_status_enabled", lambda: False)
     monkeypatch.setattr(server, "_prefer_db_task_reads", lambda: False)
-    monkeypatch.setattr(server, "PENDING_TASKS", [])
+    monkeypatch.setattr(server.RUNTIME.collection, "pending_tasks", [])
     monkeypatch.setattr(server.RUNTIME.collection, "seen_ids", {})
-    monkeypatch.setattr(server, "DISPATCHED_TASKS", {})
+    monkeypatch.setattr(server.RUNTIME.collection, "dispatched_tasks", {})
     monkeypatch.setattr(
         server,
         "_seed_collection_service",
@@ -239,7 +239,7 @@ def test_cookie_snapshot_ignores_untrusted_solver_report(tmp_path, monkeypatch):
 def test_recovery_authorization_rejects_non_ascii_header_without_type_error(tmp_path, monkeypatch):
     token_file = tmp_path / "recovery.token"
     token_file.write_text("ascii-recovery-token", encoding="utf-8")
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_file)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_file)
     monkeypatch.setattr(server.NAS_AUTH_RECOVERY, "enabled", True)
 
     authorized, reason = server._nas_auth_recovery_authorized(

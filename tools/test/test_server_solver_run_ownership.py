@@ -19,7 +19,7 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(server.time, "time", lambda: 1000.0)
     monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(server, "_challenge_scope_for_request", lambda _request: "")
-    monkeypatch.setattr(server, "_captcha_solver_runtime_status", lambda: {})
+    monkeypatch.setattr(server, "_captcha_solver_runtime_status", dict)
     monkeypatch.setattr(server, "_solver_worker_quiesce_seconds", lambda: 0)
     monkeypatch.setattr(server, "_wait_for_solver_cdp_ready", lambda *_a, **_k: True)
     monkeypatch.setattr(server, "_mark_solver_manual_required", Mock())
@@ -34,6 +34,29 @@ def replace_run(server):
     )
     assert activated and reason == "started"
     return started_at
+
+
+def test_solver_runner_uses_native_function_with_handler_descriptor(runtime):
+    from src import solver_run_binding
+
+    handler = object.__new__(runtime.DataHandler)
+    assert handler.run_solver.__self__ is handler
+    assert handler.run_solver.__func__ is runtime.run_solver
+    assert runtime.run_solver.__module__ == solver_run_binding.__name__
+    assert runtime.run_solver.__name__ == "run_solver"
+    assert runtime._CONTEXT.run_solver is runtime.run_solver
+    assert not hasattr(runtime, "_IMPLEMENTATION_MODULES")
+
+
+def test_handler_file_adapter_resolves_current_writer(runtime, monkeypatch):
+    calls = []
+    handler = object.__new__(runtime.DataHandler)
+    saved = handler.update_file
+    monkeypatch.setattr(runtime, "update_file_global", lambda *args: calls.append(args))
+    data = {"value": 1}
+    assert saved("file.json", "id", data) is None
+    assert calls == [("file.json", "id", data)]
+    assert handler.log_message("%s", "private") is None
 
 
 @pytest.mark.parametrize("outcome", ["success", "failure", "exception"])

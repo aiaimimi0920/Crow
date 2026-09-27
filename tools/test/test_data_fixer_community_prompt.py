@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import sys
+import json
 from pathlib import Path
+
+from src import data_fixer
+from src import data_fixer_app_part_03 as data_fixer_ai
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-import data_fixer
 
 
 def _new_app_without_tk() -> data_fixer.DataFixerApp:
@@ -18,7 +17,10 @@ def _new_app_without_tk() -> data_fixer.DataFixerApp:
 
 
 def test_data_fixer_source_prompts_use_stable_location_index_contract():
-    source_paths = [SRC_ROOT / "data_fixer.py", *sorted(SRC_ROOT.glob("data_fixer_*.py"))]
+    source_paths = [
+        SRC_ROOT / "data_fixer.py",
+        *sorted(SRC_ROOT.glob("data_fixer_*.py")),
+    ]
     source = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
 
     assert "参考贝壳网数据库" not in source
@@ -36,9 +38,9 @@ def test_infer_location_ai_prompt_uses_stable_location_index_contract(monkeypatc
         captured.append(prompt)
         return '{"所属小区": "朝阳区八里庄位置片区", "最靠近商圈": "八里庄"}'
 
-    monkeypatch.setattr(data_fixer, "AI_AVAILABLE", True)
-    monkeypatch.setattr(data_fixer, "get_model_pool", lambda: [{"name": "fake"}])
-    monkeypatch.setattr(data_fixer, "simple_ai_call", fake_simple_ai_call, raising=False)
+    monkeypatch.setattr(data_fixer_ai, "AI_AVAILABLE", True)
+    monkeypatch.setattr(data_fixer_ai, "get_model_pool", lambda: [{"name": "fake"}])
+    monkeypatch.setattr(data_fixer_ai, "simple_ai_call", fake_simple_ai_call)
 
     result = _new_app_without_tk()._infer_location_ai(
         "北京市朝阳区八里庄远洋天地小区7号楼1单元101室",
@@ -59,9 +61,13 @@ def test_infer_full_info_ai_prompt_uses_stable_location_index_contract(monkeypat
         captured.append(prompt)
         return '{"所属小区": "朝阳区八里庄位置片区", "最靠近商圈": "八里庄", "建筑面积": 88.5}'
 
-    monkeypatch.setattr(data_fixer, "AI_AVAILABLE", True)
-    monkeypatch.setattr(data_fixer, "get_model_pool", lambda: [{"name": "fake"}, {"name": "fake-infer"}])
-    monkeypatch.setattr(data_fixer, "simple_ai_call", fake_simple_ai_call, raising=False)
+    monkeypatch.setattr(data_fixer_ai, "AI_AVAILABLE", True)
+    monkeypatch.setattr(
+        data_fixer_ai,
+        "get_model_pool",
+        lambda: [{"name": "fake"}, {"name": "fake-infer"}],
+    )
+    monkeypatch.setattr(data_fixer_ai, "simple_ai_call", fake_simple_ai_call)
 
     result = _new_app_without_tk()._infer_full_info_ai(
         {
@@ -80,7 +86,9 @@ def test_infer_full_info_ai_prompt_uses_stable_location_index_contract(monkeypat
     assert "不要输出城市、区县、道路门牌号、楼号、单元号、房号" in prompt
 
 
-def test_save_record_normalizes_address_like_community_name_before_writing(tmp_path: Path):
+def test_save_record_normalizes_address_like_community_name_before_writing(
+    tmp_path: Path,
+):
     full_address = "北京市朝阳区八里庄远洋天地小区7号楼1单元101室"
     data_file = tmp_path / "records.json"
     data_file.write_text('[{"id": "1001", "title": "待修复法拍房"}]', encoding="utf-8")
@@ -99,7 +107,7 @@ def test_save_record_normalizes_address_like_community_name_before_writing(tmp_p
     )
 
     assert result is True
-    payload = data_fixer.json.loads(data_file.read_text(encoding="utf-8"))
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
     saved = payload[0]
     assert saved["所属小区"] == "朝阳区八里庄位置片区"
     assert saved["community_name"] == "朝阳区八里庄位置片区"
@@ -126,7 +134,7 @@ def test_save_record_uses_district_anchor_when_business_area_is_missing(tmp_path
     )
 
     assert result is True
-    payload = data_fixer.json.loads(data_file.read_text(encoding="utf-8"))
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
     saved = payload[0]
     assert saved["所属小区"] == "朝阳区位置片区"
     assert saved["community_name_source"] == "geo_fallback"

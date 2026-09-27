@@ -240,13 +240,25 @@ def test_release_seed_scan_worker_leases_uses_bounded_windows(tmp_path: Path) ->
         if isinstance(instance, (FapaiSeedScanJob, FapaiSeedScanProgress)):
             peak_loaded = max(peak_loaded, len(session.identity_map))
 
+    selects = []
+
+    def count_select(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
     event.listen(repo.session_factory, "loaded_as_persistent", on_load)
+    event.listen(repo.engine, "before_cursor_execute", count_select)
     try:
         result = repo.release_seed_scan_worker_leases("worker-a")
     finally:
         event.remove(repo.session_factory, "loaded_as_persistent", on_load)
+        event.remove(repo.engine, "before_cursor_execute", count_select)
 
     assert result == {"released": release_count}
+    windows = (
+        release_count + SEED_SCAN_MAINTENANCE_BATCH_SIZE - 1
+    ) // SEED_SCAN_MAINTENANCE_BATCH_SIZE
+    assert len(selects) <= 3 * windows + 1
     assert peak_loaded <= SEED_SCAN_MAINTENANCE_BATCH_SIZE * 2
     with repo.session_factory() as session:
         released_rows = session.scalars(

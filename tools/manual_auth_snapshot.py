@@ -1,20 +1,11 @@
 """Immutable manual snapshots: never overwrite the running collector's cookies."""
-from contextlib import contextmanager
+
 import hashlib
 import json
 import os
-from pathlib import Path
-import re
+from contextlib import contextmanager
 
-from tools.pc1_desktop_recovery import RecoveryError
-
-
-def snapshot_path(base, recovery_id, digest):
-    if not re.fullmatch(r"auth-recovery-[a-f0-9]{32}", recovery_id):
-        raise RecoveryError("invalid_request")
-    if not re.fullmatch(r"[a-f0-9]{64}", digest):
-        raise RecoveryError("invalid_snapshot")
-    return Path(base).parent / "desktop-auth" / f"{recovery_id}-{digest}.json"
+from src.auth_snapshot_contract import RecoveryError, snapshot_path
 
 
 def validate_snapshot(raw):
@@ -27,7 +18,9 @@ def validate_snapshot(raw):
     if not isinstance(cookies, list) or not cookies:
         raise RecoveryError("invalid_snapshot")
     for cookie in cookies:
-        if not isinstance(cookie, dict) or not all(isinstance(cookie.get(key), str) for key in ("name", "value", "domain")):
+        if not isinstance(cookie, dict) or not all(
+            isinstance(cookie.get(key), str) for key in ("name", "value", "domain")
+        ):
             raise RecoveryError("invalid_snapshot")
         if not cookie["name"] or not cookie["domain"]:
             raise RecoveryError("invalid_snapshot")
@@ -65,9 +58,11 @@ def completion_lock(base):
         try:
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as error:
             raise RecoveryError("handoff_busy") from error

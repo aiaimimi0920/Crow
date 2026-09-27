@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tools.manual_review_control_plane_context import *
+
+if TYPE_CHECKING:
+    from src.storage.repository import PropertyRepository
 
 
 def describe_manual_review_control_plane_storage(

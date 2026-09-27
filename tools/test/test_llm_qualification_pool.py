@@ -163,12 +163,12 @@ def test_explicit_route_cannot_silently_fallback(tmp_path):
 
 
 def test_preflight_reuses_pool_without_spending_calls(tmp_path, monkeypatch):
-    from src import llm_helper
+    from src import llm_helper, llm_openai_compatible
     from src import llm_qualification_pool
     pool = make_pool(tmp_path, {"a": 5})
     pool.ensure()
     monkeypatch.setenv("FAPAI_ANALYSIS_MODEL_POOL_ENABLED", "1")
-    monkeypatch.setattr(llm_helper, "_get_openai_compatible_config", lambda: pool.config)
+    monkeypatch.setattr(llm_openai_compatible, "_get_openai_compatible_config", lambda: pool.config)
     monkeypatch.setattr(llm_qualification_pool, "QualifiedModelPool", lambda *_a, **_kw: pool)
     result = llm_helper.preflight_openai_compatible_backend(check_chat=True)
     assert result["chat_status_code"] == 200 and result["qualified_models"] == ["a"]

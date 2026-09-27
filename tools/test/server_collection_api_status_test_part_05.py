@@ -16,7 +16,7 @@ def test_auth_cookie_snapshot_retry_records_failure_then_success(monkeypatch) ->
             raise result
         return result
 
-    monkeypatch.setattr(server, "AUTH_COOKIE_SNAPSHOT_STATE", {})
+    monkeypatch.setattr(server.RUNTIME.cookie_snapshot, "state", {})
     monkeypatch.setattr(server, "_auth_cookie_snapshot_retry_attempts", lambda: 3)
     monkeypatch.setattr(server, "_auth_cookie_snapshot_retry_backoff_seconds", lambda: 0)
     monkeypatch.setattr(server, "_refresh_auth_cookie_snapshot", fake_refresh)
@@ -34,7 +34,7 @@ def test_auth_cookie_snapshot_retry_stops_after_bounded_attempts(monkeypatch) ->
     from src import server
 
     calls: list[int] = []
-    monkeypatch.setattr(server, "AUTH_COOKIE_SNAPSHOT_STATE", {})
+    monkeypatch.setattr(server.RUNTIME.cookie_snapshot, "state", {})
     monkeypatch.setattr(server, "_auth_cookie_snapshot_retry_attempts", lambda: 2)
     monkeypatch.setattr(server, "_auth_cookie_snapshot_retry_backoff_seconds", lambda: 0)
     monkeypatch.setattr(
@@ -62,7 +62,7 @@ def test_auth_cookie_snapshot_success_finalizes_matching_paused_challenge(monkey
     }
     monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(server.RUNTIME.recovery, "confirmations", {})
-    monkeypatch.setattr(server, "AUTH_COOKIE_SNAPSHOT_STATE", {})
+    monkeypatch.setattr(server.RUNTIME.cookie_snapshot, "state", {})
     monkeypatch.setattr(server.RUNTIME.control, "paused", True)
     monkeypatch.setattr(server.RUNTIME.control, "reason", "manual_required")
     monkeypatch.setattr(server.RUNTIME.solver, "running", False)
@@ -102,7 +102,7 @@ def test_auth_cookie_snapshot_failure_keeps_paused_challenge(monkeypatch, tmp_pa
     from src import server
 
     monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(server, "AUTH_COOKIE_SNAPSHOT_STATE", {})
+    monkeypatch.setattr(server.RUNTIME.cookie_snapshot, "state", {})
     monkeypatch.setattr(server.RUNTIME.control, "paused", True)
     monkeypatch.setattr(server.RUNTIME.control, "reason", "manual_required")
     monkeypatch.setattr(server.RUNTIME.solver, "last_status", "manual_required")
@@ -135,7 +135,7 @@ def test_cookie_snapshot_success_for_old_challenge_cannot_clear_new_pause(monkey
 
     monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(server.RUNTIME.recovery, "confirmations", {})
-    monkeypatch.setattr(server, "AUTH_COOKIE_SNAPSHOT_STATE", {})
+    monkeypatch.setattr(server.RUNTIME.cookie_snapshot, "state", {})
     monkeypatch.setattr(server.RUNTIME.control, "paused", True)
     monkeypatch.setattr(server.RUNTIME.control, "reason", "manual_required")
     monkeypatch.setattr(server.RUNTIME.solver, "last_status", "manual_required")
@@ -197,13 +197,13 @@ def test_refresh_auth_cookie_snapshot_writes_only_after_healthy_probe(monkeypatc
 
 def test_auth_cookie_health_probe_uses_current_cdp_user_agent(monkeypatch) -> None:
     from src import server
-    from tools import browserless_seed_probe, taobao_login_health
+    from src import auth_cookie_health
 
     observed: dict[str, object] = {}
     cookies = [{"name": "cookie2", "value": "v", "domain": ".taobao.com", "path": "/"}]
 
     monkeypatch.setattr(
-        browserless_seed_probe,
+        auth_cookie_health,
         "build_session_from_playwright_cookies",
         lambda _cookies: object(),
     )
@@ -216,10 +216,10 @@ def test_auth_cookie_health_probe_uses_current_cdp_user_agent(monkeypatch) -> No
         observed["user_agent"] = kwargs.get("user_agent")
         return {"final_url": _url, "status": 200, "has_script": True}
 
-    monkeypatch.setattr(browserless_seed_probe, "resolve_cdp_user_agent", fake_resolve_user_agent)
-    monkeypatch.setattr(browserless_seed_probe, "probe_seed_page", fake_probe)
+    monkeypatch.setattr(auth_cookie_health, "resolve_cdp_user_agent", fake_resolve_user_agent)
+    monkeypatch.setattr(auth_cookie_health, "probe_seed_page", fake_probe)
     monkeypatch.setattr(
-        taobao_login_health,
+        auth_cookie_health,
         "classify_taobao_health",
         lambda *_args, **_kwargs: {"status": "healthy", "healthy": True},
     )

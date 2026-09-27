@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src import llm_openai_compatible
 from tools.test.analysis_module_b_integration_test_context import *
 
 
@@ -182,7 +183,7 @@ def test_explicit_openai_compatible_model_disables_candidate_fallback(monkeypatc
     captured = {}
 
     monkeypatch.setattr(
-        llm_helper,
+        llm_openai_compatible,
         "_get_openai_compatible_config",
         lambda: {
             "base_url": "http://127.0.0.1:1/v1",
@@ -198,7 +199,7 @@ def test_explicit_openai_compatible_model_disables_candidate_fallback(monkeypatc
         captured.update(config)
         return '{"ok":true}'
 
-    monkeypatch.setattr(llm_helper, "_chat_with_openai_compatible", _chat)
+    monkeypatch.setattr(llm_openai_compatible, "_chat_with_openai_compatible", _chat)
 
     assert llm_helper.chat_with_glm("test", model="grok-4.6") == '{"ok":true}'
     assert captured["model"] == "grok-4.6"

@@ -224,7 +224,9 @@ def test_explicit_job_id_is_durable_and_list_projects_operation_receipts(tmp_pat
     manager = CollectionJobManager(tmp_path)
     job_id = "a" * 32
     try:
-        receipt = manager.submit("manual_review_receipt", lambda: {"ok": True}, "FAILED", job_id=job_id)
+        receipt = manager.submit(
+            "manual_review_receipt", lambda: {"ok": True}, "FAILED", job_id=job_id
+        )
         assert receipt["job_id"] == job_id
         assert completed(manager, receipt)["status"] == "completed"
         listed = manager.list(operation="manual_review_receipt")

@@ -5,7 +5,13 @@ import logging
 from pathlib import Path
 import sys
 import threading
-import types
+
+from src.auth_cookie_snapshot_jobs import AuthCookieSnapshotJobs
+from src.auth_recovery_progress import captured_detail_count, pending_detail_count
+from src.collection_index_loader import load_collection_index
+from src.server_collection_status import CollectionStatusReaders
+from src.server_module_exports import ModuleExports
+from src.server_native_bindings import bind_native_handler_owners, bind_native_server_owners
 
 logger = logging.getLogger(__name__)
 
@@ -16,122 +22,302 @@ else:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     _PACKAGE = "src"
 _CONTEXT = importlib.import_module(f"{_PACKAGE}.server_context")
-_CORE_MODULES = (
+_NATIVE_MODULES = (
+    "server_http_responses",
     "server_request_guard",
-    "server_solver_scope",
-    "server_auth_recovery",
-    "server_desktop_auth",
-    "server_solver_state",
-    "server_solver_dispatch",
-    "server_auth_cookie",
-    "server_collection_status",
-    "server_collection_control",
-    "server_engine_control",
     "server_collection_settings",
-    "server_collection_console",
-    "server_manual_review",
-    "server_hybrid_runtime",
+    "server_auto_tuning",
     "server_hybrid_history",
+    "server_hybrid_lifecycle",
     "server_hybrid_events",
     "server_hybrid_escalation",
-    "server_hybrid_lifecycle",
     "server_hybrid_operator_summary",
     "server_hybrid_policy",
+    "server_hybrid_runtime",
     "server_hybrid_context",
-    "server_collection_operations",
+    "server_manual_review",
+    "server_desktop_auth",
+    "server_engine_control",
+    "server_solver_scope",
+    "server_collection_status",
     "server_data_runtime",
-    "server_auto_tuning",
-)
-_HANDLER_MODULES = (
-    "server_handler_get_collection",
-    "server_handler_task_control",
-    "server_handler_analysis",
-    "server_handler_ingest",
+    "server_collection_operations",
     "server_handler_core",
+    "server_handler_task_control",
+    "server_handler_get_collection",
+    "server_handler_ingest",
+    "server_handler_analysis",
 )
-_IMPLEMENTATION_MODULES = _CORE_MODULES + _HANDLER_MODULES
 
 
-def _publish_module(module):
-    names = list(getattr(module, "__all__", ()))
-    for name in names:
-        value = getattr(module, name)
-        globals()[name] = value
-        setattr(_CONTEXT, name, value)
-        if name not in _CONTEXT.__all__:
-            _CONTEXT.__all__.append(name)
+_EXPORTS = ModuleExports(globals(), _CONTEXT)
+_EXPORTS.publish(_CONTEXT)
+_SOLVER_REQUEST_RUNTIME = importlib.import_module(f"{_PACKAGE}.solver_request_runtime")
 
 
-_publish_module(_CONTEXT)
-for _module_name in _CORE_MODULES:
-    _publish_module(importlib.import_module(f"{_PACKAGE}.{_module_name}"))
-
-
-def _rebind_function(function):
-    rebound = types.FunctionType(
-        function.__code__,
-        globals(),
-        name=function.__name__,
-        argdefs=function.__defaults__,
-        closure=function.__closure__,
+def _refresh_solver_last_request(request_payload):
+    return _SOLVER_REQUEST_RUNTIME.refresh_solver_last_request(
+        request_payload,
+        runtime=RUNTIME,
     )
-    rebound.__kwdefaults__ = function.__kwdefaults__
-    rebound.__annotations__ = dict(function.__annotations__)
-    rebound.__dict__.update(function.__dict__)
-    rebound.__doc__ = function.__doc__
-    rebound.__module__ = __name__
-    rebound.__qualname__ = function.__qualname__
-    return rebound
 
 
-def _publish_rebound_function(name, function):
-    rebound = _rebind_function(function)
-    globals()[name] = rebound
-    setattr(_CONTEXT, name, rebound)
-    return rebound
+def _build_solver_for_request(request_payload):
+    return _SOLVER_REQUEST_RUNTIME.build_solver_for_request(
+        request_payload,
+        default_solver=solver,
+        factory=CaptchaSolver,
+    )
 
 
-_IMPLEMENTATION_NAMES = {f"{_PACKAGE}.server_context"} | {
-    f"{_PACKAGE}.{name}" for name in _IMPLEMENTATION_MODULES
-}
-for _name, _value in list(globals().items()):
-    if isinstance(_value, types.FunctionType) and _value.__module__ in _IMPLEMENTATION_NAMES:
-        _publish_rebound_function(_name, _value)
+def _runtime_started_at() -> float:
+    with RUNTIME.lock:
+        return RUNTIME.started_at
 
-for _module_name in _HANDLER_MODULES:
-    _module = importlib.import_module(f"{_PACKAGE}.{_module_name}")
-    _publish_module(_module)
-    for _name in _module.__all__:
-        _value = globals()[_name]
-        if not isinstance(_value, types.FunctionType):
-            continue
-        _publish_rebound_function(_name, _value)
 
-# Keep the historical patch points used by maintenance scripts and tests while
-# the runtime state remains owned by the structured RuntimeState object.
-PENDING_TASKS = RUNTIME.collection.pending_tasks
-DISPATCHED_TASKS = RUNTIME.collection.dispatched_tasks
-DATA_LOCK = threading.RLock()
+for _runtime_delegate in (
+    _refresh_solver_last_request,
+    _build_solver_for_request,
+    _runtime_started_at,
+):
+    setattr(_CONTEXT, _runtime_delegate.__name__, _runtime_delegate)
+    _CONTEXT.__all__.append(_runtime_delegate.__name__)
 
+
+for _module_name in _NATIVE_MODULES:
+    _EXPORTS.publish(importlib.import_module(f"{_PACKAGE}.{_module_name}"))
+
+for _owner in bind_native_server_owners(sys.modules[__name__]):
+    _EXPORTS.publish(_owner)
+_EXPORTS.publish(
+    CollectionStatusReaders(
+        repository=lambda: DB_REPOSITORY,
+        env_flag=lambda name, default: _runtime_env_flag(name, default),
+        prefer_db_reads=lambda: _prefer_db_task_reads(),
+        statistics=lambda repository, loader: _collection_statistics.SNAPSHOTS.snapshot(
+            repository, loader
+        ),
+        seed_counts=lambda: _load_collection_seed_queue_counts(),
+        empty_counts=lambda: _empty_seed_queue_counts(),
+        api_metrics=lambda: llm_helper.get_api_metrics(),
+        runtime_snapshot=lambda: _collection_runtime_snapshot(),
+        build_info=lambda: _build_info_payload(),
+        runtime_state_label=lambda status: (
+            _collection_runtime_state_label_from_status_payload(status)
+        ),
+        solver_status=lambda: _captcha_solver_runtime_status(),
+        auth_recovery=lambda: NAS_AUTH_RECOVERY.snapshot(),
+        status=lambda: _collection_api_lightweight_status_payload(),
+        control=lambda: RUNTIME.control.snapshot(),
+        data_root=lambda: Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+        restart=lambda: _engine_restart_status(),
+        challenge_metrics=lambda root: _hybrid_collection_challenge_metrics_summary(
+            root
+        ),
+        auth_watcher=lambda root: _pc1_auth_auto_resume_state_summary(root),
+    )
+)
+_EXPORTS.publish(
+    AuthCookieSnapshotJobs(
+        state=lambda: _auth_cookie_snapshot_runtime_state(),
+        retry_attempts=lambda: _auth_cookie_snapshot_retry_attempts(),
+        retry_backoff=lambda: _auth_cookie_snapshot_retry_backoff_seconds(),
+        set_state=lambda **updates: _set_auth_cookie_snapshot_state(**updates),
+        refresh=lambda request: _refresh_auth_cookie_snapshot(request),
+        finalize=lambda current_id, **kwargs: (
+            _finalize_auth_completion_after_cookie_snapshot(current_id, **kwargs)
+        ),
+        retry_runner=lambda: _run_auth_cookie_snapshot_retry,
+        refresh_enabled=lambda payload: _payload_flag(
+            payload, "refresh_cookie_snapshot", True
+        ),
+        clock=lambda: time.time(),
+        sleep=lambda seconds: time.sleep(seconds),
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+)
+
+
+_CONSOLE_ASSETS = importlib.import_module(f"{_PACKAGE}.collection_console_assets")
+
+
+def _safe_collection_static_path(request_path):
+    return _CONSOLE_ASSETS.safe_static_path(request_path, dist=COLLECTOR_DESKTOP_DIST)
+
+
+def _collection_observer_static_asset(request_path):
+    return _CONSOLE_ASSETS.static_asset(request_path, dist=COLLECTOR_DESKTOP_DIST)
+
+
+def _collection_observer_page_html():
+    return _CONSOLE_ASSETS.page_html(dist=COLLECTOR_DESKTOP_DIST)
+
+
+for _console_delegate in (
+    _safe_collection_static_path,
+    _collection_observer_static_asset,
+    _collection_observer_page_html,
+):
+    setattr(_CONTEXT, _console_delegate.__name__, _console_delegate)
+    _CONTEXT.__all__.append(_console_delegate.__name__)
+
+
+_DESKTOP_AUTH = importlib.import_module(f"{_PACKAGE}.server_desktop_auth")
+
+
+def _server_desktop_auth_request(handler):
+    return _DESKTOP_AUTH._server_desktop_auth_request(
+        handler,
+        authorize_recovery=_nas_auth_recovery_authorized,
+        solver_scope_status=_solver_scope_runtime_status,
+        solver_status=_captcha_solver_runtime_status,
+        set_pause_state=_set_collection_pause_state,
+        nas_auth_recovery=NAS_AUTH_RECOVERY,
+        runtime=RUNTIME,
+    )
+
+
+_CONTEXT._server_desktop_auth_request = _server_desktop_auth_request
+
+
+_ENGINE_CONTROL = importlib.import_module(f"{_PACKAGE}.server_engine_control")
+
+
+def _collection_operator_start():
+    return _ENGINE_CONTROL._collection_operator_start(
+        runtime=RUNTIME,
+        set_pause_state=_set_collection_pause_state,
+        scope_status=_solver_scope_runtime_status,
+        runtime_state_label=_collection_runtime_state_label,
+    )
+
+
+def _server_engine_control(handler):
+    return _ENGINE_CONTROL._server_engine_control(
+        handler,
+        collection_operator_start=_collection_operator_start,
+        mailbox_factory=_engine_restart_mailbox,
+    )
+
+
+def _engine_restart_status():
+    return _ENGINE_CONTROL._engine_restart_status(
+        mailbox_factory=_engine_restart_mailbox,
+    )
+
+
+_CONTEXT._engine_restart_mailbox = _ENGINE_CONTROL._engine_restart_mailbox
+_CONTEXT._engine_restart_status = _engine_restart_status
+_CONTEXT._collection_operator_start = _collection_operator_start
+_CONTEXT._server_engine_control = _server_engine_control
+
+_SCOPE_POLICY = importlib.import_module(f"{_PACKAGE}.server_solver_scope")
+
+
+def _solver_scopes():
+    return SolverScopeRuntime(
+        RUNTIME,
+        Path(DATA_DIR),
+        _solver_challenge_state_path,
+        CHALLENGE_FORCE_RESET_SECONDS,
+    )
+
+
+def _solver_scope_state_root_path():
+    return _solver_scopes().state_root_path()
+
+
+def _solver_scope_state_path(scope):
+    return _solver_scopes().state_path(scope)
+
+
+def _read_solver_scope_state(scope):
+    return _solver_scopes().read(scope)
+
+
+def _persist_solver_scope_state(scope, state):
+    return _solver_scopes().persist(scope, state)
+
+
+def _scope_challenge_age(scope, now=None):
+    return _solver_scopes().age(scope, now)
+
+
+def _solver_force_unlock_flag_path():
+    return _solver_scopes().manual_flag_path()
+
+
+def _solver_scope_manual_flag_path(scope):
+    return _solver_scopes().manual_flag_path(scope)
+
+
+def _solver_force_unlock_flag_exists():
+    return _solver_scopes().manual_flag_exists()
+
+
+def _collection_effectively_paused():
+    return _solver_scopes().effectively_paused()
+
+
+def _collection_scope_effectively_paused(scope):
+    if _solver_force_unlock_flag_exists():
+        return True
+    return _solver_scopes().scope_effectively_paused(scope, check_manual_flag=False)
+
+
+def _set_collection_pause_state(paused, reason=None, *, scope=None):
+    return _solver_scopes().set_pause(paused, reason, scope=scope)
+
+
+def _solver_transient_pause_active():
+    return _solver_scopes().transient_pause_active()
+
+
+def _solver_scope_runtime_status(scope, now=None):
+    return _solver_scopes().status(scope, now)
+
+
+def _force_reset_solver_scope(scope, challenge_id=None):
+    return _SCOPE_POLICY._force_reset_solver_scope(
+        scope,
+        challenge_id,
+        scopes=_solver_scopes(),
+        clear_challenge=_clear_solver_challenge_state,
+        remember_reset=_remember_solver_force_reset_recovery,
+        solver_status=_captcha_solver_runtime_status,
+        report_grace_seconds=SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS,
+    )
+
+
+from src.manual_review_readers import ManualReviewReaders
+
+_MANUAL_REVIEW_READERS = ManualReviewReaders(
+    repository=lambda: DB_REPOSITORY,
+    data_root=lambda: Path(DATA_DIR),
+)
+
+_EXPORTS.publish(_MANUAL_REVIEW_READERS)
+
+for _owner in bind_native_handler_owners(sys.modules[__name__]):
+    _EXPORTS.publish(_owner)
 
 _route_definitions = importlib.import_module(f"{_PACKAGE}.server_routes")
 _route_access = importlib.import_module(f"{_PACKAGE}.server_route_access")
+_JOB_ROUTES = importlib.import_module(f"{_PACKAGE}.server_collection_jobs")
+_MANUAL_REVIEW_DELETE = importlib.import_module(
+    f"{_PACKAGE}.server_manual_review_delete"
+)
 ROUTES = _route_definitions.build_routes(
     {
         **_route_definitions.GET_GROUPS,
-        '_get_collection_settings': (_settings_schema.PREFIX,),
-        '_get_manual_review_receipts': tuple(MANUAL_REVIEW_RECEIPT_ENDPOINTS),
-        '_get_manual_review_jobs': tuple(MANUAL_REVIEW_RECEIPT_JOB_ENDPOINTS),
-        '_get_manual_review_operations': tuple(MANUAL_REVIEW_RECEIPT_OPERATION_ENDPOINTS),
-        '_get_manual_review_control_status': tuple(MANUAL_REVIEW_CONTROL_PLANE_STATUS_ENDPOINTS),
-        '_get_manual_review_backup_repairs': tuple(MANUAL_REVIEW_CONTROL_PLANE_BACKUP_REPAIR_ENDPOINTS),
-        '_get_manual_review_integrity_history': tuple(MANUAL_REVIEW_CONTROL_PLANE_INTEGRITY_HISTORY_ENDPOINTS),
+        "_get_collection_settings": (_settings_schema.PREFIX,),
+        **MANUAL_REVIEW_GET_GROUPS,
     },
     {
         **_route_definitions.POST_GROUPS,
-        '_post_manual_review_receipt': tuple(MANUAL_REVIEW_RECEIPT_ENDPOINTS),
-        '_post_engine_control': tuple(_engine_control.ROUTES),
-        '_post_collection_settings': tuple(_settings_schema.ROLES),
+        "_post_manual_review_receipt": tuple(MANUAL_REVIEW_RECEIPT_ENDPOINTS),
+        "_post_engine_control": tuple(_engine_control.ROUTES),
+        "_post_collection_settings": tuple(_settings_schema.ROLES),
     },
 )
 
@@ -146,8 +332,11 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         _apply_cors_headers(self)
-        self.send_header('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-FAPAI-Control-Token, X-Fapai-Recovery-Token, X-FAPAI-Collection-Token')
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-FAPAI-Control-Token, X-Fapai-Recovery-Token, X-FAPAI-Collection-Token",
+        )
         self.end_headers()
 
     def do_GET(self):
@@ -155,22 +344,32 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
         request_path = parsed.path
         query = parse_qs(parsed.query)
         if request_path in _route_definitions.RETIRED_GET_ROUTES:
-            self.send_error_json(status=405, code='API_METHOD_NOT_ALLOWED', message='This operation requires an authenticated POST', details={'method': 'POST', 'path': _route_definitions.RETIRED_GET_ROUTES[request_path]})
+            self.send_error_json(
+                status=405,
+                code="API_METHOD_NOT_ALLOWED",
+                message="This operation requires an authenticated POST",
+                details={
+                    "method": "POST",
+                    "path": _route_definitions.RETIRED_GET_ROUTES[request_path],
+                },
+            )
             return
-        handler = ROUTES.get(('GET', request_path))
+        handler = ROUTES.get(("GET", request_path))
         if handler is not None:
             return getattr(self, handler)(parsed, request_path, query)
-        if request_path.startswith('/collection/') or request_path.startswith('/assets/'):
+        if request_path.startswith("/collection/") or request_path.startswith(
+            "/assets/"
+        ):
             return self._get_collection_asset(parsed, request_path, query)
-        if request_path.startswith('/api/collection/items/'):
+        if request_path.startswith("/api/collection/items/"):
             return self._get_collection_item(parsed, request_path, query)
-        if request_path.startswith('/api/'):
+        if request_path.startswith("/api/"):
             return self._get_api_not_found(parsed, request_path, query)
         return self._server_get_fallback(parsed, request_path, query)
 
     def do_POST(self):
         request_path = urlparse(self.path).path
-        handler = ROUTES.get(('POST', request_path))
+        handler = ROUTES.get(("POST", request_path))
         if handler is not None:
             if not self._authorize_write(handler, request_path):
                 return
@@ -178,28 +377,52 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
         return self._server_post_fallback()
 
     def _authorize_write(self, handler, request_path):
-        access = _route_access.required_access('POST', handler)
-        if access == 'worker':
+        access = _route_access.required_access("POST", handler)
+        if access == "worker":
             return _require_collection_worker(self)
-        if access == 'node':
+        if access == "node":
             return _require_node_auth(self)
-        if access == 'recovery':
+        if access == "recovery":
             authorized, _error = _nas_auth_recovery_authorized(self.headers)
             if not authorized:
                 code = (
-                    'AUTH_RECOVERY_FORBIDDEN'
-                    if request_path == '/api/collection/auth/recovery/request'
-                    else 'COLLECTION_AUTH_RECOVERY_FORBIDDEN'
+                    "AUTH_RECOVERY_FORBIDDEN"
+                    if request_path == "/api/collection/auth/recovery/request"
+                    else "COLLECTION_AUTH_RECOVERY_FORBIDDEN"
                 )
-                _send_guard_error(self, {'status': 403, 'code': code, 'message': 'Authentication recovery authorization rejected', 'details': {}})
+                _send_guard_error(
+                    self,
+                    {
+                        "status": 403,
+                        "code": code,
+                        "message": "Authentication recovery authorization rejected",
+                        "details": {},
+                    },
+                )
             return authorized
-        if access in {'engine', 'settings'}:
-            role = _settings_schema.ROLES.get(request_path) if access == 'settings' else ('operator' if request_path == _engine_control.PREFIX else 'agent')
+        if access in {"engine", "settings"}:
+            role = (
+                _settings_schema.ROLES.get(request_path)
+                if access == "settings"
+                else ("operator" if request_path == _engine_control.PREFIX else "agent")
+            )
             try:
                 _engine_control.authorize(self.headers, role)
             except _engine_control.RestartError as error:
-                code = 'SETTINGS_REJECTED' if access == 'settings' else 'ENGINE_RESTART_REJECTED'
-                _send_guard_error(self, {'status': error.status, 'code': code, 'message': str(error), 'details': {}})
+                code = (
+                    "SETTINGS_REJECTED"
+                    if access == "settings"
+                    else "ENGINE_RESTART_REJECTED"
+                )
+                _send_guard_error(
+                    self,
+                    {
+                        "status": error.status,
+                        "code": code,
+                        "message": str(error),
+                        "details": {},
+                    },
+                )
                 return False
             return True
         return _require_control_plane(self)
@@ -233,29 +456,16 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
         response_status=202,
         response_extra=None,
     ):
-        from src.collection_jobs import JobQueueFull
-
-        active_root = Path(getattr(AVM_SERVICE, 'data_dir', DATA_DIR))
-        try:
-            job = self.server.collection_jobs(active_root).submit(
-                operation,
-                work,
-                failure_code,
-                job_id=job_id,
-            )
-        except JobQueueFull:
-            self.send_error_json(status=503, code='COLLECTION_JOB_QUEUE_FULL', message='Collection operation queue is unavailable')
-            return
-        except Exception as error:
-            self.send_error_json(status=503, code='COLLECTION_JOB_SUBMISSION_FAILED', message='Unable to persist collection job', details={'error': str(error)})
-            return
-        response = {
-            'status': 'accepted', 'job_id': job['job_id'], 'job_status': job['status'],
-            'status_url': '/api/collection/jobs?id=' + job['job_id'],
-        }
-        if response_extra:
-            response.update(dict(response_extra))
-        _write_json_response(self, response_status, response)
+        return _JOB_ROUTES.enqueue_job(
+            self,
+            operation,
+            work,
+            failure_code,
+            data_root=Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+            job_id=job_id,
+            response_status=response_status,
+            response_extra=response_extra,
+        )
 
     def _submit_maintenance_job(self, operation, failure_code):
         from src.collection_maintenance_jobs import prepare_maintenance
@@ -265,11 +475,22 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
         accepted, payload = _read_json_body(self)
         if not accepted:
             return
-        active_root = Path(getattr(AVM_SERVICE, 'data_dir', DATA_DIR))
+        active_root = Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR))
         try:
-            work = prepare_maintenance(operation, payload, active_root, _detail_collection_service(active_root), load_data)
+            work = prepare_maintenance(
+                operation,
+                payload,
+                active_root,
+                _detail_collection_service(active_root),
+                load_data,
+            )
         except Exception as error:
-            self.send_error_json(status=500, code=failure_code, message='Unable to prepare collection operation', details={'error': str(error)})
+            self.send_error_json(
+                status=500,
+                code=failure_code,
+                message="Unable to prepare collection operation",
+                details={"error": str(error)},
+            )
             return
         self._enqueue_collection_job(operation, work, failure_code)
 
@@ -278,64 +499,55 @@ class DataHandler(http.server.SimpleHTTPRequestHandler):
 
         def run():
             result = pipeline.run(async_mode=False, config=config)
-            if result.get('status') != 'completed':
-                raise RuntimeError('Pipeline did not complete this request; inspect the pipeline log')
+            if result.get("status") != "completed":
+                raise RuntimeError(
+                    "Pipeline did not complete this request; inspect the pipeline log"
+                )
             return result
 
-        self._enqueue_collection_job('pipeline', run, failure_code)
+        self._enqueue_collection_job("pipeline", run, failure_code)
 
     def _get_collection_job(self, parsed, request_path, query):
-        if not _require_control_plane(self):
-            return
-        job_id = query.get('id', [''])[0]
-        if re.fullmatch(r'[a-f0-9]{32}', job_id) is None:
-            self.send_error_json(status=400, code='COLLECTION_JOB_INVALID_ID', message='A valid collection job ID is required')
-            return
-        active_root = Path(getattr(AVM_SERVICE, 'data_dir', DATA_DIR))
-        try:
-            job = self.server.collection_jobs(active_root).get(job_id)
-        except Exception as error:
-            self.send_error_json(status=503, code='COLLECTION_JOB_STATE_UNAVAILABLE', message='Collection job receipt is unavailable', details={'error': str(error)})
-            return
-        if job is None:
-            self.send_error_json(status=404, code='COLLECTION_JOB_NOT_FOUND', message='Collection job was not found')
-            return
-        self.send_json(job)
+        return _JOB_ROUTES.get_job(
+            self,
+            query.get("id", [""])[0],
+            data_root=Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+        )
+
+    def _post_collection_job_cancel(self):
+        return _JOB_ROUTES.cancel_job(
+            self,
+            data_root=Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+        )
 
     def do_DELETE(self):
-        request_path = urlparse(self.path).path
-        if request_path in MANUAL_REVIEW_RECEIPT_ENDPOINTS:
-            if not _require_control_plane(self):
-                return
-            (accepted, payload) = _read_json_body(self)
-            if not accepted:
-                return
-            (valid, error_payload) = _validate_manual_review_receipt_delete_payload(payload if isinstance(payload, dict) else {})
-            if not valid:
-                self.send_error_json(status=400, code=error_payload['code'], message=error_payload['message'], details=error_payload.get('details', {}))
-                return
-            active_data_root = Path(getattr(AVM_SERVICE, 'data_dir', DATA_DIR))
-            try:
-                result = delete_manual_review_receipt(_manual_review_receipt_store_path(active_data_root), action=str(payload['action']), ready_signal=str(payload['ready_signal']), repository=DB_REPOSITORY if DB_REPOSITORY.enabled else None)
-                append_manual_review_receipt_operation(_manual_review_receipt_operations_path(active_data_root), operation='deleted', receipt={'action': payload['action'], 'ready_signal': payload['ready_signal'], 'status': '', 'payload': {}}, execution_mode='delete', deleted=bool(result['deleted']), repository=DB_REPOSITORY if DB_REPOSITORY.enabled else None)
-                context = _manual_review_receipt_context(active_data_root)
-                self.send_json({'status': 'ok', 'deleted': result['deleted'], 'receipt_count': result['receipt_count'], 'manual_review_receipt_summary': context['manual_review_receipt_summary'], 'manual_review_receipt_jobs_summary': context['manual_review_receipt_jobs_summary'], 'manual_review_control_plane_storage': context['manual_review_control_plane_storage'], 'manual_review_control_plane_backup': context['manual_review_control_plane_backup'], 'manual_review_control_plane_backup_repairs_summary': context['manual_review_control_plane_backup_repairs_summary'], 'manual_review_control_plane_integrity': context['manual_review_control_plane_integrity'], 'manual_review_control_plane_integrity_history_summary': context['manual_review_control_plane_integrity_history_summary'], 'manual_review_control_plane_stability': context['manual_review_control_plane_stability'], 'manual_review_control_plane_guidance': context['manual_review_control_plane_guidance'], 'operator_overview': context['operator_overview']})
-            except Exception as e:
-                self.send_error_json(status=500, code='AVM_MANUAL_REVIEW_RECEIPT_DELETE_FAILED', message='manual review receipt 删除失败', details={'error': str(e)})
-            return
-        if request_path.startswith('/api/'):
-            self.send_error_json(status=404, code='AVM_ENDPOINT_NOT_FOUND', message='未找到接口', details={'path': request_path})
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def _source_contract_end(self):
-        return None
+        return _MANUAL_REVIEW_DELETE.delete_receipt(
+            self,
+            endpoints=MANUAL_REVIEW_RECEIPT_ENDPOINTS,
+            authorize=_require_control_plane,
+            read_body=_read_json_body,
+            validate=_validate_manual_review_receipt_delete_payload,
+            data_root=lambda: Path(getattr(AVM_SERVICE, "data_dir", DATA_DIR)),
+            repository=lambda: DB_REPOSITORY if DB_REPOSITORY.enabled else None,
+            delete=delete_manual_review_receipt,
+            append_operation=append_manual_review_receipt_operation,
+            receipt_context=_manual_review_receipt_context,
+            store_path=_manual_review_receipt_store_path,
+            operations_path=_manual_review_receipt_operations_path,
+        )
 
 
 _method_names = set(ROUTES.values()) | {
-    '_get_collection_asset', '_get_api_not_found', '_server_get_fallback', '_server_post_fallback',
-    'send_json', 'send_error_json', 'send_invalid_request_body', 'update_file', 'run_solver', 'log_message',
+    "_get_collection_asset",
+    "_get_api_not_found",
+    "_server_get_fallback",
+    "_server_post_fallback",
+    "send_json",
+    "send_error_json",
+    "send_invalid_request_body",
+    "update_file",
+    "run_solver",
+    "log_message",
 }
 for _method_name in sorted(_method_names):
     if _method_name in DataHandler.__dict__:
@@ -352,27 +564,27 @@ class ReusableTCPServer(CollectionHTTPServer):
     allow_reuse_address = True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     _listener_tls = tls_context_from_env(os.environ)
-    print(f'Starting Data Receiver on port {PORT}...')
-    print(f'Serving Pending Tasks from: {os.path.abspath(DATA_DIR)}')
+    print(f"Starting Data Receiver on port {PORT}...")
+    print(f"Serving Pending Tasks from: {os.path.abspath(DATA_DIR)}")
     initialize_runtime()
     AVM_CONFIG_MANAGER.load_on_startup()
     AVM_CONFIG_MANAGER.start_hot_reload_watcher()
-    print(f'[AVM-CONFIG] Active config: {AVM_CONFIG_MANAGER.get_config()}')
-    import threading
+    print(f"[AVM-CONFIG] Active config: {AVM_CONFIG_MANAGER.get_config()}")
     threading.Thread(target=background_file_processor, daemon=True).start()
     threading.Thread(target=auto_tuner_thread, daemon=True).start()
     try:
-        with ReusableTCPServer(('', PORT), DataHandler, tls=_listener_tls) as httpd:
-            print('Server running. Press Ctrl+C to stop.')
+        with ReusableTCPServer(("", PORT), DataHandler, tls=_listener_tls) as httpd:
+            print("Server running. Press Ctrl+C to stop.")
             try:
                 httpd.serve_forever()
             except KeyboardInterrupt:
-                print('\nServer stopped by user.')
+                print("\nServer stopped by user.")
             except Exception as e:
-                print(f'\nServer crashed: {e}')
+                print(f"\nServer crashed: {e}")
                 import traceback
+
                 traceback.print_exc()
     except OSError as e:
-        print(f'Error binding to port {PORT}: {e}')
+        print(f"Error binding to port {PORT}: {e}")

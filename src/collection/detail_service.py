@@ -3,9 +3,10 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import tempfile
 import threading
 import time
-from collections.abc import MutableSet
+from copy import deepcopy
 from datetime import timezone as _timezone
 from pathlib import Path
 from typing import Any, Callable, ContextManager, Dict
@@ -238,7 +239,9 @@ class DetailCollectionService:
         apply_flat_override_patch: Callable[[Dict[str, Any], Dict[str, Any]], None],
         reset_structured_sections_for_resync: Callable[[Dict[str, Any]], None],
         update_file_global: Callable[[str, str, Dict[str, Any]], None],
-        persist_item_to_db: Callable[[Dict[str, Any], str, Dict[str, Any] | None], None],
+        persist_item_to_db: Callable[
+            [Dict[str, Any], str, Dict[str, Any] | None], None
+        ],
         evict_runtime_item: Callable[[str], None],
         submit_task: Callable[[str], None],
         prefer_db_task_reads: Callable[[], bool],
@@ -251,30 +254,48 @@ class DetailCollectionService:
         html_dir = self.data_root / "html"
         html_dir.mkdir(parents=True, exist_ok=True)
         html_path = html_dir / f"item-{item_id}.html"
-        html_path.write_text(html_content, encoding="utf-8")
-        logger.info("Saved HTML to %s", html_path)
+        # Unconfirmed status submissions must not be visible to the HTML scanner.
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=html_dir,
+            prefix=".pending-",
+            suffix=".tmp",
+            delete=False,
+        ) as staged:
+            staged.write(html_content)
+            staged_path = Path(staged.name)
 
         if status:
-            working_data = working_item["data"]
+            working_data = deepcopy(working_item["data"])
             working_data["status"] = status
             apply_flat_override_patch(working_data, {"status": status})
             reset_structured_sections_for_resync(working_data)
             self.adapter.sync_record(working_data)
-            with self._dispatch_lock:
-                if working_item["cached"]:
-                    remove_pending(item_id)
             update_file_global(working_item["file_path"], item_id, working_data)
             event_type = "analyze_html_status"
             persist_item_to_db(
                 working_data,
                 event_type,
-                {"item_id": item_id, "status": status, "source_file": working_item["file_path"]},
+                {
+                    "item_id": item_id,
+                    "status": status,
+                    "source_file": working_item["file_path"],
+                },
             )
             normalized_status = str(status).strip().lower()
+            working_item["data"].clear()
+            working_item["data"].update(working_data)
+            with self._dispatch_lock:
+                if working_item["cached"]:
+                    remove_pending(item_id)
             if normalized_status.startswith("failed_") and prefer_db_task_reads():
                 evict_runtime_item(item_id)
-            if normalized_status.startswith("failed_"):
-                return {"status": "queued"}
+
+        staged_path.replace(html_path)
+        logger.info("Saved HTML to %s", html_path)
+        if status and str(status).strip().lower().startswith("failed_"):
+            return {"status": "queued"}
 
         submit_task(str(html_path))
         return {"status": "queued"}
@@ -289,7 +310,9 @@ class DetailCollectionService:
         apply_flat_override_patch: Callable[[Dict[str, Any], Dict[str, Any]], None],
         reset_structured_sections_for_resync: Callable[[Dict[str, Any]], None],
         update_file_global: Callable[[str, str, Dict[str, Any]], None],
-        persist_item_to_db: Callable[[Dict[str, Any], str, Dict[str, Any] | None], None],
+        persist_item_to_db: Callable[
+            [Dict[str, Any], str, Dict[str, Any] | None], None
+        ],
         evict_runtime_item: Callable[[str], None],
         prefer_db_task_reads: Callable[[], bool],
         remove_pending: Callable[[str], bool | None],
@@ -300,7 +323,7 @@ class DetailCollectionService:
         if not (item_id and working_item):
             return {"status": "id_not_found"}
 
-        current_data = working_item["data"]
+        current_data = deepcopy(working_item["data"])
         current_data.update(patch_data)
         if mark_processed:
             current_data["is_processed"] = True
@@ -312,13 +335,18 @@ class DetailCollectionService:
         reset_structured_sections_for_resync(current_data)
         self.adapter.sync_record(current_data)
 
+        file_path = working_item["file_path"]
+        update_file_global(file_path, item_id, current_data)
+        persist_item_to_db(
+            current_data, event_type, {"item_id": item_id, "source_file": file_path}
+        )
+        working_item["data"].clear()
+        working_item["data"].update(current_data)
+
         with self._dispatch_lock:
             if working_item["cached"]:
                 remove_pending(item_id)
 
-        file_path = working_item["file_path"]
-        update_file_global(file_path, item_id, current_data)
-        persist_item_to_db(current_data, event_type, {"item_id": item_id, "source_file": file_path})
         if prefer_db_task_reads():
             evict_runtime_item(item_id)
         return {"status": "ok"}
@@ -390,7 +418,6 @@ class DetailCollectionService:
         sync_avm_risk_aliases: Callable[[Dict[str, Any]], Dict[str, Any]],
         extract_avm_risk_features: Callable[[str, str | None], Dict[str, Any]],
         log_prediction_event: Callable[..., None],
-        current_processing: MutableSet[str],
         queue_pending: Callable[[str], bool],
         set_seen: Callable[[str, Dict[str, Any]], None],
         remove_pending: Callable[[str], None],
@@ -420,7 +447,6 @@ class DetailCollectionService:
             detail_extractor=resolved_detail_extractor,
             extract_avm_risk_features=extract_avm_risk_features,
             log_prediction_event=log_prediction_event,
-            current_processing=current_processing,
             queue_pending=queue_pending,
             set_seen=set_seen,
             remove_pending=remove_pending,
@@ -434,7 +460,7 @@ class DetailCollectionService:
         extract_risk: bool = False,
         dry_run: bool = True,
     ) -> Dict[str, Any]:
-        from tools.fetch_missing_detail_archives import fetch_missing_detail_archives
+        from src.collection.detail_archive_fetch import fetch_missing_detail_archives
 
         return fetch_missing_detail_archives(
             data_root=self.data_root,

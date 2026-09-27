@@ -6,12 +6,10 @@ from typing import Any, Dict, Iterator, List, Tuple
 
 from src.runtime_json import load_json_file
 
-from .service_context import (
-    GLOBAL_RECENT_CANDIDATES,
-    build_features,
-    map_raw_to_canonical,
-    price_plausibility,
-)
+from .canonical_mapper import map_raw_to_canonical
+from .feature_builder import build_features
+from .quality import price_plausibility
+from .service_context import GLOBAL_RECENT_CANDIDATES
 
 
 class AVMDataMixin:
@@ -25,14 +23,21 @@ class AVMDataMixin:
         if community:
             keys.append(("community_centroid", f"community::{community}"))
         if city and district and business_area:
-            keys.append(("business_area_centroid", f"business::{city}::{district}::{business_area}"))
+            keys.append(
+                (
+                    "business_area_centroid",
+                    f"business::{city}::{district}::{business_area}",
+                )
+            )
         if city and district:
             keys.append(("district_centroid", f"district::{city}::{district}"))
         if city:
             keys.append(("city_centroid", f"city::{city}"))
         return keys
 
-    def _build_coordinate_centroids(self, dataset: List[Dict[str, Any]]) -> Dict[str, Tuple[float, float]]:
+    def _build_coordinate_centroids(
+        self, dataset: List[Dict[str, Any]]
+    ) -> Dict[str, Tuple[float, float]]:
         aggregates: Dict[str, List[float]] = {}
         for record in dataset:
             if not self._has_valid_coordinates(record):
@@ -53,7 +58,9 @@ class AVMDataMixin:
             centroids[key] = (round(lat_sum / count, 6), round(lon_sum / count, 6))
         return centroids
 
-    def _enrich_coordinates(self, record: Dict[str, Any], centroids: Dict[str, Tuple[float, float]]) -> Dict[str, Any]:
+    def _enrich_coordinates(
+        self, record: Dict[str, Any], centroids: Dict[str, Tuple[float, float]]
+    ) -> Dict[str, Any]:
         enriched = dict(record)
         if self._has_valid_coordinates(enriched):
             enriched["coordinate_strategy"] = "observed"
@@ -72,7 +79,9 @@ class AVMDataMixin:
 
     def _iter_data_files(self) -> List[str]:
         candidates = glob.glob(os.path.join(self.data_dir, "*.json"))
-        archive_candidates = glob.glob(os.path.join(self.data_dir, "archive", "**", "*.json"), recursive=True)
+        archive_candidates = glob.glob(
+            os.path.join(self.data_dir, "archive", "**", "*.json"), recursive=True
+        )
         files = candidates + archive_candidates
 
         skip_names = {
@@ -118,7 +127,11 @@ class AVMDataMixin:
         return list(self._iter_raw_record_stream())
 
     def _iter_feature_source_stream(self) -> Iterator[Dict[str, Any]]:
-        if self.repository and getattr(self.repository, "enabled", False) and hasattr(self.repository, "yield_feature_source_rows"):
+        if (
+            self.repository
+            and getattr(self.repository, "enabled", False)
+            and hasattr(self.repository, "yield_feature_source_rows")
+        ):
             try:
                 if hasattr(self.repository, "yield_analysis_ready_rows"):
                     yielded_ready = False
@@ -153,14 +166,23 @@ class AVMDataMixin:
             except Exception:
                 pass
         files = self._iter_data_files()
-        return tuple(sorted((path, os.path.getmtime(path)) for path in files if os.path.exists(path)))
+        return tuple(
+            sorted(
+                (path, os.path.getmtime(path)) for path in files if os.path.exists(path)
+            )
+        )
 
     @staticmethod
     def _record_sort_key(record: Dict[str, Any]) -> Tuple[str, str]:
         return (str(record.get("auction_date") or ""), str(record.get("item_id") or ""))
 
-    def _build_candidate_indexes(self, dataset: List[Dict[str, Any]], signature: Tuple[Any, ...]) -> Dict[str, Any]:
-        if self._candidate_indexes is not None and self._candidate_indexes_signature == signature:
+    def _build_candidate_indexes(
+        self, dataset: List[Dict[str, Any]], signature: Tuple[Any, ...]
+    ) -> Dict[str, Any]:
+        if (
+            self._candidate_indexes is not None
+            and self._candidate_indexes_signature == signature
+        ):
             return self._candidate_indexes
 
         community_index: Dict[str, List[Dict[str, Any]]] = {}
@@ -178,7 +200,9 @@ class AVMDataMixin:
             if community:
                 community_index.setdefault(community, []).append(record)
             if city and district and business_area:
-                business_index.setdefault(f"{city}::{district}::{business_area}", []).append(record)
+                business_index.setdefault(
+                    f"{city}::{district}::{business_area}", []
+                ).append(record)
             if city and district:
                 district_index.setdefault(f"{city}::{district}", []).append(record)
             if city:
@@ -197,7 +221,10 @@ class AVMDataMixin:
 
     def _build_feature_dataset(self) -> List[Dict[str, Any]]:
         signature = self._dataset_signature()
-        if self._feature_cache is not None and signature == self._feature_cache_signature:
+        if (
+            self._feature_cache is not None
+            and signature == self._feature_cache_signature
+        ):
             self._feature_cache_hits += 1
             return list(self._feature_cache)
 
@@ -224,12 +251,21 @@ class AVMDataMixin:
         self._quality_filtered_records = filtered_count
         return dataset
 
-    def ensure_coordinate_cache(self, allow_file_fallback: bool = True) -> Dict[str, Tuple[float, float]]:
+    def ensure_coordinate_cache(
+        self, allow_file_fallback: bool = True
+    ) -> Dict[str, Tuple[float, float]]:
         signature = self._dataset_signature()
-        if self._centroid_cache is not None and signature == self._centroid_cache_signature:
+        if (
+            self._centroid_cache is not None
+            and signature == self._centroid_cache_signature
+        ):
             return dict(self._centroid_cache)
 
-        if self.repository and getattr(self.repository, "enabled", False) and hasattr(self.repository, "build_coordinate_centroids"):
+        if (
+            self.repository
+            and getattr(self.repository, "enabled", False)
+            and hasattr(self.repository, "build_coordinate_centroids")
+        ):
             try:
                 centroids = self.repository.build_coordinate_centroids()
                 self._centroid_cache = centroids
@@ -240,7 +276,11 @@ class AVMDataMixin:
                 pass
 
         aggregates: Dict[str, List[float]] = {}
-        if self.repository and getattr(self.repository, "enabled", False) and hasattr(self.repository, "yield_coordinate_rows"):
+        if (
+            self.repository
+            and getattr(self.repository, "enabled", False)
+            and hasattr(self.repository, "yield_coordinate_rows")
+        ):
             try:
                 for feature in self.repository.yield_coordinate_rows():
                     if not self._has_valid_coordinates(feature):
@@ -280,7 +320,6 @@ class AVMDataMixin:
         self._centroid_cache = centroids
         self._centroid_cache_signature = signature
         return dict(centroids)
-
 
 
 __all__ = ["AVMDataMixin"]

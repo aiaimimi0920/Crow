@@ -1,366 +1,430 @@
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import os
-import threading
-import time
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from threading import Event
+from typing import TYPE_CHECKING, BinaryIO, ClassVar
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
-from .server_context import CHALLENGE_SCOPES, RUNTIME, executor
+if TYPE_CHECKING:
+    from .runtime_state import RuntimeState
 
 logger = logging.getLogger(__name__)
 
-def _write_solver_manual_required_flag(
-    created_at_epoch: float, *, scope: str | None = None
-) -> str | None:
-    normalized_scope = _normalize_challenge_scope(scope)
-    flag_path = (
-        _solver_scope_manual_flag_path(normalized_scope)
-        if normalized_scope
-        else _solver_force_unlock_flag_path()
-    )
-    try:
-        os.makedirs(os.path.dirname(flag_path) or ".", exist_ok=True)
-        with open(flag_path, "w", encoding="utf-8") as flag_file:
-            json.dump(
-                {
-                    "manual_required": True,
-                    "manual_only": bool(RUNTIME.recovery.snapshot().manual_only),
-                    "scope": _normalize_challenge_scope(scope) or None,
-                    "created_at_epoch": created_at_epoch,
-                    "last_request": dict(RUNTIME.recovery.snapshot().last_request) if isinstance(RUNTIME.recovery.snapshot().last_request, dict) else {},
-                    "message": "Delete this file to force resume the queue after manual solving",
-                },
-                flag_file,
-                ensure_ascii=False,
-            )
-    except Exception as error:
-        return repr(error)
-    return None
 
-def _solver_manual_flag_scope() -> str | None:
-    try:
-        with open(_solver_force_unlock_flag_path(), "r", encoding="utf-8") as flag_file:
-            payload = json.load(flag_file)
-    except Exception:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return _normalize_challenge_scope(payload.get("scope")) or None
+@dataclass(frozen=True)
+class SolverDispatch:
+    runtime: Callable[[], RuntimeState]
+    clock: Callable[[], float]
+    monotonic: Callable[[], float]
+    event: Callable[[], Event]
+    open_url: Callable[..., AbstractContextManager[BinaryIO]]
+    runner: Callable[[], Callable[..., object]]
+    submit: Callable[..., object]
+    normalize_scope: Callable[[object], str | None]
+    scope_flag_path: Callable[[str], str]
+    flag_path: Callable[[], str]
+    infer_scope: Callable[[dict[str, str]], str | None]
+    scope_status: Callable[[str], Mapping[str, object]]
+    flag_scope: Callable[[], str | None]
+    flag_manual_only: Callable[[], bool]
+    env_flag: Callable[[str, bool], bool]
+    ready_timeout: Callable[[], int]
+    probe_timeout: Callable[[], float]
+    background_url: Callable[[str], str]
+    sample_urls: Callable[[dict[str, object]], Sequence[str]]
+    status: Callable[[], object]
+    last_scope: Callable[[], str]
+    seed_pending: Callable[[object], bool]
+    build_request: Callable[[object], dict[str, object]]
+    default_request: Callable[[], dict[str, object]]
+    request_scope: Callable[[object], str]
+    prefer_seed_payload: Callable[[object], bool]
+    seed_priority_request: Callable[[object], dict[str, object]]
+    prefer_seed_retry: Callable[[], bool]
+    flag_request: Callable[[], dict[str, object]]
+    retry_enabled: Callable[[str | None], bool]
+    retry_interval: Callable[[], int]
+    remote_endpoint: Callable[[str], bool]
+    reserve: Callable[[], object | None]
+    release: Callable[[object | None], None]
 
-def _solver_manual_flag_is_manual_only() -> bool:
-    try:
-        with open(_solver_force_unlock_flag_path(), "r", encoding="utf-8") as flag_file:
-            payload = json.load(flag_file)
-    except Exception:
-        return False
-    if not isinstance(payload, dict):
-        return False
-    value = payload.get("manual_only")
-    if isinstance(value, bool):
-        return value
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+    __all__: ClassVar[list[str]] = [
+        "_write_solver_manual_required_flag",
+        "_solver_manual_flag_scope",
+        "_solver_manual_flag_is_manual_only",
+        "_manual_solver_retry_enabled",
+        "_manual_solver_retry_interval_seconds",
+        "_solver_max_runtime_seconds",
+        "_solver_worker_quiesce_seconds",
+        "_solver_cdp_ready_timeout_seconds",
+        "_wait_for_solver_cdp_ready",
+        "_solver_cdp_probe_timeout_seconds",
+        "_probe_solver_cdp_endpoint",
+        "_manual_solver_retry_poll_seconds",
+        "_captcha_solver_background_url",
+        "_solver_manual_flag_request",
+        "_default_manual_solver_retry_request",
+        "_prefer_seed_manual_solver_retry_request",
+        "_seed_priority_manual_solver_retry_request",
+        "_prefer_seed_solver_request_for_payload",
+        "_seed_priority_solver_request",
+        "_manual_solver_retry_request",
+        "_manual_solver_retry_next_epoch",
+        "_solver_submission_pending",
+        "_reserve_solver_submission",
+        "_release_solver_submission",
+        "_activate_solver_submission",
+        "_solver_cdp_endpoint_is_remote",
+        "_solver_request_delegated_to_node",
+        "_submit_solver_request",
+    ]
 
-def _manual_solver_retry_enabled(scope: str | None = None) -> bool:
-    normalized_scope = _normalize_challenge_scope(scope)
-    if normalized_scope not in CHALLENGE_SCOPES:
-        inferred_scope = _challenge_scope_for_request(RUNTIME.recovery.snapshot().last_request)
-        if inferred_scope in CHALLENGE_SCOPES:
-            normalized_scope = inferred_scope
-    if normalized_scope in CHALLENGE_SCOPES:
-        scoped = _solver_scope_runtime_status(normalized_scope)
-        if scoped.get("manual_only"):
-            return False
-        flag_scope = _solver_manual_flag_scope()
-        if flag_scope and flag_scope != normalized_scope:
-            return True
-        if scoped.get("challenge_id") or scoped.get("manual_required"):
-            # The global manual-only bit is retained for legacy clients, but
-            # must not disable retry for this independent scope.
-            return _runtime_env_flag("FAPAI_SOLVER_MANUAL_RETRY_ENABLED", True)
-    if RUNTIME.recovery.snapshot().manual_only or _solver_manual_flag_is_manual_only():
-        return False
-    return _runtime_env_flag("FAPAI_SOLVER_MANUAL_RETRY_ENABLED", True)
+    def _write_solver_manual_required_flag(
+        self, created_at_epoch: float, *, scope: str | None = None
+    ) -> str | None:
+        from src.solver_manual_pause import write_manual_flag
 
-def _manual_solver_retry_interval_seconds() -> int:
-    raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_INTERVAL_SECONDS", "180")
-    try:
-        value = int(str(raw or "").strip())
-    except ValueError:
-        value = 180
-    if value < 0:
-        return 180
-    return value
+        normalized_scope = self.normalize_scope(scope) or None
+        return write_manual_flag(
+            created_at_epoch,
+            runtime=self.runtime(),
+            path=self.scope_flag_path(normalized_scope)
+            if normalized_scope
+            else self.flag_path(),
+            scope=normalized_scope,
+        )
 
-def _solver_max_runtime_seconds() -> int:
-    raw = os.getenv("FAPAI_SOLVER_MAX_RUNTIME_SECONDS", "180")
-    try:
-        value = int(str(raw or "").strip())
-    except ValueError:
-        value = 180
-    if value <= 0:
-        return 180
-    return value
+    def _solver_manual_flag_scope(self) -> str | None:
+        from src.solver_manual_retry import manual_flag_scope
 
-def _solver_worker_quiesce_seconds() -> int:
-    raw = os.getenv("FAPAI_SOLVER_WORKER_QUIESCE_SECONDS", "0")
-    try:
-        value = int(str(raw or "").strip())
-    except ValueError:
-        value = 0
-    return max(0, min(value, 300))
+        return manual_flag_scope(self.flag_path, self.normalize_scope)
 
-def _solver_cdp_ready_timeout_seconds() -> int:
-    raw = os.getenv("FAPAI_SOLVER_CDP_READY_TIMEOUT_SECONDS", "0")
-    try:
-        value = int(str(raw or "").strip())
-    except ValueError:
-        value = 0
-    return max(0, min(value, 600))
+    def _solver_manual_flag_is_manual_only(self) -> bool:
+        from src.solver_manual_retry import manual_flag_is_manual_only
 
-def _wait_for_solver_cdp_ready(solver_request: dict[str, Any] | None, *, deadline=None, cancel_checker=None) -> bool:
-    timeout_seconds = _solver_cdp_ready_timeout_seconds()
-    request_payload = solver_request if isinstance(solver_request, dict) else {}
-    cdp_endpoint = str(request_payload.get("cdp_endpoint") or "").strip().rstrip("/")
-    if timeout_seconds <= 0 or not cdp_endpoint:
-        return True
+        return manual_flag_is_manual_only(self.flag_path)
 
-    logger.info(
-        f"[SOLVER] Waiting up to {timeout_seconds}s for a stable CDP target list at "
-        f"{cdp_endpoint}."
-    )
-    deadline = min(deadline, time.monotonic() + timeout_seconds) if deadline is not None else time.monotonic() + timeout_seconds
-    consecutive_healthy_probes = 0
-    while time.monotonic() < deadline:
-        if cancel_checker is not None and cancel_checker():
-            return False
+    def _manual_solver_retry_enabled(self, scope: str | None = None) -> bool:
+        from src.solver_manual_retry import manual_retry_enabled
+
+        return manual_retry_enabled(
+            runtime=self.runtime(),
+            scope=self.normalize_scope(scope),
+            infer_scope=self.infer_scope,
+            scope_status=self.scope_status,
+            flag_scope=self.flag_scope,
+            flag_manual_only=self.flag_manual_only,
+            configured_enabled=lambda: self.env_flag(
+                "FAPAI_SOLVER_MANUAL_RETRY_ENABLED", True
+            ),
+        )
+
+    def _manual_solver_retry_interval_seconds(self) -> int:
+        raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_INTERVAL_SECONDS", "180")
         try:
-            request = Request(f"{cdp_endpoint}/json/list", headers={"Accept": "application/json"})
-            with urlopen(request, timeout=max(0.001, min(3, deadline - time.monotonic()))) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            healthy = isinstance(payload, list)
-        except Exception:
-            healthy = False
+            value = int(str(raw or "").strip())
+        except ValueError:
+            value = 180
+        if value < 0:
+            return 180
+        return value
 
-        if healthy:
-            consecutive_healthy_probes += 1
-            if consecutive_healthy_probes >= 2 and time.monotonic() < deadline:
-                logger.info("[SOLVER] CDP target list is stable; starting solver control.")
-                return True
-        else:
-            consecutive_healthy_probes = 0
-        wake = threading.Event()
-        retry_at = min(deadline, time.monotonic() + 2)
-        while time.monotonic() < retry_at:
+    def _solver_max_runtime_seconds(self) -> int:
+        raw = os.getenv("FAPAI_SOLVER_MAX_RUNTIME_SECONDS", "180")
+        try:
+            value = int(str(raw or "").strip())
+        except ValueError:
+            value = 180
+        if value <= 0:
+            return 180
+        return value
+
+    def _solver_worker_quiesce_seconds(self) -> int:
+        raw = os.getenv("FAPAI_SOLVER_WORKER_QUIESCE_SECONDS", "0")
+        try:
+            value = int(str(raw or "").strip())
+        except ValueError:
+            value = 0
+        return max(0, min(value, 300))
+
+    def _solver_cdp_ready_timeout_seconds(self) -> int:
+        raw = os.getenv("FAPAI_SOLVER_CDP_READY_TIMEOUT_SECONDS", "0")
+        try:
+            value = int(str(raw or "").strip())
+        except ValueError:
+            value = 0
+        return max(0, min(value, 600))
+
+    def _wait_for_solver_cdp_ready(
+        self,
+        solver_request: dict[str, object] | None,
+        *,
+        deadline: float | None = None,
+        cancel_checker: Callable[[], bool] | None = None,
+    ) -> bool:
+        timeout_seconds = self.ready_timeout()
+        request_payload = solver_request if isinstance(solver_request, dict) else {}
+        cdp_endpoint = (
+            str(request_payload.get("cdp_endpoint") or "").strip().rstrip("/")
+        )
+        if timeout_seconds <= 0 or not cdp_endpoint:
+            return True
+
+        logger.info(
+            f"[SOLVER] Waiting up to {timeout_seconds}s for a stable CDP target list at "
+            f"{cdp_endpoint}."
+        )
+        deadline = (
+            min(deadline, self.monotonic() + timeout_seconds)
+            if deadline is not None
+            else self.monotonic() + timeout_seconds
+        )
+        consecutive_healthy_probes = 0
+        while self.monotonic() < deadline:
             if cancel_checker is not None and cancel_checker():
                 return False
-            wake.wait(min(0.1, max(0, retry_at - time.monotonic())))
+            try:
+                request = Request(
+                    f"{cdp_endpoint}/json/list", headers={"Accept": "application/json"}
+                )
+                with self.open_url(
+                    request, timeout=max(0.001, min(3, deadline - self.monotonic()))
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                healthy = isinstance(payload, list)
+            except Exception:  # noqa: BLE001 - a failed CDP probe resets readiness
+                healthy = False
 
-    logger.warning("[SOLVER] CDP did not become stable within %ss.", timeout_seconds)
-    return False
+            if healthy:
+                consecutive_healthy_probes += 1
+                if consecutive_healthy_probes >= 2 and self.monotonic() < deadline:
+                    logger.info(
+                        "[SOLVER] CDP target list is stable; starting solver control."
+                    )
+                    return True
+            else:
+                consecutive_healthy_probes = 0
+            wake = self.event()
+            retry_at = min(deadline, self.monotonic() + 2)
+            while self.monotonic() < retry_at:
+                if cancel_checker is not None and cancel_checker():
+                    return False
+                wake.wait(min(0.1, max(0, retry_at - self.monotonic())))
 
-def _solver_cdp_probe_timeout_seconds() -> float:
-    raw = os.getenv("FAPAI_SOLVER_CDP_PROBE_TIMEOUT_SECONDS", "3")
-    try:
-        value = float(str(raw or "").strip())
-    except ValueError:
-        value = 3.0
-    return max(0.5, min(value, 30.0))
-
-def _probe_solver_cdp_endpoint(cdp_endpoint: str) -> bool:
-    """轻量探测 CDP 是否可达；没有 endpoint 时视为通过。
-
-    manual retry 会先走这里，避免浏览器已经掉线时还不停地清 pause、重投
-    solver，最后把 manual_retry_attempts 刷到几千次。
-    """
-    endpoint = str(cdp_endpoint or "").strip().rstrip("/")
-    if not endpoint:
-        return True
-    try:
-        request = Request(f"{endpoint}/json/version", headers={"Accept": "application/json"})
-        with urlopen(request, timeout=_solver_cdp_probe_timeout_seconds()) as response:
-            json.loads(response.read().decode("utf-8"))
-    except Exception:
-        return False
-    return True
-
-def _manual_solver_retry_poll_seconds() -> int:
-    raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_POLL_SECONDS", "30")
-    try:
-        value = int(str(raw or "").strip())
-    except ValueError:
-        value = 30
-    return max(value, 1)
-
-def _captcha_solver_background_url(url: str) -> str:
-    target_url = str(url or "").strip()
-    if not target_url:
-        return ""
-    if "__captcha_solver_bg=1" in target_url:
-        return target_url
-    separator = "&" if "?" in target_url else "?"
-    return f"{target_url}{separator}__captcha_solver_bg=1"
-
-def _solver_manual_flag_request() -> dict[str, Any]:
-    flag_path = _solver_force_unlock_flag_path()
-    try:
-        with open(flag_path, "r", encoding="utf-8") as flag_file:
-            payload = json.load(flag_file)
-    except Exception:
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    last_request = payload.get("last_request")
-    return dict(last_request) if isinstance(last_request, dict) else {}
-
-def _default_manual_solver_retry_request() -> dict[str, Any]:
-    default_url = _captcha_solver_background_url(_auth_cookie_snapshot_sample_urls({})[0])
-    return {"target_url": default_url} if default_url else {}
-
-def _prefer_seed_manual_solver_retry_request() -> bool:
-    try:
-        status_payload = _collection_api_lightweight_status_payload()
-    except Exception:
-        return False
-    return _solver_last_request_scope() == "detail" and _seed_stage_has_remaining_work(status_payload)
-
-def _seed_priority_manual_solver_retry_request(
-    current_request: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    request = dict(current_request or {})
-    default_request = _build_solver_request(_default_manual_solver_retry_request())
-    if default_request.get("target_url"):
-        request["target_url"] = default_request["target_url"]
-    return request
-
-def _prefer_seed_solver_request_for_payload(
-    request_payload: dict[str, Any] | None = None,
-    *,
-    status_payload: dict[str, Any] | None = None,
-) -> bool:
-    if _solver_request_scope(request_payload) != "detail":
-        return False
-    if status_payload is None:
-        try:
-            status_payload = _collection_api_lightweight_status_payload()
-        except Exception:
-            return False
-    if not isinstance(status_payload, dict):
-        return False
-    return _seed_stage_has_remaining_work(status_payload)
-
-def _seed_priority_solver_request(
-    request_payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    solver_request = _build_solver_request(request_payload or {})
-    if not solver_request.get("target_url"):
-        return solver_request
-    if _prefer_seed_solver_request_for_payload(solver_request):
-        solver_request["challenge_target_url"] = solver_request["target_url"]
-        return _seed_priority_manual_solver_retry_request(solver_request)
-    return solver_request
-
-def _manual_solver_retry_request() -> dict[str, Any]:
-    solver_request = _build_solver_request(RUNTIME.recovery.snapshot().last_request if isinstance(RUNTIME.recovery.snapshot().last_request, dict) else {})
-    if solver_request.get("target_url"):
-        if _prefer_seed_manual_solver_retry_request():
-            return _seed_priority_manual_solver_retry_request(solver_request)
-        return solver_request
-    solver_request = _build_solver_request(_solver_manual_flag_request())
-    if solver_request.get("target_url"):
-        return solver_request
-    return _build_solver_request(_default_manual_solver_retry_request())
-
-def _manual_solver_retry_next_epoch(now: float | None = None) -> float | None:
-    with RUNTIME.lock:
-        recovery = RUNTIME.recovery.snapshot()
-        execution = RUNTIME.solver.snapshot()
-    retry_scope = _challenge_scope_for_request(recovery.last_request)
-    if not _manual_solver_retry_enabled(retry_scope or None):
-        return None
-    interval = _manual_solver_retry_interval_seconds()
-    current_time = time.time() if now is None else now
-    base_epoch = max(
-        recovery.required_epoch,
-        recovery.retry_last_epoch,
-        execution.finished_at,
-    )
-    if base_epoch <= 0:
-        return current_time
-    return base_epoch + interval
-
-def _solver_submission_pending() -> bool:
-    return RUNTIME.solver.snapshot().pending_token is not None
-
-def _reserve_solver_submission() -> object | None:
-    return RUNTIME.solver.reserve()
-
-def _release_solver_submission(token: object | None) -> None:
-    RUNTIME.solver.release(token)
-
-def _activate_solver_submission(
-    solver_request: dict[str, Any] | None,
-    token: object | None,
-) -> tuple[bool, str, float]:
-    with RUNTIME.lock:
-        recovery = RUNTIME.recovery.snapshot()
-        result = RUNTIME.solver.activate(
-            time.time(),
-            token=token,
-            resume_epoch=recovery.resume_epoch,
-            cancel_epoch=recovery.cancel_epoch,
+        logger.warning(
+            "[SOLVER] CDP did not become stable within %ss.", timeout_seconds
         )
-        if result[0]:
-            RUNTIME.recovery.set_request(dict(solver_request) if isinstance(solver_request, dict) else {})
-        return result
+        return False
 
-def _solver_cdp_endpoint_is_remote(cdp_endpoint: str) -> bool:
-    """Check if the CDP endpoint belongs to a remote node (not the local machine).
+    def _solver_cdp_probe_timeout_seconds(self) -> float:
+        raw = os.getenv("FAPAI_SOLVER_CDP_PROBE_TIMEOUT_SECONDS", "3")
+        try:
+            value = float(str(raw or "").strip())
+        except ValueError:
+            value = 3.0
+        return max(0.5, min(value, 30.0))
 
-    Returns True when the endpoint hostname is not a loopback address, indicating
-    the solver runs on a different host than the CDP browser. In that case the
-    local solver cannot use OS-level mouse drag and must defer to the node's
-    own solver process.
-    """
-    endpoint = str(cdp_endpoint or "").strip().rstrip("/")
-    if not endpoint:
-        return False
-    try:
-        parsed = urlparse(endpoint)
-    except ValueError:
-        return False
-    hostname = str(parsed.hostname or "").lower()
-    if not hostname:
-        return False
-    # Local loopback addresses are on the same machine.
-    if hostname in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-        return False
-    # host.docker.internal resolves to the Docker host — same machine when
-    # the solver runs inside a container on the host.
-    if hostname in {"host.docker.internal", "192.168.65.254"}:
-        return False
-    return True
+    def _probe_solver_cdp_endpoint(self, cdp_endpoint: str) -> bool:
+        """轻量探测 CDP 是否可达；没有 endpoint 时视为通过。
 
-def _solver_request_delegated_to_node(solver_request: dict[str, Any] | None) -> bool:
-    request = solver_request if isinstance(solver_request, dict) else {}
-    node_id = str(request.get("node_id") or "").strip().lower()
-    if node_id == "pc2":
+        manual retry 会先走这里，避免浏览器已经掉线时还不停地清 pause、重投
+        solver，最后把 manual_retry_attempts 刷到几千次。
+        """
+        endpoint = str(cdp_endpoint or "").strip().rstrip("/")
+        if not endpoint:
+            return True
+        try:
+            request = Request(
+                f"{endpoint}/json/version", headers={"Accept": "application/json"}
+            )
+            with self.open_url(request, timeout=self.probe_timeout()) as response:
+                json.loads(response.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001 - failed probes are reported as unhealthy
+            return False
         return True
-    return _solver_cdp_endpoint_is_remote(str(request.get("cdp_endpoint") or ""))
 
-def _submit_solver_request(solver_request: dict[str, Any]) -> bool:
-    token = _reserve_solver_submission()
-    if token is None:
-        return False
+    def _manual_solver_retry_poll_seconds(self) -> int:
+        raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_POLL_SECONDS", "30")
+        try:
+            value = int(str(raw or "").strip())
+        except ValueError:
+            value = 30
+        return max(value, 1)
 
-    handler = object.__new__(DataHandler)
-    try:
-        executor.submit(handler.run_solver, solver_request, token)
-    except Exception:
-        _release_solver_submission(token)
-        raise
-    return True
+    def _captcha_solver_background_url(self, url: str) -> str:
+        target_url = str(url or "").strip()
+        if not target_url:
+            return ""
+        if "__captcha_solver_bg=1" in target_url:
+            return target_url
+        separator = "&" if "?" in target_url else "?"
+        return f"{target_url}{separator}__captcha_solver_bg=1"
 
-__all__ = ["_write_solver_manual_required_flag", "_solver_manual_flag_scope", "_solver_manual_flag_is_manual_only", "_manual_solver_retry_enabled", "_manual_solver_retry_interval_seconds", "_solver_max_runtime_seconds", "_solver_worker_quiesce_seconds", "_solver_cdp_ready_timeout_seconds", "_wait_for_solver_cdp_ready", "_solver_cdp_probe_timeout_seconds", "_probe_solver_cdp_endpoint", "_manual_solver_retry_poll_seconds", "_captcha_solver_background_url", "_solver_manual_flag_request", "_default_manual_solver_retry_request", "_prefer_seed_manual_solver_retry_request", "_seed_priority_manual_solver_retry_request", "_prefer_seed_solver_request_for_payload", "_seed_priority_solver_request", "_manual_solver_retry_request", "_manual_solver_retry_next_epoch", "_solver_submission_pending", "_reserve_solver_submission", "_release_solver_submission", "_activate_solver_submission", "_solver_cdp_endpoint_is_remote", "_solver_request_delegated_to_node", "_submit_solver_request"]
+    def _solver_manual_flag_request(self) -> dict[str, object]:
+        from src.solver_manual_retry import manual_flag_request
+
+        return manual_flag_request(self.flag_path())
+
+    def _default_manual_solver_retry_request(self) -> dict[str, object]:
+        default_url = self.background_url(self.sample_urls({})[0])
+        return {"target_url": default_url} if default_url else {}
+
+    def _prefer_seed_manual_solver_retry_request(self) -> bool:
+        try:
+            status_payload = self.status()
+        except Exception:  # noqa: BLE001 - unavailable status must not reroute work
+            return False
+        return self.last_scope() == "detail" and self.seed_pending(status_payload)
+
+    def _seed_priority_manual_solver_retry_request(
+        self,
+        current_request: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        request = dict(current_request or {})
+        default_request = self.build_request(self.default_request())
+        if default_request.get("target_url"):
+            request["target_url"] = default_request["target_url"]
+        return request
+
+    def _prefer_seed_solver_request_for_payload(
+        self,
+        request_payload: dict[str, object] | None = None,
+        *,
+        status_payload: object = None,
+    ) -> bool:
+        if self.request_scope(request_payload) != "detail":
+            return False
+        if status_payload is None:
+            try:
+                status_payload = self.status()
+            except Exception:  # noqa: BLE001 - unavailable status must not reroute work
+                return False
+        if not isinstance(status_payload, dict):
+            return False
+        return self.seed_pending(status_payload)
+
+    def _seed_priority_solver_request(
+        self,
+        request_payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        solver_request = self.build_request(request_payload or {})
+        if not solver_request.get("target_url"):
+            return solver_request
+        if self.prefer_seed_payload(solver_request):
+            solver_request["challenge_target_url"] = solver_request["target_url"]
+            return self.seed_priority_request(solver_request)
+        return solver_request
+
+    def _manual_solver_retry_request(self) -> dict[str, object]:
+        solver_request = self.build_request(
+            self.runtime().recovery.snapshot().last_request
+            if isinstance(self.runtime().recovery.snapshot().last_request, dict)
+            else {}
+        )
+        if solver_request.get("target_url"):
+            if self.prefer_seed_retry():
+                return self.seed_priority_request(solver_request)
+            return solver_request
+        solver_request = self.build_request(self.flag_request())
+        if solver_request.get("target_url"):
+            return solver_request
+        return self.build_request(self.default_request())
+
+    def _manual_solver_retry_next_epoch(self, now: float | None = None) -> float | None:
+        with self.runtime().lock:
+            recovery = self.runtime().recovery.snapshot()
+            execution = self.runtime().solver.snapshot()
+        retry_scope = self.infer_scope(recovery.last_request)
+        if not self.retry_enabled(retry_scope or None):
+            return None
+        interval = self.retry_interval()
+        current_time = self.clock() if now is None else now
+        base_epoch = max(
+            recovery.required_epoch,
+            recovery.retry_last_epoch,
+            execution.finished_at,
+        )
+        if base_epoch <= 0:
+            return current_time
+        return base_epoch + interval
+
+    def _solver_submission_pending(self) -> bool:
+        return self.runtime().solver.snapshot().pending_token is not None
+
+    def _reserve_solver_submission(self) -> object | None:
+        return self.runtime().solver.reserve()
+
+    def _release_solver_submission(self, token: object | None) -> None:
+        self.runtime().solver.release(token)
+
+    def _activate_solver_submission(
+        self,
+        solver_request: dict[str, str] | None,
+        token: object | None,
+    ) -> tuple[bool, str, float]:
+        with self.runtime().lock:
+            recovery = self.runtime().recovery.snapshot()
+            result = self.runtime().solver.activate(
+                self.clock(),
+                token=token,
+                resume_epoch=recovery.resume_epoch,
+                cancel_epoch=recovery.cancel_epoch,
+            )
+            if result[0]:
+                self.runtime().recovery.set_request(
+                    dict(solver_request) if isinstance(solver_request, dict) else {}
+                )
+            return result
+
+    def _solver_cdp_endpoint_is_remote(self, cdp_endpoint: str) -> bool:
+        """Check if the CDP endpoint belongs to a remote node (not the local machine).
+
+        Returns True when the endpoint hostname is not a loopback address, indicating
+        the solver runs on a different host than the CDP browser. In that case the
+        local solver cannot use OS-level mouse drag and must defer to the node's
+        own solver process.
+        """
+        endpoint = str(cdp_endpoint or "").strip().rstrip("/")
+        if not endpoint:
+            return False
+        try:
+            parsed = urlparse(endpoint)
+        except ValueError:
+            return False
+        hostname = str(parsed.hostname or "").lower()
+        if not hostname:
+            return False
+        # Local loopback addresses are on the same machine.
+        if hostname in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+            return False
+        # host.docker.internal resolves to the Docker host — same machine when
+        # the solver runs inside a container on the host.
+        return hostname not in {"host.docker.internal", "192.168.65.254"}
+
+    def _solver_request_delegated_to_node(
+        self, solver_request: dict[str, object] | None
+    ) -> bool:
+        request = solver_request if isinstance(solver_request, dict) else {}
+        node_id = str(request.get("node_id") or "").strip().lower()
+        if node_id == "pc2":
+            return True
+        return self.remote_endpoint(str(request.get("cdp_endpoint") or ""))
+
+    def _submit_solver_request(self, solver_request: dict[str, object]) -> bool:
+        token = self.reserve()
+        if token is None:
+            return False
+
+        run_solver = self.runner()
+        try:
+            self.submit(run_solver, solver_request, token)
+        except Exception:
+            self.release(token)
+            raise
+        return True

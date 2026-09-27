@@ -4,7 +4,6 @@ import json
 import logging
 import re
 
-from bs4 import BeautifulSoup
 
 from src.llm_openai_compatible import chat_with_glm
 from src.llm_text_extraction import (
@@ -122,6 +121,8 @@ def extract_auction_data(html_content, item_id=None, *, model=None):
     area_fallback = None
 
     try:
+        from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(html_content, 'html.parser')
 
         # 0.4 Extract Metadata (fapaifang-meta) - Trusted Source

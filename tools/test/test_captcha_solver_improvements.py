@@ -1,6 +1,9 @@
 """Test captcha solver improvements."""
+
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -9,16 +12,18 @@ sys.path.insert(0, str(REPO_ROOT))
 def test_stealth_injection():
     """Verify stealth JS injection includes all fingerprint hiding."""
     from src.captcha_solver import CaptchaSolver
+
     solver = CaptchaSolver(port=9223)
 
     # Connect and inject stealth script (mocked)
-    assert hasattr(solver, '_send_cdp')
+    assert hasattr(solver, "_send_cdp")
     print("✓ Stealth injection method exists")
 
 
 def test_bezier_path_generation():
     """Test that bezier path has realistic human-like properties."""
     from src.captcha_solver import CaptchaSolver
+
     solver = CaptchaSolver(port=9223)
 
     path = solver._generate_bezier_path(100, 100, 400, 105)
@@ -42,8 +47,9 @@ def test_bezier_path_generation():
 
 def test_drag_timing_improvements():
     """Verify drag method has improved timing."""
-    from src.captcha_solver import CaptchaSolver
     import inspect
+
+    from src.captcha_solver import CaptchaSolver
 
     solver = CaptchaSolver(port=9223)
     source = inspect.getsource(solver._do_drag)
@@ -55,39 +61,53 @@ def test_drag_timing_improvements():
     print("✓ Drag timing includes improvements")
 
 
-def test_live_drag_distance_uses_remaining_track_geometry():
-    """Verify solve uses the live handle position after rejected attempts."""
+@pytest.mark.parametrize(
+    ("track", "expected"),
+    [
+        ({"left": 100, "width": 400}, 260),
+        (
+            {
+                "left": 100,
+                "width": 400,
+                "offsetWidth": 402,
+                "handleOffsetWidth": 40,
+                "handleOffsetLeft": 200,
+            },
+            162,
+        ),
+        (None, 362),
+    ],
+)
+def test_live_drag_distance_uses_remaining_track_geometry(monkeypatch, track, expected):
+    """A handle already partway across the track only moves the remaining distance."""
     from src.captcha_solver import CaptchaSolver
-    import inspect
 
-    solver = CaptchaSolver(port=9223)
-    source = inspect.getsource(solver.solve)
+    solver = CaptchaSolver(target_url="https://example.test/challenge")
+    dragged = []
+    monkeypatch.setattr(
+        solver,
+        "_preflight_current_challenge",
+        lambda: {"connected": True, "has_slider": True},
+    )
+    monkeypatch.setattr(solver, "_bring_to_front", lambda: True)
+    monkeypatch.setattr(solver, "_wait_interruptibly", lambda _seconds: None)
+    monkeypatch.setattr(
+        solver, "_find_slider", lambda: {"x": 200, "y": 100, "width": 40, "height": 40}
+    )
+    monkeypatch.setattr(solver, "_get_track_width", lambda: 400)
+    monkeypatch.setattr(solver, "_get_track_rect", lambda: track)
+    monkeypatch.setattr(solver, "_os_mouse_enabled", lambda: False)
+    monkeypatch.setattr(
+        solver,
+        "_do_drag",
+        lambda x, y, distance: dragged.append((x, y, distance)) or distance,
+    )
+    monkeypatch.setattr(solver, "_wait_for_verification_success", lambda: True)
+    monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
 
-    assert "track_right =" in source
-    assert "slider_right =" in source
-    assert "remaining = offset_remaining" in source
-    assert "distance = max(1, min(remaining, 1000))" in source
-    assert "distance = distance + random.uniform" not in source
-
-    print("✓ Drag distance follows live track geometry")
+    assert solver.solve(max_attempts=1) is True
+    assert dragged == [(220, 120, expected)]
 
 
 if __name__ == "__main__":
-    print("Testing captcha solver improvements...\n")
-
-    try:
-        test_stealth_injection()
-        test_bezier_path_generation()
-        test_drag_timing_improvements()
-        test_live_drag_distance_uses_remaining_track_geometry()
-
-        print("\n✅ All improvement tests passed!")
-        sys.exit(0)
-    except AssertionError as e:
-        print(f"\n❌ Test failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    raise SystemExit(pytest.main([__file__]))

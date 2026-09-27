@@ -209,7 +209,6 @@ def test_generic_adapter_processes_alphanumeric_detail_id(tmp_path: Path) -> Non
         sync_avm_risk_aliases=reject_avm_callback,
         extract_avm_risk_features=reject_avm_callback,
         log_prediction_event=lambda **_kwargs: None,
-        current_processing={str(html_path)},
         queue_pending=lambda _item_id: True,
         set_seen=lambda *_args: None,
         remove_pending=lambda _item_id: None,

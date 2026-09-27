@@ -23,6 +23,7 @@ GET_GROUPS = {
 }
 
 POST_GROUPS = {
+    "_post_collection_job_cancel": ("/api/collection/jobs/cancel",),
     "_post_drift_report": ("/api/avm/drift_status", "/api/analysis/drift_status"),
     "_post_release_gate": ("/api/avm/release_gate", "/api/analysis/release_gate"),
     "_post_recent_gap_audit": ("/api/avm/recent_gap_audit",),

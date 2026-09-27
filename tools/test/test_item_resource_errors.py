@@ -42,7 +42,9 @@ def test_failed_lookup_is_not_reported_as_missing(api, monkeypatch, cached):
         server, "DB_REPOSITORY", SimpleNamespace(enabled=True, get_flat_item=lookup)
     )
     monkeypatch.setattr(
-        server.RUNTIME.collection, "seen_ids", {"known": {"data": {"id": "known"}}} if cached else {}
+        server.RUNTIME.collection,
+        "seen_ids",
+        {"known": {"data": {"id": "known"}}} if cached else {},
     )
     status, _, raw = api("GET", "/api/get_item?id=known")
     assert status == (200 if cached else 503), raw
@@ -56,7 +58,9 @@ def test_failed_lookup_is_not_reported_as_missing(api, monkeypatch, cached):
 @pytest.mark.parametrize(
     "path", ["/api/collection/item?item_id=missing", "/api/collection/items/missing"]
 )
-@pytest.mark.parametrize("mode", ["disabled", "unsupported", "noncallable", "missing", "found"])
+@pytest.mark.parametrize(
+    "mode", ["disabled", "unsupported", "noncallable", "missing", "found"]
+)
 def test_observer_distinguishes_unavailable_and_missing(api, monkeypatch, path, mode):
     payload = {
         "found": mode == "found",
@@ -71,7 +75,13 @@ def test_observer_distinguishes_unavailable_and_missing(api, monkeypatch, path, 
         repository.collection_observer_item_detail = lookup
     monkeypatch.setattr(server, "DB_REPOSITORY", repository)
     status, _, raw = api("GET", path)
-    expected = {"disabled": 503, "unsupported": 503, "noncallable": 503, "missing": 404, "found": 200}
+    expected = {
+        "disabled": 503,
+        "unsupported": 503,
+        "noncallable": 503,
+        "missing": 404,
+        "found": 200,
+    }
     assert status == expected[mode], raw
     if mode in ("disabled", "unsupported", "noncallable"):
         lookup.assert_not_called()

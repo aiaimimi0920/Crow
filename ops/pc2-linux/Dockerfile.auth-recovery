@@ -5,6 +5,7 @@ FROM scratch AS hotfix
 COPY tools/internal_api_http.py /app/tools/internal_api_http.py
 COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py
 COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py
+COPY tools/pc2_solver_*.py /app/tools/
 COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py
 COPY src/captcha_solver.py /app/src/captcha_solver.py

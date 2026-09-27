@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from src import llm_helper, llm_openai_compatible
+from src import llm_auction_extraction, llm_helper, llm_openai_compatible
 from src.llm_evidence_prompt import EvidencePrompt, request_messages
 from src.llm_request_policy import MAX_INPUT_CHARACTERS, MAX_OUTPUT_TOKENS
 from src.llm_websocket import AIService
@@ -28,7 +28,7 @@ def test_collection_builders_separate_evidence_without_changing_string_contract(
 
 def test_auction_builder_preserves_boundary_at_backend_call(monkeypatch):
     captured = []
-    monkeypatch.setattr(llm_helper, "chat_with_glm", lambda prompt: captured.append(prompt) or '{}')
+    monkeypatch.setattr(llm_auction_extraction, "chat_with_glm", lambda prompt: captured.append(prompt) or '{}')
     llm_helper.extract_auction_data(HOSTILE)
     assert_separated(request_messages(captured[0]))
 

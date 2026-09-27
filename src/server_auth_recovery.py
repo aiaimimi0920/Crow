@@ -1,499 +1,256 @@
+"""NAS authentication recovery monitoring and authenticated result handling."""
+
 from __future__ import annotations
 
-import logging
 import hmac
-import json
-import os
-import time
-from pathlib import Path
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar, Protocol, cast
 
-from .server_context import (
-    CHALLENGE_SCOPES,
-    DATA_DIR,
-    DB_REPOSITORY,
-    NAS_AUTH_RECOVERY,
-    NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS,
-    NAS_AUTH_RECOVERY_POLL_SECONDS,
-    NAS_AUTH_RECOVERY_TOKEN_FILE,
-    RUNTIME,
-    SOLVER_AUTH_REPORT_GRACE_SECONDS,
-    SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS,
-    SOLVER_DETAIL_PROGRESS_GRACE_SECONDS,
-    SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS,
+from .auth_recovery_progress import (
+    ProgressRepository,
+    captured_detail_count,
+    pending_detail_count,
 )
+from .collection_control_state import CHALLENGE_SCOPES
+from .server_solver_state import PauseCleaner
+from .solver_status_reader import ScopeStatus
+
+if TYPE_CHECKING:
+    from .runtime_state import RuntimeState
 
 logger = logging.getLogger(__name__)
 
-def _captcha_solver_runtime_status(now: float | None = None) -> dict[str, Any]:
-    current_time = time.time() if now is None else now
-    with RUNTIME.lock:
-        execution = RUNTIME.solver.snapshot()
-        recovery = RUNTIME.recovery.snapshot()
-        pause = RUNTIME.control.snapshot()
-        active_run = execution.running
-        queued = execution.pending_token is not None
-        started_at = float(execution.started_at or 0)
-        last_status = execution.last_status
-        last_failure_reason = execution.failure_reason
-        last_finished_at = execution.finished_at
-        last_request = recovery.last_request
-        paused = pause.paused
-        pause_reason = pause.reason
-        manual_only_flag = recovery.manual_only
-        challenge_id = recovery.challenge_id
-    running = bool(active_run or queued)
-    force_unlock_flag_exists = _solver_force_unlock_flag_exists()
-    if not last_request and force_unlock_flag_exists:
-        last_request = _solver_manual_flag_request()
-    elapsed_seconds = max(int(current_time - started_at), 0) if active_run and started_at > 0 else 0
-    # Persisted stage challenges survive an idle legacy singleton/API restart.
-    scope_statuses = {
-        scope: _solver_scope_runtime_status(scope, now=current_time)
-        for scope in CHALLENGE_SCOPES
-    }
-    active_scope = _challenge_scope_for_request(last_request)
-    if active_scope not in CHALLENGE_SCOPES:
-        active_scope = next(
-            (
-                scope
-                for scope, status in scope_statuses.items()
-                if status.get("challenge_id")
-            ),
-            None,
-        )
-    selected_scope = scope_statuses.get(active_scope or "", {})
-    manual_required = bool(
-        force_unlock_flag_exists
-        or (paused and last_status == "manual_required")
-        or any(status.get("manual_required") for status in scope_statuses.values())
-    )
-    scoped_manual_only = bool(selected_scope.get("manual_only")) if selected_scope else False
-    manual_only = bool(
-        scoped_manual_only
-        or (
-            active_scope not in CHALLENGE_SCOPES
-            and (manual_only_flag or _solver_manual_flag_is_manual_only())
-        )
-        or _solver_target_requires_manual_only(last_request)
-    )
-    delegated_to_node = bool(last_request and _solver_request_delegated_to_node(last_request))
-    request_node_id = str(last_request.get("node_id") or "").strip().lower()
-    request_owner = (request_node_id or "node") if delegated_to_node else ("nas" if last_request else None)
-    execution_mode = (
-        "manual"
-        if manual_only
-        else "delegated_node"
-        if delegated_to_node
-        else "nas_local"
-        if last_request
-        else "idle"
-    )
-    manual_retry_next_epoch = _manual_solver_retry_next_epoch(current_time) if manual_required else None
-    return {
-        "running": running,
-        "queued": queued,
-        "started_at_epoch": started_at if started_at > 0 else None,
-        "elapsed_seconds": elapsed_seconds,
-        "last_status": last_status,
-        "last_failure_reason": last_failure_reason,
-        "last_finished_at_epoch": last_finished_at if last_finished_at else None,
-        "manual_required": manual_required,
-        "manual_only": manual_only,
-        "execution_mode": execution_mode,
-        "request_owner": request_owner,
-        "delegated_to_node_solver": delegated_to_node,
-        "nas_solver_active": running,
-        "node_solver_expected": bool(delegated_to_node and not manual_only),
-        "real_taobao_auto_solver_enabled": _real_taobao_auto_solver_enabled(),
-        "force_unlock_flag_exists": force_unlock_flag_exists,
-        "paused": bool(
-            _collection_effectively_paused()
-            or any(status.get("paused") for status in scope_statuses.values())
-        ),
-        "pause_reason": pause_reason,
-        "last_request": last_request,
-        "manual_retry_enabled": _manual_solver_retry_enabled(),
-        "manual_retry_interval_seconds": _manual_solver_retry_interval_seconds(),
-        "solver_max_runtime_seconds": _solver_max_runtime_seconds(),
-        "manual_retry_attempts": recovery.retry_attempts,
-        "manual_retry_last_epoch": recovery.retry_last_epoch or None,
-        "manual_retry_next_epoch": manual_retry_next_epoch,
-        "challenge_id": challenge_id,
-        "cookie_snapshot_refresh": _auth_cookie_snapshot_runtime_status(),
-        # New consumers use these independent state machines.  The legacy
-        # singleton fields above remain for older workers and API clients.
-        "scope": active_scope or None,
-        "scopes": scope_statuses,
-        "collection_scopes": scope_statuses,
-        "collection_pause_markers": {
-            scope: "paused" if bool(status.get("paused") or status.get("manual_required")) else "collecting"
-            for scope, status in scope_statuses.items()
-        },
-    }
 
-def _solver_challenge_state_path() -> Path:
-    state_dir = str(os.getenv("FAPAI_SOLVER_STATE_DIR") or DATA_DIR).strip() or DATA_DIR
-    return Path(state_dir) / "solver-challenge-state.json"
+class HeaderReader(Protocol):
+    def get(self, key: str) -> object: ...
 
-def _read_solver_challenge_state() -> dict[str, Any]:
-    try:
-        payload = json.loads(_solver_challenge_state_path().read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    if not isinstance(payload, dict) or payload.get("active") is not True:
-        return {}
-    challenge_id = str(payload.get("challenge_id") or "").strip()
-    if not challenge_id:
-        return {}
-    last_request = payload.get("last_request")
-    payload["challenge_id"] = challenge_id
-    payload["last_request"] = dict(last_request) if isinstance(last_request, dict) else {}
-    return payload
 
-def _solver_challenge_request_key(request_payload: dict[str, Any] | None) -> tuple[str, str, str]:
-    payload = request_payload if isinstance(request_payload, dict) else {}
-    node_id = str(payload.get("node_id") or "").strip().lower()
-    cdp_endpoint = str(payload.get("cdp_endpoint") or "").strip().lower().rstrip("/")
-    target_url = _normalize_solver_target_url(
-        payload.get("challenge_target_url") or payload.get("target_url") or payload.get("url") or ""
-    )
-    return node_id, cdp_endpoint, target_url
+class RecoveryCoordinator(Protocol):
+    enabled: bool
 
-def _solver_challenge_owner_key(request_payload: dict[str, Any] | None) -> tuple[str, str]:
-    node_id, cdp_endpoint, _target_url = _solver_challenge_request_key(request_payload)
-    return node_id, cdp_endpoint
+    def sample(
+        self,
+        captured_count: int | None,
+        pending_detail_count: int,
+        *,
+        operator_paused: bool,
+        recovery_signal: str | None,
+        recovery_signal_stall_seconds: float,
+        blocked_scopes: tuple[str, ...],
+    ) -> dict[str, object]: ...
 
-def _solver_detail_captured_count() -> int | None:
-    if not getattr(DB_REPOSITORY, "enabled", False):
-        return None
-    try:
-        counts = DB_REPOSITORY.seed_queue_counts()
-    except Exception:
-        return None
-    if not isinstance(counts, dict):
-        return None
-    captured_status_keys = (
-        "seed_item_raw_detail_captured",
-        # Analysis states are included because each can only be entered after
-        # raw detail HTML was captured successfully. Moving between these
-        # states therefore keeps the total stable instead of inventing progress.
-        "seed_item_analysis_in_progress",
-        "seed_item_analysis_failed",
-        "seed_item_analysis_blocked",
-        "seed_item_detail_completed",
-    )
-    try:
-        return sum(max(int(counts.get(key, 0) or 0), 0) for key in captured_status_keys)
-    except (TypeError, ValueError):
-        return None
+    def snapshot(self) -> dict[str, object]: ...
 
-def _nas_auth_recovery_pending_detail_count() -> int:
-    if not getattr(DB_REPOSITORY, "enabled", False):
-        return 0
-    try:
-        counts = DB_REPOSITORY.seed_queue_counts()
-    except Exception:
-        return 0
-    if not isinstance(counts, dict):
-        return 0
-    try:
-        return max(int(counts.get("seed_item_pending_detail", 0) or 0), 0) + max(
-            int(counts.get("seed_item_in_progress", 0) or 0),
-            0,
-        )
-    except (TypeError, ValueError):
-        return 0
+    def accept_stage_result(
+        self,
+        payload: dict[str, object],
+        *,
+        validate_and_clear: Callable[[dict[str, object]], str | None],
+        captured_count: int | None,
+    ) -> dict[str, object]: ...
 
-def _nas_auth_recovery_signal() -> str | None:
-    if RUNTIME.control.snapshot().reason == "operator":
-        return None
-    solver_status = _captcha_solver_runtime_status()
-    if not solver_status.get("paused"):
-        return None
-    scoped_statuses = solver_status.get("scopes") or solver_status.get("collection_scopes")
-    for scope in ("detail", "seed"):
-        stage_status = scoped_statuses.get(scope) if isinstance(scoped_statuses, dict) else None
-        try:
-            challenge_age = float((stage_status or {}).get("challenge_age_seconds") or 0)
-        except (TypeError, ValueError):
-            challenge_age = 0.0
-        if (
-            isinstance(stage_status, dict)
-            and stage_status.get("paused")
-            and challenge_age >= NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS
-        ):
-            return f"{scope}_challenge_stalled"
-    if solver_status.get("manual_required"):
-        return "captcha_manual_required"
-    if isinstance(scoped_statuses, dict) and any(
-        isinstance(status, dict)
-        and status.get("paused")
-        and status.get("node_solver_blocked")
-        and status.get("node_solver_blocked_reason") == "repeated_solver_failures"
-        for status in scoped_statuses.values()
-    ):
-        return "node_solver_retries_exhausted"
-    snapshot_status = _auth_cookie_snapshot_runtime_status()
-    snapshot_result = snapshot_status.get("result")
-    if not isinstance(snapshot_result, dict):
-        snapshot_result = {}
-    if (
-        snapshot_status.get("status") == "failed"
-        and snapshot_result.get("reason") == "cookie_snapshot_candidate_unhealthy"
-    ):
-        return "cookie_snapshot_candidate_unhealthy"
-    return None
+    def result(
+        self, recovery_id: str, *, success: bool, reason: str
+    ) -> dict[str, object]: ...
 
-def _sample_nas_auth_recovery() -> dict[str, Any]:
-    return NAS_AUTH_RECOVERY.sample(
-        _solver_detail_captured_count(),
-        _nas_auth_recovery_pending_detail_count(),
-        operator_paused=RUNTIME.control.snapshot().reason == "operator",
-        recovery_signal=_nas_auth_recovery_signal(),
-        recovery_signal_stall_seconds=NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS,
-        blocked_scopes=tuple(scope for scope in CHALLENGE_SCOPES
-                             if _solver_scope_runtime_status(scope).get("challenge_id")),
+
+@dataclass(frozen=True)
+class AuthRecovery:
+    runtime: Callable[[], RuntimeState]
+    repository: Callable[[], ProgressRepository]
+    coordinator: Callable[[], RecoveryCoordinator]
+    blocked_seconds: Callable[[], float]
+    poll_seconds: Callable[[], float]
+    sleep: Callable[[float], None]
+    expected_token: Callable[[], str]
+    solver_status: Callable[[], dict[str, object]]
+    cookie_status: Callable[[], dict[str, object]]
+    scope_status: ScopeStatus
+    captured_count: Callable[[], int | None]
+    pending_count: Callable[[], int]
+    signal: Callable[[], str | None]
+    sample: Callable[[], dict[str, object]]
+    clear_pause: PauseCleaner
+    matches_target: Callable[[str, str, dict[str, object]], bool]
+    remember_completion: Callable[[dict[str, str]], None]
+    paused: Callable[[], bool]
+
+    __all__: ClassVar[tuple[str, ...]] = (
+        "_solver_detail_captured_count",
+        "_nas_auth_recovery_pending_detail_count",
+        "_nas_auth_recovery_signal",
+        "_sample_nas_auth_recovery",
+        "_nas_auth_recovery_authorized",
+        "nas_auth_recovery_watchdog_thread",
+        "_nas_auth_recovery_result",
     )
 
-def _nas_auth_recovery_authorized(headers: Any) -> tuple[bool, str]:
-    if not NAS_AUTH_RECOVERY.enabled:
-        return False, "auth recovery is disabled"
-    try:
-        expected = NAS_AUTH_RECOVERY_TOKEN_FILE.read_text(encoding="utf-8").strip()
-    except Exception:
-        expected = ""
-    supplied = str(headers.get("X-Fapai-Recovery-Token") or "").strip()
-    if not expected:
-        return False, "auth recovery token is not configured"
-    if not supplied or not hmac.compare_digest(supplied.encode('utf-8'), expected.encode('utf-8')):
-        return False, "auth recovery token is invalid"
-    return True, ""
+    def _solver_detail_captured_count(self) -> int | None:
+        return captured_detail_count(self.repository())
 
-def nas_auth_recovery_watchdog_thread() -> None:
-    while True:
-        try:
-            snapshot = _sample_nas_auth_recovery()
-            active = snapshot.get("active")
-            if isinstance(active, dict) and active.get("status") == "requested":
-                logger.warning(
-                    "[AUTH-RECOVERY] Collection stalled; PC1 authentication "
-                    f"recovery requested ({active.get('recovery_id')}, "
-                    f"trigger={active.get('trigger_reason')})."
-                )
-        except Exception as error:
-            logger.exception("[AUTH-RECOVERY] Watchdog sample failed")
-        time.sleep(NAS_AUTH_RECOVERY_POLL_SECONDS)
+    def _nas_auth_recovery_pending_detail_count(self) -> int:
+        return pending_detail_count(self.repository())
 
-def _nas_auth_recovery_result(payload: dict[str, Any]) -> dict[str, Any]:
-    recovery_id = str(payload.get("recovery_id") or "").strip()
-    success = payload.get("success") is True
-    reason = str(payload.get("reason") or "").strip()
-    if not recovery_id:
-        return {"ok": False, "error": "recovery_id is required"}
-    snapshot = NAS_AUTH_RECOVERY.snapshot()
-    active = snapshot.get("active") or {}
-    last = snapshot.get("last_result") or {}
-    if active.get("scope") or (last.get("recovery_id") == recovery_id and last.get("scope")):
-        def validate_and_clear(recovery):
-            from src.collection.adapters.taobao_auth_target import matches_challenge_target
-            scope = recovery["scope"]
-            with RUNTIME.lock:
-                status = _solver_scope_runtime_status(scope)
-                current = str(status.get("challenge_id") or "")
-                if current and current != recovery.get("challenge_id"):
-                    return "challenge_changed"
-                if not matches_challenge_target(scope, recovery.get("target_url"), status):
-                    return "challenge_changed"
-                if RUNTIME.control.snapshot().reason == "operator":
-                    return "operator_pause_active"
-                return _clear_solver_manual_required_pause(scope=scope, preserve_running_state=True)
-        return NAS_AUTH_RECOVERY.accept_stage_result(
-            payload, validate_and_clear=validate_and_clear, captured_count=_solver_detail_captured_count())
-    if not success:
-        return NAS_AUTH_RECOVERY.result(
-            recovery_id,
-            success=False,
-            reason=reason or "pc2_recovery_failed",
-        )
-    if RUNTIME.control.snapshot().reason == "operator":
-        return NAS_AUTH_RECOVERY.result(
-            recovery_id,
-            success=False,
-            reason="operator_pause_active",
-        )
-
-    result = NAS_AUTH_RECOVERY.result(recovery_id, success=True, reason=reason)
-    if not result.get("ok"):
-        return result
-    clear_error = _clear_solver_manual_required_pause()
-    if clear_error:
-        NAS_AUTH_RECOVERY.result(
-            recovery_id,
-            success=False,
-            reason=f"clear_collection_pause_failed:{clear_error}",
-        )
-        return {"ok": False, "error": clear_error}
-    _remember_solver_auth_completion(
-        {
-            "node_id": "pc2",
-            "source": "nas_auth_recovery",
-        }
-    )
-    return {
-        **result,
-        "paused": _collection_effectively_paused(),
-        "captcha_solver": _captcha_solver_runtime_status(),
-    }
-
-def _remember_solver_auth_completion(request_payload: dict[str, Any] | None) -> None:
-    request = _build_solver_request(request_payload or {})
-    completed_at = time.time()
-    captured_count = _solver_detail_captured_count()
-    RUNTIME.recovery.record_auth_completion(completed_at, request, captured_count)
-
-def _solver_request_matches_auth_source(
-    completed_request: dict[str, Any],
-    incoming_request: dict[str, Any],
-) -> bool:
-    completed_scope = _challenge_scope_for_request(completed_request)
-    incoming_scope = _challenge_scope_for_request(incoming_request)
-    # Legacy unscoped recovery only proved detail progress, never list access.
-    if incoming_scope == "seed" and completed_scope != "seed":
-        return False
-    if completed_scope and incoming_scope and completed_scope != incoming_scope:
-        return False
-    completed_node, completed_cdp, completed_target = _solver_challenge_request_key(
-        completed_request
-    )
-    incoming_node, incoming_cdp, incoming_target = _solver_challenge_request_key(
-        incoming_request
-    )
-    if completed_node and incoming_node:
-        return completed_node == incoming_node
-    if completed_cdp and incoming_cdp:
-        return completed_cdp == incoming_cdp
-    return bool(
-        completed_target
-        and incoming_target
-        and completed_target == incoming_target
-    )
-
-def _remember_solver_force_reset_recovery(
-    scope: str,
-    request_payload: dict[str, Any] | None,
-    *,
-    now: float | None = None,
-) -> None:
-    """Remember a scoped reset so its just-closed page cannot immediately re-lock collection."""
-    normalized_scope = _normalize_challenge_scope(scope)
-    request = _build_solver_request(request_payload or {})
-    if normalized_scope not in CHALLENGE_SCOPES or not request:
-        return
-    RUNTIME.control.remember_force_reset(
-        normalized_scope, time.time() if now is None else float(now), request,
-    )
-
-def _solver_force_reset_report_suppression(
-    request_payload: dict[str, Any] | None,
-    *,
-    now: float | None = None,
-) -> dict[str, Any] | None:
-    """Ignore same-scope reports briefly after a forced recovery attempt."""
-    incoming = _build_solver_request(request_payload or {})
-    scope = _challenge_scope_for_request(incoming)
-    if scope not in CHALLENGE_SCOPES or SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS <= 0:
-        return None
-    recovery = RUNTIME.control.force_reset_snapshot(scope)
-    completed_at = float(recovery.get("completed_at_epoch") or 0)
-    completed_request = _build_solver_request(recovery.get("request") or {})
-    if completed_at <= 0 or not completed_request or not incoming:
-        return None
-    current_time = time.time() if now is None else float(now)
-    age = current_time - completed_at
-    if age < 0 or age > SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS:
-        return None
-    if not _solver_request_matches_auth_source(completed_request, incoming):
-        return None
-    return {
-        "reason": "recent_force_reset",
-        "scope": scope,
-        "age_seconds": age,
-        "grace_seconds": SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS,
-    }
-
-def _solver_auth_report_suppression(
-    request_payload: dict[str, Any] | None,
-    *,
-    now: float | None = None,
-) -> dict[str, Any] | None:
-    recovery = RUNTIME.recovery.snapshot()
-    completed_at = recovery.completed_at
-    if completed_at <= 0:
-        return None
-    current_time = time.time() if now is None else float(now)
-    age = current_time - completed_at
-    max_grace_seconds = max(
-        SOLVER_AUTH_REPORT_GRACE_SECONDS,
-        SOLVER_DETAIL_PROGRESS_GRACE_SECONDS,
-    )
-    if age < 0 or age > max_grace_seconds:
-        return None
-
-    completed = _build_solver_request(recovery.completed_request)
-    incoming = _build_solver_request(request_payload or {})
-    if not completed or not incoming:
-        return None
-    if not _solver_request_matches_auth_source(completed, incoming):
-        return None
-
-    incoming_scope = _challenge_scope_for_request(incoming)
-    if incoming_scope == "seed":
-        from src.collection.adapters.taobao_auth_target import same_auth_target
-
-        if not same_auth_target("seed", _solver_challenge_request_key(completed)[2],
-                                _solver_challenge_request_key(incoming)[2]):
+    def _nas_auth_recovery_signal(self) -> str | None:
+        if self.runtime().control.snapshot().reason == "operator":
             return None
-    if SOLVER_AUTH_REPORT_GRACE_SECONDS > 0 and age <= SOLVER_AUTH_REPORT_GRACE_SECONDS:
+        solver_status = self.solver_status()
+        if not solver_status.get("paused"):
+            return None
+        scoped_statuses = solver_status.get("scopes") or solver_status.get(
+            "collection_scopes"
+        )
+        for scope in ("detail", "seed"):
+            stage_status = (
+                scoped_statuses.get(scope)
+                if isinstance(scoped_statuses, dict)
+                else None
+            )
+            try:
+                challenge_age = float(
+                    (stage_status or {}).get("challenge_age_seconds") or 0
+                )
+            except (TypeError, ValueError):
+                challenge_age = 0.0
+            if (
+                isinstance(stage_status, dict)
+                and stage_status.get("paused")
+                and challenge_age >= self.blocked_seconds()
+            ):
+                return f"{scope}_challenge_stalled"
+        if solver_status.get("manual_required"):
+            return "captcha_manual_required"
+        if isinstance(scoped_statuses, dict) and any(
+            isinstance(status, dict)
+            and status.get("paused")
+            and status.get("node_solver_blocked")
+            and status.get("node_solver_blocked_reason") == "repeated_solver_failures"
+            for status in scoped_statuses.values()
+        ):
+            return "node_solver_retries_exhausted"
+        snapshot_status = self.cookie_status()
+        snapshot_result = snapshot_status.get("result")
+        if not isinstance(snapshot_result, dict):
+            snapshot_result = {}
+        if (
+            snapshot_status.get("status") == "failed"
+            and snapshot_result.get("reason") == "cookie_snapshot_candidate_unhealthy"
+        ):
+            return "cookie_snapshot_candidate_unhealthy"
+        return None
+
+    def _sample_nas_auth_recovery(self) -> dict[str, object]:
+        return self.coordinator().sample(
+            self.captured_count(),
+            self.pending_count(),
+            operator_paused=self.runtime().control.snapshot().reason == "operator",
+            recovery_signal=self.signal(),
+            recovery_signal_stall_seconds=self.blocked_seconds(),
+            blocked_scopes=tuple(
+                scope
+                for scope in CHALLENGE_SCOPES
+                if self.scope_status(scope).get("challenge_id")
+            ),
+        )
+
+    def _nas_auth_recovery_authorized(self, headers: HeaderReader) -> tuple[bool, str]:
+        if not self.coordinator().enabled:
+            return False, "auth recovery is disabled"
+        expected = self.expected_token()
+        supplied = str(headers.get("X-Fapai-Recovery-Token") or "").strip()
+        if not expected:
+            return False, "auth recovery token is not configured"
+        if not supplied or not hmac.compare_digest(
+            supplied.encode("utf-8"), expected.encode("utf-8")
+        ):
+            return False, "auth recovery token is invalid"
+        return True, ""
+
+    def nas_auth_recovery_watchdog_thread(self) -> None:
+        while True:
+            try:
+                snapshot = self.sample()
+                active = snapshot.get("active")
+                if isinstance(active, dict) and active.get("status") == "requested":
+                    logger.warning(
+                        "[AUTH-RECOVERY] Collection stalled; PC1 authentication "
+                        f"recovery requested ({active.get('recovery_id')}, "
+                        f"trigger={active.get('trigger_reason')})."
+                    )
+            except Exception:
+                logger.exception("[AUTH-RECOVERY] Watchdog sample failed")
+            self.sleep(self.poll_seconds())
+
+    def _nas_auth_recovery_result(
+        self, payload: dict[str, object]
+    ) -> dict[str, object]:
+        recovery_id = str(payload.get("recovery_id") or "").strip()
+        success = payload.get("success") is True
+        reason = str(payload.get("reason") or "").strip()
+        if not recovery_id:
+            return {"ok": False, "error": "recovery_id is required"}
+        snapshot = self.coordinator().snapshot()
+        active = cast("dict[str, object]", snapshot.get("active") or {})
+        last = cast("dict[str, object]", snapshot.get("last_result") or {})
+        if active.get("scope") or (
+            last.get("recovery_id") == recovery_id and last.get("scope")
+        ):
+
+            def validate_and_clear(recovery: dict[str, object]) -> str | None:
+
+                scope = cast("str", recovery["scope"])
+                with self.runtime().lock:
+                    status = self.scope_status(scope)
+                    current = str(status.get("challenge_id") or "")
+                    if current and current != recovery.get("challenge_id"):
+                        return "challenge_changed"
+                    if not self.matches_target(
+                        scope, cast("str", recovery.get("target_url")), status
+                    ):
+                        return "challenge_changed"
+                    if self.runtime().control.snapshot().reason == "operator":
+                        return "operator_pause_active"
+                    return self.clear_pause(scope=scope, preserve_running_state=True)
+
+            return self.coordinator().accept_stage_result(
+                payload,
+                validate_and_clear=validate_and_clear,
+                captured_count=self.captured_count(),
+            )
+        if not success:
+            return self.coordinator().result(
+                recovery_id,
+                success=False,
+                reason=reason or "pc2_recovery_failed",
+            )
+        if self.runtime().control.snapshot().reason == "operator":
+            return self.coordinator().result(
+                recovery_id,
+                success=False,
+                reason="operator_pause_active",
+            )
+
+        result = self.coordinator().result(recovery_id, success=True, reason=reason)
+        if not result.get("ok"):
+            return result
+        clear_error = self.clear_pause()
+        if clear_error:
+            self.coordinator().result(
+                recovery_id,
+                success=False,
+                reason=f"clear_collection_pause_failed:{clear_error}",
+            )
+            return {"ok": False, "error": clear_error}
+        self.remember_completion(
+            {
+                "node_id": "pc2",
+                "source": "nas_auth_recovery",
+            }
+        )
         return {
-            "reason": "recent_auth_complete",
-            "age_seconds": age,
-            "grace_seconds": SOLVER_AUTH_REPORT_GRACE_SECONDS,
-            "captured_since_auth": 0,
+            **result,
+            "paused": self.paused(),
+            "captcha_solver": self.solver_status(),
         }
-
-    if incoming_scope != "detail":
-        return None
-    baseline = recovery.completed_detail_count
-    current_count = _solver_detail_captured_count()
-    if baseline is None or current_count is None:
-        return None
-    captured_since_auth = max(current_count - baseline, 0)
-    if (
-        age > SOLVER_DETAIL_PROGRESS_GRACE_SECONDS
-        or captured_since_auth < SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS
-    ):
-        return None
-    return {
-        "reason": "recent_detail_progress",
-        "age_seconds": age,
-        "grace_seconds": SOLVER_DETAIL_PROGRESS_GRACE_SECONDS,
-        "captured_since_auth": captured_since_auth,
-    }
-
-def _solver_report_is_recent_auth_duplicate(
-    request_payload: dict[str, Any] | None,
-    *,
-    now: float | None = None,
-) -> bool:
-    """Reject delayed captcha reports from the node that just completed auth.
-
-    Worker captcha reports are fire-and-forget and do not carry the active
-    challenge id.  A report already in flight can therefore arrive after the
-    solver has cleared the challenge and otherwise create a new pause.  Keep a
-    short, same-stage grace window so the next worker cycle can observe the
-    authenticated cookie. Seed reports also require the verified list target.
-    Detail capture advances extend protection only for detail reports.
-    """
-    return _solver_auth_report_suppression(request_payload, now=now) is not None
-
-__all__ = ["_captcha_solver_runtime_status", "_solver_challenge_state_path", "_read_solver_challenge_state", "_solver_challenge_request_key", "_solver_challenge_owner_key", "_solver_detail_captured_count", "_nas_auth_recovery_pending_detail_count", "_nas_auth_recovery_signal", "_sample_nas_auth_recovery", "_nas_auth_recovery_authorized", "nas_auth_recovery_watchdog_thread", "_nas_auth_recovery_result", "_remember_solver_auth_completion", "_solver_request_matches_auth_source", "_remember_solver_force_reset_recovery", "_solver_force_reset_report_suppression", "_solver_auth_report_suppression", "_solver_report_is_recent_auth_duplicate"]

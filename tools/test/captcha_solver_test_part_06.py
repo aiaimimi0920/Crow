@@ -1,4 +1,8 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import json
+import random
+import time
+
+from src import captcha_solver
 
 
 def test_legacy_exact_release_profile_settles_back_to_exact_target(monkeypatch) -> None:
@@ -8,7 +12,7 @@ def test_legacy_exact_release_profile_settles_back_to_exact_target(monkeypatch) 
     assert profile["name"] == "legacy_exact_release"
     assert profile["warmup_steps"] == (2, 3)
 
-    monkeypatch.setattr(captcha_solver.random, "uniform", lambda low, _high: low)
+    monkeypatch.setattr(random, "uniform", lambda low, _high: low)
     peak_x, settle_xs, release_x = solver._os_drag_release_plan(100, 256, profile)
 
     assert peak_x == 360
@@ -36,7 +40,7 @@ def test_solver_recovers_auth_when_list_page_is_accessible_after_attempts(monkey
     solver._reload_page = lambda: None
     solver._recover_authenticated_list_page = lambda: True
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     assert solver.solve(max_attempts=1) is True
     assert solver.last_failure_reason is None
 
@@ -75,7 +79,7 @@ def test_solver_waits_for_delayed_verification_success_before_reloading(monkeypa
         "className": "",
         "bodyText": "",
     }
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is True
     assert calls == {"connect": 1, "drag": 1, "reload": 0, "verify": 3}
@@ -192,9 +196,9 @@ def test_local_mock_target_uses_deterministic_drag_distance(monkeypatch) -> None
     )
     monkeypatch.setattr(solver, "_wait_for_verification_success", lambda: True)
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
-        captcha_solver.random,
+        random,
         "uniform",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("local mock path should not use random.uniform")),
     )
@@ -244,7 +248,7 @@ def test_local_mock_target_reloads_without_verifying_after_drag_failure(monkeypa
     )
     monkeypatch.setattr(solver, "_reload_page", lambda: calls.__setitem__("reload", calls["reload"] + 1))
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert solver.last_failure_reason == "max_attempts_exceeded"

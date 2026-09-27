@@ -15,6 +15,14 @@ from urllib.parse import urlparse, urlsplit, urlunsplit
 import requests
 import websocket
 
+from src.cdp_cookie_transport import (
+    DEFAULT_CDP_CONNECT_TIMEOUT_MS,
+    DEFAULT_CDP_RECONNECT_ATTEMPTS,
+    DEFAULT_CDP_RECONNECT_BACKOFF_SECONDS,
+    DEFAULT_COOKIE_ORIGINS,
+    DEFAULT_USER_AGENT,
+)
+
 try:
     from playwright.sync_api import sync_playwright
 except ModuleNotFoundError:
@@ -25,30 +33,13 @@ DEFAULT_TARGET_URL = (
     "https://sf.taobao.com/list/50025969__2.htm"
     "?location_code=110101&st_param=2&auction_start_seg=-1&page=1"
 )
-DEFAULT_COOKIE_ORIGINS = ("https://sf.taobao.com", "https://login.taobao.com")
-DEFAULT_CDP_CONNECT_TIMEOUT_MS = 20_000
-DEFAULT_CDP_RECONNECT_ATTEMPTS = 3
-DEFAULT_CDP_RECONNECT_BACKOFF_SECONDS = 0.5
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
+from src.collection.adapters.taobao_health import (
+    SENSITIVE_INLINE_PATTERNS as _SENSITIVE_INLINE_PATTERNS,
 )
-DEFAULT_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
-DEFAULT_NAVIGATION_ACCEPT = (
-    "text/html,application/xhtml+xml,application/xml;q=0.9,"
-    "image/avif,image/webp,image/apng,*/*;q=0.8"
-)
-
-_SCRIPT_RE = re.compile(
-    r"<script[^>]+id=['\"]sf-item-list-data['\"][^>]*>(.*?)</script>",
-    re.IGNORECASE | re.DOTALL,
-)
-_SENSITIVE_INLINE_PATTERNS = (
-    re.compile(r"x5secdata\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"cookie2\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"sgcookie\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"_tb_token_\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
+from src.collection.adapters.taobao_list_probe import (
+    DEFAULT_ACCEPT_LANGUAGE,
+    DEFAULT_NAVIGATION_ACCEPT,
+    _SCRIPT_RE,
 )
 
 

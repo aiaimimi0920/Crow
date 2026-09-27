@@ -9,13 +9,25 @@ import pytest
 
 from tools import pc2_linux_healthcheck
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OPS_ROOT = REPO_ROOT / "ops" / "pc2-linux"
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", ["Dockerfile.browser", "Dockerfile.auth-recovery"])
+def test_browser_overlay_ships_all_solver_owners(name: str) -> None:
+    from tools import pc2_local_solver
+
+    dockerfile = _read(OPS_ROOT / name)
+    assert "COPY tools/pc2_solver_*.py /app/tools/" in dockerfile.splitlines()
+    copied_modules = {
+        f"tools.{path.stem}" for path in (REPO_ROOT / "tools").glob("pc2_solver_*.py")
+    }
+    assert set(pc2_local_solver._IMPLEMENTATION_MODULES) <= copied_modules
+    assert "tools.pc2_solver_config" in copied_modules
 
 
 def test_linux_compose_has_expected_decoupled_topology() -> None:
@@ -36,12 +48,20 @@ def test_linux_compose_has_expected_decoupled_topology() -> None:
         assert f"  {service}:" in compose
     analysis_section = compose.split("  pc2-analysis-1:", 1)[1]
     assert "condition: service_healthy" not in analysis_section
-    assert "FAPAI_DETAIL_ANALYSIS_ONLY: \"1\"" in analysis_section
-    assert "deepseek" not in compose.lower(), "model secrets and routing belong in runtime.env"
+    assert 'FAPAI_DETAIL_ANALYSIS_ONLY: "1"' in analysis_section
+    assert "deepseek" not in compose.lower(), (
+        "model secrets and routing belong in runtime.env"
+    )
     assert "FAPAI_API_CA_FILE: ${FAPAI_API_CA_FILE:-}" in compose
-    assert "FAPAI_API_BASE_URL: ${FAPAI_CENTRAL_API_BASE_URL:?set FAPAI_CENTRAL_API_BASE_URL}" in compose
+    assert (
+        "FAPAI_API_BASE_URL: ${FAPAI_CENTRAL_API_BASE_URL:?set FAPAI_CENTRAL_API_BASE_URL}"
+        in compose
+    )
     assert "http://192.168.15.200:8001/api" not in compose
-    assert "FAPAI_COLLECTION_WORKER_TOKEN_FILE: ${FAPAI_COLLECTION_WORKER_TOKEN_FILE:-/data/secrets/collection-worker.token}" in compose
+    assert (
+        "FAPAI_COLLECTION_WORKER_TOKEN_FILE: ${FAPAI_COLLECTION_WORKER_TOKEN_FILE:-/data/secrets/collection-worker.token}"
+        in compose
+    )
     assert "target: /data/secrets" in compose
 
 
@@ -52,8 +72,8 @@ def test_linux_compose_preserves_solver_retry_contract() -> None:
     assert "FAPAI_SOLVER_COOLDOWN_FAIL_THRESHOLD:-10" in compose
     assert "FAPAI_SOLVER_COOLDOWN_SECONDS:-180" in compose
     assert "FAPAI_SLIDER_RETRY_INTERVAL_SECONDS:-5" in compose
-    assert "FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED: \"0\"" in compose
-    assert "FAPAI_SOLVER_ENABLE_HEADED_PLAYWRIGHT: \"0\"" in compose
+    assert 'FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED: "0"' in compose
+    assert 'FAPAI_SOLVER_ENABLE_HEADED_PLAYWRIGHT: "0"' in compose
     assert "FAPAI_LOCAL_SOLVER_EXECUTION_TIMEOUT_SECONDS:-180" in compose
     assert "FAPAI_LOCAL_SOLVER_TERMINATE_GRACE_SECONDS:-5" in compose
     assert "FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS:-300" in compose
@@ -61,13 +81,19 @@ def test_linux_compose_preserves_solver_retry_contract() -> None:
     assert "FAPAI_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS:-30" in compose
     assert "FAPAI_NAS_AUTH_RECOVERY_CLIENT_ENABLED:-1" in compose
     assert "FAPAI_NAS_AUTH_RECOVERY_MARKER_PATH" in compose
-    assert "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE: /data/secrets/nas-auth-recovery.token" in compose
+    assert (
+        "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE: /data/secrets/nas-auth-recovery.token"
+        in compose
+    )
     assert "FAPAI_LOCAL_SOLVER_EXECUTION_TIMEOUT_SECONDS=180" in env_example
     assert "FAPAI_LOCAL_SOLVER_TERMINATE_GRACE_SECONDS=5" in env_example
     assert "FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS=300" in env_example
     assert "FAPAI_NAS_AUTH_RECOVERY_CLIENT_ENABLED=1" in env_example
-    assert "FAPAI_NAS_AUTH_RECOVERY_SNAPSHOT_PATH: /app/.codex-temp/bridge-control/pc2-auth-snapshot.json" in compose
-    assert "FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED: \"1\"" in compose
+    assert (
+        "FAPAI_NAS_AUTH_RECOVERY_SNAPSHOT_PATH: /app/.codex-temp/bridge-control/pc2-auth-snapshot.json"
+        in compose
+    )
+    assert 'FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED: "1"' in compose
     assert compose.count("${FAPAI_HOST_DATA_GID:-1000}") == 2
     browser_section = compose.split("  pc2-browser-solver:", 1)[1].split(
         "  pc2-seed-1:", 1
@@ -121,8 +147,14 @@ def test_browser_image_keeps_solver_and_os_mouse_in_one_display() -> None:
     assert "tools/cdp_host_relay.py" in start_script
     assert "tools/cdp_browser_identity.py" in start_script
     assert "COPY tools/cdp_host_relay.py /app/tools/cdp_host_relay.py" in dockerfile
-    assert "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py" in dockerfile
-    assert "COPY tools/pc2_solver_watchdog.py /app/tools/pc2_solver_watchdog.py" in dockerfile
+    assert (
+        "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py"
+        in dockerfile
+    )
+    assert (
+        "COPY tools/pc2_solver_watchdog.py /app/tools/pc2_solver_watchdog.py"
+        in dockerfile
+    )
     for runtime_file in (
         "tools/internal_api_http.py",
         "tools/pc2_auth_recovery.py",
@@ -135,16 +167,18 @@ def test_browser_image_keeps_solver_and_os_mouse_in_one_display() -> None:
     assert "--upstream-port 9223" in start_script
     assert "--allow-cidr" in start_script
     assert "FAPAI_CDP_ALLOWED_CLIENT_CIDRS" in start_script
-    assert 'FAPAI_CDP_PUBLIC_PORT:-9224' in start_script
+    assert "FAPAI_CDP_PUBLIC_PORT:-9224" in start_script
     assert "tools/pc2_solver_watchdog.py" in start_script
-    assert 'FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS:-300' in start_script
+    assert "FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS:-300" in start_script
     assert "EXPOSE 6080 9224" in dockerfile
     assert "USER fapaifang" in dockerfile
     assert "--no-sandbox" not in start_script
-    assert 'PC2 browser must run as the non-root fapaifang user' in start_script
+    assert "PC2 browser must run as the non-root fapaifang user" in start_script
     assert "unprivileged_userns_clone" in start_script
     assert "FAPAI_BROWSER_UID" in dockerfile
-    assert '[[ ! -r "$vnc_password_file" || ! -s "$vnc_password_file" ]]' in start_script
+    assert (
+        '[[ ! -r "$vnc_password_file" || ! -s "$vnc_password_file" ]]' in start_script
+    )
     assert 'tigervncpasswd -f >"$vnc_auth_file"' in start_script
     assert "x0tigervncserver" in start_script
     assert "-SecurityTypes VncAuth" in start_script
@@ -159,14 +193,20 @@ def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> Non
     start_script = _read(OPS_ROOT / "start-browser-solver.sh")
 
     assert "FAPAI_BROWSER_USER_AGENT: ${FAPAI_BROWSER_USER_AGENT:-}" in compose
-    assert "FAPAI_BROWSER_IDENTITY_FULL_VERSION: ${FAPAI_BROWSER_IDENTITY_FULL_VERSION:-}" in compose
+    assert (
+        "FAPAI_BROWSER_IDENTITY_FULL_VERSION: ${FAPAI_BROWSER_IDENTITY_FULL_VERSION:-}"
+        in compose
+    )
     assert "ARG FAPAI_GOOGLE_CHROME_VERSION=152.0.7977.64-1" in dockerfile
     assert "ARG FAPAI_GOOGLE_CHROME_SHA256=" in dockerfile
     assert "google-chrome-stable_${FAPAI_GOOGLE_CHROME_VERSION}_amd64.deb" in dockerfile
     assert "sha256sum -c -" in dockerfile
     assert "dpkg-query -W" in dockerfile
     assert "FAPAI_BROWSER_EXECUTABLE=/usr/bin/google-chrome-stable" in env_example
-    assert "FAPAI_BROWSER_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64)" in env_example
+    assert (
+        "FAPAI_BROWSER_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        in env_example
+    )
     assert "Chrome/152.0.0.0" in env_example
     assert "FAPAI_BROWSER_IDENTITY_FULL_VERSION=152.0.7977.64" in env_example
     assert 'browser_user_agent="${FAPAI_BROWSER_USER_AGENT:-}"' in start_script
@@ -213,12 +253,14 @@ def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
     assert "FAPAI_BROWSER_HOST_DISPLAY=:0" in env_example
     assert "FAPAI_BROWSER_HOST_XAUTHORITY_DIR" not in compose
     assert "prepare_host_display_access" in _read(OPS_ROOT / "deploy.sh")
-    assert 'xhost +SI:localuser:"${FAPAI_BROWSER_XHOST_USER:-$(id -un)}"' in _read(OPS_ROOT / "deploy.sh")
+    assert 'xhost +SI:localuser:"${FAPAI_BROWSER_XHOST_USER:-$(id -un)}"' in _read(
+        OPS_ROOT / "deploy.sh"
+    )
     assert "xhost +SI:localuser:root" not in _read(OPS_ROOT / "deploy.sh")
     assert "xhost +SI:localuser:root" not in start_script
-    assert 'browser_graphics_args+=(--ozone-platform=x11)' in start_script
-    assert 'about:blank >/tmp/chromium.log 2>&1 &' in start_script
-    assert 'python - "$start_url" <<\'PY\'' in start_script
+    assert "browser_graphics_args+=(--ozone-platform=x11)" in start_script
+    assert "about:blank >/tmp/chromium.log 2>&1 &" in start_script
+    assert "python - \"$start_url\" <<'PY'" in start_script
     assert '"method": "Page.navigate"' in start_script
     assert "FAPAI_SOLVER_OS_INPUT_BACKEND: pyautogui" in compose
     assert "- /dev/uinput:/dev/uinput" in compose
@@ -226,11 +268,15 @@ def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
     auth_recovery_dockerfile = _read(OPS_ROOT / "Dockerfile.auth-recovery")
     assert "FROM scratch AS hotfix" in auth_recovery_dockerfile
     assert "COPY --from=hotfix / /" in auth_recovery_dockerfile
-    assert "COPY --chmod=0755 ops/pc2-linux/start-browser-solver.sh" in auth_recovery_dockerfile
+    assert (
+        "COPY --chmod=0755 ops/pc2-linux/start-browser-solver.sh"
+        in auth_recovery_dockerfile
+    )
     assert "apt-get" not in auth_recovery_dockerfile
     assert "pip install" not in auth_recovery_dockerfile
-    assert "docker run --rm --entrypoint python \"$browser_base_image\" -c 'import evdev'" in _read(
-        OPS_ROOT / "deploy.sh"
+    assert (
+        "docker run --rm --entrypoint python \"$browser_base_image\" -c 'import evdev'"
+        in _read(OPS_ROOT / "deploy.sh")
     )
     assert 'if [[ "$use_host_display" == "0" ]]; then' in start_script
     assert 'echo "Browser display mode: host ($display)"' in start_script
@@ -243,7 +289,7 @@ def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
 def test_browser_healthcheck_does_not_trigger_rfb_authentication() -> None:
     healthcheck = _read(REPO_ROOT / "tools" / "pc2_linux_healthcheck.py")
 
-    assert 'port: int = 5900' in healthcheck
+    assert "port: int = 5900" in healthcheck
     assert 'Path("/proc/net/tcp")' in healthcheck
     assert "_check_rfb_listener()" in healthcheck
     assert "invalid RFB banner" not in healthcheck
@@ -256,16 +302,14 @@ def test_browser_healthcheck_does_not_trigger_rfb_authentication() -> None:
 def test_rfb_listener_check_reads_proc_without_connecting(tmp_path: Path) -> None:
     proc_net_tcp = tmp_path / "tcp"
     proc_net_tcp.write_text(
-        "  sl  local_address rem_address   st\n"
-        "   0: 0100007F:170C 00000000:0000 0A\n",
+        "  sl  local_address rem_address   st\n   0: 0100007F:170C 00000000:0000 0A\n",
         encoding="ascii",
     )
 
     pc2_linux_healthcheck._check_rfb_listener(proc_net_paths=(proc_net_tcp,))
 
     proc_net_tcp.write_text(
-        "  sl  local_address rem_address   st\n"
-        "   0: 0100007F:170C 00000000:0000 01\n",
+        "  sl  local_address rem_address   st\n   0: 0100007F:170C 00000000:0000 01\n",
         encoding="ascii",
     )
     with pytest.raises(RuntimeError, match="RFB server is not listening"):
@@ -274,7 +318,11 @@ def test_rfb_listener_check_reads_proc_without_connecting(tmp_path: Path) -> Non
 
 def test_browser_healthcheck_is_directly_executable() -> None:
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "tools" / "pc2_linux_healthcheck.py"), "--help"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "pc2_linux_healthcheck.py"),
+            "--help",
+        ],
         cwd=REPO_ROOT,
         check=False,
         capture_output=True,
@@ -301,7 +349,7 @@ def test_deploy_script_has_identity_gate_and_rollback_links() -> None:
     assert "192\\.168\\.15\\.104" in deploy
     assert "^PROFILE=pc2$" in deploy
     assert "^EXPECTED_BOOT_MODE=uefi$" in deploy
-    assert 'sudo -n true' in deploy
+    assert "sudo -n true" in deploy
     assert '"$app_root/current"' in deploy
     assert '"$app_root/previous"' in deploy
     assert "wait_for_health" in deploy
@@ -327,11 +375,14 @@ def test_deploy_script_has_identity_gate_and_rollback_links() -> None:
 def test_pc2_auth_recovery_browser_hotfix_only_overlays_browser_side_files() -> None:
     dockerfile = _read(OPS_ROOT / "Dockerfile.auth-recovery")
 
-    copy_lines = [line.strip() for line in dockerfile.splitlines() if line.startswith("COPY ")]
+    copy_lines = [
+        line.strip() for line in dockerfile.splitlines() if line.startswith("COPY ")
+    ]
     assert copy_lines == [
         "COPY tools/internal_api_http.py /app/tools/internal_api_http.py",
         "COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py",
         "COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py",
+        "COPY tools/pc2_solver_*.py /app/tools/",
         "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py",
         "COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py",
         "COPY src/captcha_solver.py /app/src/captcha_solver.py",
@@ -344,7 +395,9 @@ def test_pc2_auth_recovery_browser_hotfix_only_overlays_browser_side_files() -> 
 def test_pc2_worker_hotfix_overlays_analysis_module_b_runtime_files() -> None:
     dockerfile = _read(OPS_ROOT / "Dockerfile.worker-hotfix")
 
-    copy_lines = [line.strip() for line in dockerfile.splitlines() if line.startswith("COPY ")]
+    copy_lines = [
+        line.strip() for line in dockerfile.splitlines() if line.startswith("COPY ")
+    ]
     assert copy_lines == [
         "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py",
         "COPY tools/detail_worker.py /app/tools/detail_worker.py",

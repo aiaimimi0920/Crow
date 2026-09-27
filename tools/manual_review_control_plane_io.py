@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tools.manual_review_control_plane_context import *
 
+if TYPE_CHECKING:
+    from src.storage.repository import PropertyRepository
 
-def _build_repo(db_url: str | None, repository: PropertyRepository | None = None) -> PropertyRepository:
+
+def _build_repo(
+    db_url: str | None, repository: PropertyRepository | None = None
+) -> PropertyRepository:
     if repository is not None:
         return repository
+    from src.storage.repository import (
+        DatabaseSettings,
+        PropertyRepository,
+        create_repository_from_env,
+    )
+
     if db_url:
         repo = PropertyRepository(
             DatabaseSettings(

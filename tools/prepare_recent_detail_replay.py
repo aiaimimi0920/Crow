@@ -15,6 +15,7 @@ import sys
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.collection_job_control import job_checkpoint
 from src.storage.repository import create_repository_from_env
 from tools.audit_recent_avm_gaps import _iter_recent_rows
 
@@ -82,10 +83,12 @@ def prepare_recent_detail_replay(
     limit: int,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    job_checkpoint()
     repo = create_repository_from_env()
     rows = _iter_recent_rows(data_root, window_days, prefer_db=True)
     by_file: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
+        job_checkpoint()
         file_path = row.get("__file_path")
         if isinstance(file_path, str):
             by_file.setdefault(file_path, []).append(row)
@@ -96,11 +99,13 @@ def prepare_recent_detail_replay(
     samples: list[dict[str, Any]] = []
 
     for file_path_str in sorted(by_file):
+        job_checkpoint()
         file_path = Path(file_path_str)
         file_rows = _load_file_rows(file_path)
         changed = False
         changed_rows: list[dict[str, Any]] = []
         for row in file_rows:
+            job_checkpoint()
             if prepared_count >= limit:
                 break
             if not _is_done_like(row):
@@ -138,6 +143,7 @@ def prepare_recent_detail_replay(
                 )
 
         if changed:
+            job_checkpoint()
             touched_files += 1
             file_path.write_text(json.dumps(file_rows, ensure_ascii=False, indent=4), encoding="utf-8")
             if repo.enabled and changed_rows:

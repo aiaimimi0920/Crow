@@ -6,10 +6,10 @@ import logging
 import os
 import re
 import time
-from collections.abc import MutableSet
 from pathlib import Path
 from typing import Any, Callable, Dict
 
+from src.archive_json_io import write_text as write_archive_text
 from src.detail_artifacts import extract_detail_artifacts, get_detail_archive_path
 
 from .contracts import CollectionAdapter, DetailExtractor
@@ -61,10 +61,13 @@ class DetailProcessor:
                 item_id,
                 extension=os.path.splitext(file_path)[1] or ".html",
             )
-            archive_path.write_text(content, encoding="utf-8")
-            record["detail_archive_path"] = os.path.relpath(archive_path, self.data_root).replace("\\", "/")
+            write_archive_text(archive_path, content)
+            record["detail_archive_path"] = os.path.relpath(
+                archive_path, self.data_root
+            ).replace("\\", "/")
         except Exception as error:
             logger.exception("Detail archive failed for item=%s", item_id)
+            raise
 
         try:
             artifacts = extract_detail_artifacts(
@@ -170,7 +173,6 @@ class DetailProcessor:
         detail_extractor: DetailExtractor,
         extract_avm_risk_features: Callable[[str, str | None], Dict[str, Any]],
         log_prediction_event: Callable[..., None],
-        current_processing: MutableSet[str],
         queue_pending: Callable[[str], bool],
         set_seen: Callable[[str, Dict[str, Any]], None],
         remove_pending: Callable[[str], None],
@@ -188,6 +190,7 @@ class DetailProcessor:
         item_id = match.group(1)
         failed_marker_path = self.failed_dir / f"item-{item_id}.html.failed"
         started_at: float | None = None
+        publication_started = False
         try:
             failed_once = failed_marker_path.exists()
             if not os.path.exists(file_path):
@@ -230,6 +233,7 @@ class DetailProcessor:
                 if original_record
                 else get_data_path(self.adapter.partition_key(record))
             )
+            publication_started = True
             self._archive_source(record=record, content=content, item_id=item_id, file_path=file_path)
 
             if not self.adapter.accepts_detail(record):
@@ -283,7 +287,9 @@ class DetailProcessor:
             )
         except Exception as error:
             logger.exception("Error processing detail item=%s", item_id)
-            duration_ms = (time.time() - started_at) * 1000 if started_at is not None else None
+            duration_ms = (
+                (time.time() - started_at) * 1000 if started_at is not None else None
+            )
             log_prediction_event(
                 task_type="analyze_html",
                 item_id=item_id,
@@ -293,15 +299,32 @@ class DetailProcessor:
                 success=False,
                 failure_reason=str(error),
             )
+            if publication_started:
+                logger.error(
+                    "Detail publication failed item=%s; retaining captured input",
+                    item_id,
+                )
+                if not failed_marker_path.exists():
+                    try:
+                        failed_marker_path.write_text(str(error), encoding="utf-8")
+                    except OSError:
+                        logger.exception(
+                            "Could not record detail publication failure item=%s",
+                            item_id,
+                        )
+                return
             if failed_marker_path.exists():
-                logger.error("Second detail failure item=%s; deleting file to avoid deadlock", item_id)
+                logger.error(
+                    "Second detail failure item=%s; deleting file to avoid deadlock",
+                    item_id,
+                )
                 try:
                     Path(file_path).unlink(missing_ok=True)
                 except Exception:
                     pass
                 failed_marker_path.unlink(missing_ok=True)
             else:
-                logger.warning("First detail failure item=%s; marking as failed", item_id)
+                logger.warning(
+                    "First detail failure item=%s; marking as failed", item_id
+                )
                 failed_marker_path.write_text(str(error), encoding="utf-8")
-        finally:
-            current_processing.discard(file_path)

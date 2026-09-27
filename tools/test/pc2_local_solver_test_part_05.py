@@ -1,11 +1,29 @@
-from tools.test.pc2_local_solver_test_context import *  # noqa: F401,F403
+from tools import (
+    pc2_solver_auth,
+    pc2_solver_auth_pending,
+    pc2_solver_retry_state,
+    pc2_solver_state_store,
+)
+from tools import pc2_solver_cdp
+from tools.test.pc2_local_solver_test_context import *
+from tools.test.pc2_loop_test_dependencies import patch_loop_dependency
 
 
-def test_authenticated_target_probe_rejects_route_challenge_beside_exact_healthy_page(monkeypatch) -> None:
+def test_authenticated_target_probe_rejects_route_challenge_beside_exact_healthy_page(
+    monkeypatch,
+) -> None:
     summaries = iter(
         [
-            {"authenticatedPage": True, "challengePresent": False, "loginRequired": False},
-            {"authenticatedPage": False, "challengePresent": True, "loginRequired": False},
+            {
+                "authenticatedPage": True,
+                "challengePresent": False,
+                "loginRequired": False,
+            },
+            {
+                "authenticatedPage": False,
+                "challengePresent": True,
+                "loginRequired": False,
+            },
         ]
     )
 
@@ -31,9 +49,9 @@ def test_authenticated_target_probe_rejects_route_challenge_beside_exact_healthy
         def _close_solver_ws(self):
             return None
 
-    monkeypatch.setattr(pc2_local_solver, "CaptchaSolver", FakeSolver)
+    monkeypatch.setattr(pc2_solver_cdp, "_create_probe_solver", FakeSolver)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -51,16 +69,30 @@ def test_authenticated_target_probe_rejects_route_challenge_beside_exact_healthy
         ],
     )
 
-    assert pc2_local_solver.check_cdp_browser_for_authenticated_target(
-        "http://127.0.0.1:9223",
-        "https://example.test/list?marker=1",
-    ) is None
+    assert (
+        pc2_local_solver.check_cdp_browser_for_authenticated_target(
+            "http://127.0.0.1:9223",
+            "https://example.test/list?marker=1",
+        )
+        is None
+    )
 
-def test_authenticated_target_probe_accepts_healthy_session_after_target_tab_is_gone(monkeypatch) -> None:
+
+def test_authenticated_target_probe_accepts_healthy_session_after_target_tab_is_gone(
+    monkeypatch,
+) -> None:
     summaries = iter(
         [
-            {"authenticatedPage": True, "challengePresent": False, "loginRequired": False},
-            {"authenticatedPage": False, "challengePresent": False, "loginRequired": False},
+            {
+                "authenticatedPage": True,
+                "challengePresent": False,
+                "loginRequired": False,
+            },
+            {
+                "authenticatedPage": False,
+                "challengePresent": False,
+                "loginRequired": False,
+            },
         ]
     )
 
@@ -86,9 +118,9 @@ def test_authenticated_target_probe_accepts_healthy_session_after_target_tab_is_
         def _close_solver_ws(self):
             return None
 
-    monkeypatch.setattr(pc2_local_solver, "CaptchaSolver", FakeSolver)
+    monkeypatch.setattr(pc2_solver_cdp, "_create_probe_solver", FakeSolver)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_cdp,
         "fetch_json",
         lambda _url, timeout: [
             {
@@ -114,17 +146,22 @@ def test_authenticated_target_probe_accepts_healthy_session_after_target_tab_is_
     assert result is not None
     assert result["_target_id"] == "healthy-auction"
 
-def test_success_pending_state_keeps_attempt_window_until_nas_confirmation(monkeypatch, tmp_path) -> None:
+
+def test_success_pending_state_keeps_attempt_window_until_nas_confirmation(
+    monkeypatch, tmp_path
+) -> None:
     state_path = tmp_path / "solver-fallback-state.json"
     state = pc2_local_solver._default_fallback_state()
-    state.update({
-        "consecutive_failures": 10,
-        "slider_attempts": 10,
-        "solver_cooldown_until": 2000.0,
-        "solver_cooldown_reason": "repeated_solver_failures",
-    })
+    state.update(
+        {
+            "consecutive_failures": 10,
+            "slider_attempts": 10,
+            "solver_cooldown_until": 2000.0,
+            "solver_cooldown_reason": "repeated_solver_failures",
+        }
+    )
     state_path.write_text(json.dumps(state), encoding="utf-8")
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", state_path)
+    monkeypatch.setattr(pc2_solver_state_store, "FALLBACK_STATE_PATH", state_path)
 
     pending = pc2_local_solver._mark_auth_complete_pending("https://example.test/list")
 
@@ -133,6 +170,7 @@ def test_success_pending_state_keeps_attempt_window_until_nas_confirmation(monke
     assert pending["slider_attempts"] == 10
     assert pending["solver_cooldown_until"] == 2000.0
     assert pending["solver_cooldown_reason"] == "repeated_solver_failures"
+
 
 def test_notify_auth_complete_retries_with_same_completion_id(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
@@ -144,15 +182,21 @@ def test_notify_auth_complete_retries_with_same_completion_id(monkeypatch) -> No
             raise TimeoutError("NAS response timeout")
         return _confirmed_auth_payload(completion_id)
 
-    monkeypatch.setattr(pc2_local_solver, "AUTH_COMPLETE_REQUEST_ATTEMPTS", 3)
-    monkeypatch.setattr(pc2_local_solver, "AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS", 0)
-    monkeypatch.setattr(pc2_local_solver, "post_json", fake_post)
+    monkeypatch.setattr(pc2_solver_auth, "AUTH_COMPLETE_REQUEST_ATTEMPTS", 3)
+    monkeypatch.setattr(pc2_solver_auth, "AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr(pc2_solver_auth, "post_json", fake_post)
 
-    result = pc2_local_solver.notify_auth_complete("http://nas/api", completion_id=completion_id)
+    result = pc2_local_solver.notify_auth_complete(
+        "http://nas/api", completion_id=completion_id
+    )
 
     assert result["request_attempts"] == 2
     assert result["auth_state_confirmed"] is True
-    assert [call["payload"]["completion_id"] for call in calls] == [completion_id, completion_id]
+    assert [call["payload"]["completion_id"] for call in calls] == [
+        completion_id,
+        completion_id,
+    ]
+
 
 def test_notify_resume_after_cooldown_carries_node_identity(monkeypatch) -> None:
     captured: dict[str, object] = {}
@@ -163,7 +207,7 @@ def test_notify_resume_after_cooldown_carries_node_identity(monkeypatch) -> None
 
     monkeypatch.setenv("FAPAI_NODE_ID", "pc2")
     monkeypatch.setenv("FAPAI_REPORT_CDP_ENDPOINT", "http://192.168.15.104:9224")
-    monkeypatch.setattr(pc2_local_solver, "post_json", fake_post)
+    monkeypatch.setattr(pc2_solver_auth, "post_json", fake_post)
 
     result = pc2_local_solver.notify_collection_resume_after_cooldown(
         "http://nas/api",
@@ -182,21 +226,32 @@ def test_notify_resume_after_cooldown_carries_node_identity(monkeypatch) -> None
         "cdp_endpoint": "http://192.168.15.104:9224",
     }
 
+
 def test_auth_complete_requires_explicit_matching_nas_confirmation() -> None:
     completion_id = "pc2-completion-2"
 
-    assert pc2_local_solver._auth_complete_response_confirmed(
-        {"ok": True, "completion_id": completion_id},
-        completion_id,
-    ) is False
-    assert pc2_local_solver._auth_complete_response_confirmed(
-        _confirmed_auth_payload("different-id"),
-        completion_id,
-    ) is False
-    assert pc2_local_solver._auth_complete_response_confirmed(
-        _confirmed_auth_payload(completion_id),
-        completion_id,
-    ) is True
+    assert (
+        pc2_local_solver._auth_complete_response_confirmed(
+            {"ok": True, "completion_id": completion_id},
+            completion_id,
+        )
+        is False
+    )
+    assert (
+        pc2_local_solver._auth_complete_response_confirmed(
+            _confirmed_auth_payload("different-id"),
+            completion_id,
+        )
+        is False
+    )
+    assert (
+        pc2_local_solver._auth_complete_response_confirmed(
+            _confirmed_auth_payload(completion_id),
+            completion_id,
+        )
+        is True
+    )
+
 
 def test_pending_auth_confirmation_survives_timeout(monkeypatch, tmp_path) -> None:
     state_path = tmp_path / "solver-fallback-state.json"
@@ -209,16 +264,22 @@ def test_pending_auth_confirmation_survives_timeout(monkeypatch, tmp_path) -> No
         }
     )
 
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", state_path)
-    monkeypatch.setattr(pc2_local_solver, "AUTH_COMPLETE_RETRY_BASE_SECONDS", 5.0)
-    monkeypatch.setattr(pc2_local_solver, "AUTH_COMPLETE_RETRY_MAX_SECONDS", 60.0)
+    monkeypatch.setattr(pc2_solver_state_store, "FALLBACK_STATE_PATH", state_path)
+    monkeypatch.setattr(pc2_solver_retry_state, "AUTH_COMPLETE_RETRY_BASE_SECONDS", 5.0)
+    monkeypatch.setattr(pc2_solver_retry_state, "AUTH_COMPLETE_RETRY_MAX_SECONDS", 60.0)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_auth_pending,
         "notify_auth_complete",
-        lambda *_args, **_kwargs: {"ok": False, "error": "read timeout", "request_attempts": 3},
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "error": "read timeout",
+            "request_attempts": 3,
+        },
     )
 
-    result = pc2_local_solver._retry_pending_auth_confirmation("http://nas/api", state=state, now=1000.0)
+    result = pc2_local_solver._retry_pending_auth_confirmation(
+        "http://nas/api", state=state, now=1000.0
+    )
     persisted = json.loads(state_path.read_text(encoding="utf-8"))
 
     assert result["pending"] is True
@@ -228,7 +289,10 @@ def test_pending_auth_confirmation_survives_timeout(monkeypatch, tmp_path) -> No
     assert persisted["auth_complete_attempts"] == 3
     assert persisted["auth_complete_next_retry_at"] == 1020.0
 
-def test_expired_auth_confirmation_yields_to_active_challenge(monkeypatch, tmp_path) -> None:
+
+def test_expired_auth_confirmation_yields_to_active_challenge(
+    monkeypatch, tmp_path
+) -> None:
     state_path = tmp_path / "solver-fallback-state.json"
     state = pc2_local_solver._default_fallback_state()
     state.update(
@@ -241,10 +305,12 @@ def test_expired_auth_confirmation_yields_to_active_challenge(monkeypatch, tmp_p
             "auth_complete_next_retry_at": 1100.0,
         }
     )
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", state_path)
-    monkeypatch.setattr(pc2_local_solver, "AUTH_COMPLETE_PENDING_MAX_SECONDS", 120.0)
+    monkeypatch.setattr(pc2_solver_state_store, "FALLBACK_STATE_PATH", state_path)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_auth_pending, "AUTH_COMPLETE_PENDING_MAX_SECONDS", 120.0
+    )
+    monkeypatch.setattr(
+        pc2_solver_auth_pending,
         "read_solver_status",
         lambda _api: {
             "paused": True,
@@ -253,10 +319,12 @@ def test_expired_auth_confirmation_yields_to_active_challenge(monkeypatch, tmp_p
         },
     )
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_auth_pending,
         "notify_auth_complete",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("expired confirmation must yield before another completion request")
+            AssertionError(
+                "expired confirmation must yield before another completion request"
+            )
         ),
     )
 
@@ -276,7 +344,10 @@ def test_expired_auth_confirmation_yields_to_active_challenge(monkeypatch, tmp_p
     assert persisted["challenge_id"] == "challenge-current"
     assert persisted["slider_attempts"] == 2
 
-def test_pending_auth_confirmation_clears_only_after_explicit_confirmation(monkeypatch, tmp_path) -> None:
+
+def test_pending_auth_confirmation_clears_only_after_explicit_confirmation(
+    monkeypatch, tmp_path
+) -> None:
     state_path = tmp_path / "solver-fallback-state.json"
     completion_id = "pc2-completion-4"
     state = pc2_local_solver._default_fallback_state()
@@ -288,14 +359,19 @@ def test_pending_auth_confirmation_clears_only_after_explicit_confirmation(monke
         }
     )
 
-    monkeypatch.setattr(pc2_local_solver, "FALLBACK_STATE_PATH", state_path)
+    monkeypatch.setattr(pc2_solver_state_store, "FALLBACK_STATE_PATH", state_path)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_auth_pending,
         "notify_auth_complete",
-        lambda *_args, **_kwargs: {**_confirmed_auth_payload(completion_id), "request_attempts": 1},
+        lambda *_args, **_kwargs: {
+            **_confirmed_auth_payload(completion_id),
+            "request_attempts": 1,
+        },
     )
 
-    result = pc2_local_solver._retry_pending_auth_confirmation("http://nas/api", state=state, now=1000.0)
+    result = pc2_local_solver._retry_pending_auth_confirmation(
+        "http://nas/api", state=state, now=1000.0
+    )
     persisted = json.loads(state_path.read_text(encoding="utf-8"))
 
     assert result["confirmed"] is True
@@ -303,46 +379,69 @@ def test_pending_auth_confirmation_clears_only_after_explicit_confirmation(monke
     assert persisted["auth_complete_pending"] is False
     assert persisted["auth_completion_id"] is None
 
-def test_pending_confirmation_is_processed_before_another_solver_run(monkeypatch) -> None:
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_healthy", lambda _endpoint: True)
-    monkeypatch.setattr(
-        pc2_local_solver,
+
+def test_pending_confirmation_is_processed_before_another_solver_run(
+    monkeypatch,
+) -> None:
+    patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
+    patch_loop_dependency(
+        monkeypatch,
         "_retry_pending_auth_confirmation",
         lambda _api: {"pending": True, "attempted": False, "confirmed": False},
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(
+        monkeypatch,
         "read_solver_status",
-        lambda _api: (_ for _ in ()).throw(AssertionError("status must not be read while confirmation is pending")),
+        lambda _api: (_ for _ in ()).throw(
+            AssertionError("status must not be read while confirmation is pending")
+        ),
+    )
+    patch_loop_dependency(
+        monkeypatch,
+        "run_solver_local_with_deadline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("solver must not run while confirmation is pending")
+        ),
     )
     monkeypatch.setattr(
-        pc2_local_solver,
-        "run_solver_local_with_deadline",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("solver must not run while confirmation is pending")),
+        pc2_local_solver.time,
+        "sleep",
+        lambda _seconds: (_ for _ in ()).throw(SystemExit()),
     )
-    monkeypatch.setattr(pc2_local_solver.time, "sleep", lambda _seconds: (_ for _ in ()).throw(SystemExit()))
 
     with pytest.raises(SystemExit):
         pc2_local_solver.local_solver_loop(poll_seconds=1)
 
-def test_confirmed_auth_completion_reloads_status_before_solver_decision(monkeypatch) -> None:
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_healthy", lambda _endpoint: True)
-    monkeypatch.setattr(
-        pc2_local_solver,
+
+def test_confirmed_auth_completion_reloads_status_before_solver_decision(
+    monkeypatch,
+) -> None:
+    patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
+    patch_loop_dependency(
+        monkeypatch,
         "_retry_pending_auth_confirmation",
         lambda _api: {"pending": False, "attempted": True, "confirmed": True},
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(
+        monkeypatch,
         "read_solver_status",
-        lambda _api: (_ for _ in ()).throw(AssertionError("status must be read on the next loop")),
+        lambda _api: (_ for _ in ()).throw(
+            AssertionError("status must be read on the next loop")
+        ),
     )
-    monkeypatch.setattr(pc2_local_solver.time, "sleep", lambda _seconds: (_ for _ in ()).throw(SystemExit()))
+    monkeypatch.setattr(
+        pc2_local_solver.time,
+        "sleep",
+        lambda _seconds: (_ for _ in ()).throw(SystemExit()),
+    )
 
     with pytest.raises(SystemExit):
         pc2_local_solver.local_solver_loop(poll_seconds=1)
 
-def test_confirmed_auth_completion_suppresses_immediate_periodic_cdp_probe(monkeypatch) -> None:
+
+def test_confirmed_auth_completion_suppresses_immediate_periodic_cdp_probe(
+    monkeypatch,
+) -> None:
     confirmation_results = iter(
         [
             {"pending": False, "attempted": True, "confirmed": True},
@@ -350,21 +449,21 @@ def test_confirmed_auth_completion_suppresses_immediate_periodic_cdp_probe(monke
         ]
     )
     state = pc2_local_solver._default_fallback_state()
-    monkeypatch.setattr(pc2_local_solver, "POST_AUTH_CDP_PROBE_GRACE_SECONDS", 90.0)
+    monkeypatch.setattr(pc2_solver_auth, "POST_AUTH_CDP_PROBE_GRACE_SECONDS", 90.0)
     monkeypatch.setattr(pc2_local_solver.time, "time", lambda: 1000.0)
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_healthy", lambda _endpoint: True)
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
+    patch_loop_dependency(
+        monkeypatch,
         "_retry_pending_auth_confirmation",
         lambda _api: next(confirmation_results),
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(
+        monkeypatch,
         "_retry_pending_collection_resume",
         lambda _api: {"pending": False, "attempted": False, "confirmed": False},
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(
+        monkeypatch,
         "read_solver_status",
         lambda _api: {
             "paused": False,
@@ -377,15 +476,15 @@ def test_confirmed_auth_completion_suppresses_immediate_periodic_cdp_probe(monke
             },
         },
     )
-    monkeypatch.setattr(pc2_local_solver, "_load_fallback_state", lambda: dict(state))
-    monkeypatch.setattr(pc2_local_solver, "_save_fallback_state", lambda _state: None)
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(monkeypatch, "_load_fallback_state", lambda: dict(state))
+    patch_loop_dependency(monkeypatch, "_save_fallback_state", lambda _state: None)
+    patch_loop_dependency(
+        monkeypatch,
         "_sync_challenge_state",
         lambda value, _challenge, scope=None: (value, False),
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
+    patch_loop_dependency(
+        monkeypatch,
         "check_cdp_browser_for_slider",
         lambda _endpoint, **_kwargs: (_ for _ in ()).throw(
             AssertionError("periodic probe must be suppressed during post-auth grace")

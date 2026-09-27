@@ -9,7 +9,7 @@ def wait_for_job(fetch, status_url, timeout=5):
     deadline = time.monotonic() + timeout
     while True:
         job = fetch(status_url)
-        if job["status"] not in {"queued", "running"}:
+        if job["status"] not in {"queued", "running", "cancelling"}:
             return job
         if time.monotonic() >= deadline:
             raise AssertionError(f"Collection job did not finish: {job['job_id']}")

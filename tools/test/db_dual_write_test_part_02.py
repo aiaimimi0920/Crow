@@ -122,7 +122,7 @@ def test_http_status_recommended_actions_can_reflect_persisted_action_effectiven
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_action_effectiveness_snapshot",
         lambda path=None: {
             "detail_archive_fetch": {
@@ -169,7 +169,7 @@ def test_http_status_recommended_actions_can_surface_manual_review_fallback(tmp_
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_action_effectiveness_snapshot",
         lambda path=None: {
             "detail_replay_preparation": {
@@ -209,7 +209,7 @@ def test_http_status_can_surface_recoverability_summary_and_manual_review_reason
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {
@@ -226,7 +226,7 @@ def test_http_status_can_surface_recoverability_summary_and_manual_review_reason
         },
     )
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_optimization_loop_progress_snapshot",
         lambda path=None: {
             "manual_review_candidate_rounds": 2,
@@ -326,7 +326,7 @@ def test_http_status_can_surface_manual_review_receipt_ready_state(tmp_path: Pat
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -335,12 +335,12 @@ def test_http_status_can_surface_manual_review_receipt_ready_state(tmp_path: Pat
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.manual_review_status"),
         "load_manual_review_receipt_snapshot",
-        lambda path=None: {
+        lambda path=None, *, repository=None: {
             "receipts": [
                 {
                     "action": "manual_location_review",

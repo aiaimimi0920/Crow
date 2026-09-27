@@ -29,7 +29,7 @@ def test_repeated_old_completion_id_does_not_clear_a_new_manual_required_state(m
     )
     assert first["auth_state_confirmed"] is True
 
-    server.AUTH_COMPLETION_CONFIRMATIONS.clear()
+    server.RUNTIME.recovery.replace_confirmations({})
     server.RUNTIME.control.paused = True
     server.RUNTIME.control.reason = "manual_required"
     server.RUNTIME.solver.last_status = "manual_required"
@@ -199,7 +199,7 @@ def test_resume_after_cooldown_is_idempotent_for_same_request_id(monkeypatch, tm
     request = {"source": "pc2_local_solver", "resume_request_id": "pc2-resume-repeat"}
 
     first = server._collection_observer_resume_after_cooldown_payload(request)
-    server.AUTH_COMPLETION_CONFIRMATIONS.clear()
+    server.RUNTIME.recovery.replace_confirmations({})
     second = server._collection_observer_resume_after_cooldown_payload(request)
 
     assert first["ok"] is True

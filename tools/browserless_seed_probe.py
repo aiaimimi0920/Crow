@@ -66,6 +66,9 @@ for _original, _clone in _function_pairs:
 # Probe the optional dependency in this facade as well. This matters when the
 # file is loaded under an alternate module name with Playwright unavailable.
 sync_playwright = _facade_sync_playwright
+globals().update(
+    _importlib.import_module("tools.browserless_seed_probe_transport").bind_transport(globals())
+)
 
 
 if __name__ == "__main__":

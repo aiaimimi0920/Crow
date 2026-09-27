@@ -386,7 +386,7 @@ def test_collection_observer_auth_complete_is_idempotent_for_repeated_completion
     first = server._collection_observer_auth_complete_payload(
         {"source": "pc2_local_solver", "completion_id": completion_id}
     )
-    server.AUTH_COMPLETION_CONFIRMATIONS.clear()
+    server.RUNTIME.recovery.replace_confirmations({})
     second = server._collection_observer_auth_complete_payload(
         {"source": "pc2_local_solver", "completion_id": completion_id}
     )

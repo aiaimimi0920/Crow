@@ -1,4 +1,10 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import json
+import time
+
+import requests
+import websocket
+
+from src import captcha_solver
 
 
 def test_bring_to_front_skips_slow_websocket_focus_after_exact_activation(monkeypatch) -> None:
@@ -10,7 +16,7 @@ def test_bring_to_front_skips_slow_websocket_focus_after_exact_activation(monkey
         status_code = 200
 
     monkeypatch.setattr(
-        captcha_solver.requests,
+        requests,
         "get",
         lambda url, timeout: calls.append(("http", (url, timeout))) or FakeResponse(),
     )
@@ -19,7 +25,7 @@ def test_bring_to_front_skips_slow_websocket_focus_after_exact_activation(monkey
         "_send_cdp",
         lambda method, params=None: calls.append(("cdp", method)) or None,
     )
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda seconds: calls.append(("sleep", seconds)))
+    monkeypatch.setattr(time, "sleep", lambda seconds: calls.append(("sleep", seconds)))
 
     assert solver._bring_to_front() is True
     assert calls[0] == (
@@ -36,13 +42,13 @@ def test_bring_to_front_falls_back_to_websocket_focus_when_http_activation_fails
     class FakeResponse:
         status_code = 500
 
-    monkeypatch.setattr(captcha_solver.requests, "get", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: FakeResponse())
     monkeypatch.setattr(
         solver,
         "_send_cdp",
         lambda method, params=None: calls.append(method) or {"ok": True},
     )
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver._bring_to_front() is True
     assert calls == ["Page.bringToFront", "Runtime.evaluate"]
@@ -58,7 +64,7 @@ def test_find_slider_stops_immediately_when_cancel_requested(monkeypatch) -> Non
         return {}
 
     monkeypatch.setattr(solver, "_send_cdp", fake_send_cdp)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(time, "sleep", lambda seconds: sleeps.append(seconds))
 
     assert solver._find_slider() is None
     assert solver.last_failure_reason == "cancelled"
@@ -100,7 +106,7 @@ def test_connect_tab_prioritizes_request_target_url(monkeypatch) -> None:
     ]
 
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -140,7 +146,7 @@ def test_connect_tab_matches_requested_target_url_after_query_normalization(monk
     ]
 
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -160,7 +166,7 @@ def test_get_json_uses_configured_cdp_endpoint(monkeypatch) -> None:
         assert timeout == 2
         return FakeResponse()
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
+    monkeypatch.setattr(requests, "get", fake_get)
 
     solver = captcha_solver.CaptchaSolver(
         port=9223,
@@ -209,7 +215,7 @@ def test_connect_tab_rewrites_loopback_websocket_to_configured_cdp_endpoint(monk
     ]
 
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -266,10 +272,10 @@ def test_connect_tab_opens_requested_target_when_missing(monkeypatch) -> None:
             }
         )
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
-    monkeypatch.setattr(captcha_solver.requests, "put", fake_put)
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "put", fake_put)
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -305,7 +311,7 @@ def test_open_target_tab_encodes_nested_query_delimiters(monkeypatch) -> None:
             return {"id": "target-1", "url": target_url, "webSocketDebuggerUrl": "ws://target-1"}
 
     monkeypatch.setattr(
-        captcha_solver.requests,
+        requests,
         "put",
         lambda url, timeout: requested_urls.append(url) or FakeResponse(),
     )
@@ -334,7 +340,7 @@ def test_open_target_tab_collapses_duplicate_http_path_slashes(monkeypatch) -> N
             return {"id": "target-1", "url": "about:blank", "webSocketDebuggerUrl": "ws://target-1"}
 
     monkeypatch.setattr(
-        captcha_solver.requests,
+        requests,
         "put",
         lambda url, timeout: requested_urls.append(url) or FakeResponse(),
     )

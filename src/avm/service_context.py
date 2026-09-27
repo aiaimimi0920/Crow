@@ -1,19 +1,5 @@
 from __future__ import annotations
 
-import glob
-import json
-import os
-import time
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
-
-from src.avm_config import get_effective_risk_discount_factor, get_effective_weighting
-
-from .canonical_mapper import map_raw_to_canonical
-from .feature_builder import build_features
-from .engine import get_active_risk_factor_overrides, predict_fair_price
-from .quality import price_plausibility
-from .risk_schema import RISK_FEATURE_RULES, validate_risk_features
-
 MODEL_VERSION = "avm_multidim_v1"
 MAX_CANDIDATE_POOL = 5000
 GLOBAL_RECENT_CANDIDATES = 5000
@@ -28,4 +14,9 @@ RISK_IMPACT_MAP = {
     "has_lease_before_mortgage": (0.04, "先抵后租具备一定套利修正"),
 }
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+__all__ = [
+    "GLOBAL_RECENT_CANDIDATES",
+    "MAX_CANDIDATE_POOL",
+    "MODEL_VERSION",
+    "RISK_IMPACT_MAP",
+]

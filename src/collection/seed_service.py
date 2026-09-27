@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import datetime
-import json
 import logging
-import os
-from pathlib import Path
+from copy import deepcopy
 from typing import Any, Callable, Dict
+
+from src.archive_json_io import read_records, write_records
 
 from .adapters.generic_product import GenericProductAdapter
 from .contracts import CollectionAdapter
@@ -180,7 +180,8 @@ class SeedCollectionService:
             logger.exception("List payload archive failed")
 
         new_count = 0
-        items_by_date: Dict[str, list[Dict[str, Any]]] = {}
+        staged_new: Dict[str, Dict[str, Any]] = {}
+        items_by_path: Dict[str, list[tuple[str, Dict[str, Any], Dict[str, Any]]]] = {}
 
         for item in items:
             item_id = self.adapter.item_id(item)
@@ -201,6 +202,14 @@ class SeedCollectionService:
             if not self.adapter.accepts_seed(item, prepared_item):
                 continue
 
+            if item_id in staged_new:
+                staged_record = staged_new[item_id]["data"]
+                for key, value in prepared_item.items():
+                    if value not in (None, "") and staged_record.get(key) in (None, ""):
+                        staged_record[key] = value
+                self.adapter.sync_record(staged_record)
+                continue
+
             existing_entry = get_seen_entry(item_id)
             db_existing_item = None
             if existing_entry is None:
@@ -217,12 +226,26 @@ class SeedCollectionService:
             }
 
             if existing_entry or db_existing_item:
-                logger.info("Seed item existing title=%s id=%s", item.get("title", "Unknown"), item_id)
-                merged = dict((existing_entry or {}).get("data", {}) or db_existing_item or {})
+                logger.info(
+                    "Seed item existing title=%s id=%s",
+                    item.get("title", "Unknown"),
+                    item_id,
+                )
+                merged = deepcopy(
+                    (existing_entry or {}).get("data", {}) or db_existing_item or {}
+                )
                 for key, value in prepared_item.items():
                     if value not in (None, "") and merged.get(key) in (None, ""):
                         merged[key] = value
                 self.adapter.sync_record(merged)
+                target_file_path = (
+                    existing_entry["file_path"]
+                    if existing_entry and not prefer_db_task_reads()
+                    else get_data_path(self.adapter.partition_key(merged))
+                )
+                update_file_global(target_file_path, item_id, merged)
+                event_payload["source_file"] = target_file_path
+                persist_item_to_db(merged, "sniff_saved", event_payload)
                 if existing_entry and not prefer_db_task_reads():
                     entry = {**existing_entry, "data": merged}
                     if set_seen is not None:
@@ -231,12 +254,6 @@ class SeedCollectionService:
                         existing_entry["data"] = merged
                     if not merged.get("is_processed"):
                         queue_pending(item_id)
-                    target_file_path = existing_entry["file_path"]
-                else:
-                    target_file_path = get_data_path(self.adapter.partition_key(merged))
-                update_file_global(target_file_path, item_id, merged)
-                event_payload["source_file"] = target_file_path
-                persist_item_to_db(merged, "sniff_saved", event_payload)
                 if prefer_db_task_reads():
                     evict_runtime_item(item_id)
                 continue
@@ -249,27 +266,43 @@ class SeedCollectionService:
             )
             if get_seen_entry(item_id) is None:
                 a_date = self.adapter.partition_key(prepared_item)
-                items_by_date.setdefault(a_date, []).append(prepared_item)
                 file_path = get_data_path(a_date)
+                entry = {
+                    "file_path": file_path,
+                    "data": prepared_item,
+                    "status": item.get("status"),
+                }
+                staged_new[item_id] = entry
+                event_payload["source_file"] = file_path
+                items_by_path.setdefault(file_path, []).append(
+                    (item_id, entry, event_payload)
+                )
+
+        for file_path, entries in items_by_path.items():
+            current_file_data = read_records(file_path)
+            archived_by_id = {
+                str(record.get("id")): record for record in current_file_data
+            }
+            for item_id, entry, _ in entries:
+                archived = archived_by_id.get(item_id)
+                if archived is None:
+                    current_file_data.append(entry["data"])
+                else:
+                    for key, value in entry["data"].items():
+                        if value not in (None, "") and archived.get(key) in (None, ""):
+                            archived[key] = value
+                    self.adapter.sync_record(archived)
+                    entry["data"] = archived
+            write_records(file_path, current_file_data)
+            for item_id, entry, event_payload in entries:
+                prepared_item = entry["data"]
+                persist_item_to_db(prepared_item, "sniff_saved", event_payload)
                 if not prefer_db_task_reads():
-                    entry = {"file_path": file_path, "data": prepared_item, "status": item.get("status")}
                     set_seen(item_id, entry)
                     if not prepared_item.get("is_processed"):
                         queue_pending(item_id)
-                event_payload["source_file"] = file_path
-                persist_item_to_db(prepared_item, "sniff_saved", event_payload)
                 if prefer_db_task_reads():
                     evict_runtime_item(item_id)
                 new_count += 1
-
-        for date_str, date_items in items_by_date.items():
-            file_path = get_data_path(date_str)
-            current_file_data = []
-            if os.path.exists(file_path):
-                current_file_data = json.loads(Path(file_path).read_text(encoding="utf-8"))
-                if not isinstance(current_file_data, list):
-                    raise ValueError("Existing seed archive must contain a list")
-            current_file_data.extend(date_items)
-            Path(file_path).write_text(json.dumps(current_file_data, ensure_ascii=False, indent=4), encoding="utf-8")
 
         return {"status": "ok", "new": new_count}

@@ -22,6 +22,26 @@ from typing import Any, Callable
 from .collection_control_state import CHALLENGE_SCOPES, new_scope_state
 from .collection_runtime_index import CollectionRuntimeIndex
 from .runtime_state import RuntimeState
+from .server_runtime_paths import (
+    DATA_DIR,
+    NAS_AUTH_RECOVERY_STATE_PATH,
+    NAS_AUTH_RECOVERY_TOKEN_FILE,
+)
+from .solver_request_payload import (
+    _build_solver_request,
+    _normalize_challenge_scope,
+    _normalize_solver_cdp_endpoint,
+    _normalize_solver_target_url,
+    _real_taobao_auto_solver_enabled,
+    _runtime_env_flag,
+    _solver_target_requires_manual_only,
+)
+from .utc_timestamps import (
+    _as_utc_timestamp,
+    _parse_utc_timestamp,
+    _utc_now,
+    _utc_timestamp_leq,
+)
 
 from src import llm_helper
 from src.avm_config import AVM_CONFIG_MANAGER
@@ -32,133 +52,6 @@ from src.captcha_solver import CaptchaSolver
 # Import Captcha Solver
 solver = CaptchaSolver()
 
-
-def _normalize_solver_target_url(value: Any) -> str:
-    target_url = str(value or "").strip()
-    if not target_url:
-        return ""
-
-    try:
-        parsed = urlsplit(target_url)
-    except ValueError:
-        return target_url
-
-    hostname = (parsed.hostname or "").lower()
-    if hostname != "taobao.com" and not hostname.endswith(".taobao.com"):
-        return target_url
-
-    path = parsed.path
-    punish_marker = "/_____tmd_____/punish"
-    marker_index = path.lower().find(punish_marker)
-    was_punish_url = marker_index >= 0
-    if marker_index >= 0:
-        path = path[:marker_index]
-    while "//" in path:
-        path = path.replace("//", "/")
-    lowered_path = path.lower()
-    if hostname == "sf-item.taobao.com" and re.fullmatch(r"/sf_item/\d+\.htm", lowered_path):
-        return urlunsplit((parsed.scheme or "https", parsed.netloc, path, "", ""))
-    if hostname != "sf.taobao.com" or "/list/" not in lowered_path:
-        return target_url
-
-    source_query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query = [
-        (key, source_query[key])
-        for key in ("location_code", "st_param", "auction_start_seg", "page")
-        if str(source_query.get(key) or "").strip()
-    ]
-    if was_punish_url or "__captcha_solver_bg" in source_query:
-        query.append(("__captcha_solver_bg", "1"))
-    return urlunsplit((parsed.scheme or "https", parsed.netloc, path, urlencode(query), ""))
-
-
-def _solver_target_requires_manual_only(solver_request: dict[str, Any] | None) -> bool:
-    request = solver_request if isinstance(solver_request, dict) else {}
-    target_url = str(request.get("target_url") or request.get("url") or "").strip()
-    if not target_url:
-        return False
-    try:
-        hostname = str(urlsplit(target_url).hostname or "").strip().lower()
-    except ValueError:
-        return False
-    is_taobao = hostname == "taobao.com" or hostname.endswith(".taobao.com")
-    return bool(is_taobao and not _real_taobao_auto_solver_enabled())
-
-
-def _normalize_solver_cdp_endpoint(value):
-    cdp_endpoint = str(value or "").strip()
-    runtime_endpoint = str(os.getenv("FAPAI_CDP_ENDPOINT") or "").strip().rstrip("/")
-
-    if not cdp_endpoint:
-        return runtime_endpoint
-    if not runtime_endpoint:
-        return cdp_endpoint
-
-    try:
-        requested = urlparse(cdp_endpoint)
-        runtime = urlparse(runtime_endpoint)
-    except ValueError:
-        return cdp_endpoint
-
-    if requested.hostname not in {"127.0.0.1", "localhost", "0.0.0.0"}:
-        return cdp_endpoint
-
-    scheme = runtime.scheme or requested.scheme or "http"
-    host = runtime.hostname or requested.hostname
-    port = requested.port or runtime.port
-    if not host:
-        return runtime_endpoint
-    if port is None:
-        return f"{scheme}://{host}"
-    return f"{scheme}://{host}:{port}"
-
-
-def _build_solver_request(payload):
-    if not isinstance(payload, dict):
-        return {}
-
-    request: dict[str, str] = {}
-    cdp_endpoint = _normalize_solver_cdp_endpoint(payload.get("cdp_endpoint"))
-    target_url = _normalize_solver_target_url(payload.get("target_url") or payload.get("url"))
-    challenge_target_url = _normalize_solver_target_url(payload.get("challenge_target_url"))
-
-    if cdp_endpoint:
-        request["cdp_endpoint"] = cdp_endpoint
-    if target_url:
-        request["target_url"] = target_url
-    if challenge_target_url:
-        request["challenge_target_url"] = challenge_target_url
-    node_id = str(payload.get("node_id") or "").strip()
-    if node_id:
-        request["node_id"] = node_id
-    cookie_snapshot_path = str(payload.get("cookie_snapshot_path") or "").strip()
-    if cookie_snapshot_path:
-        request["cookie_snapshot_path"] = cookie_snapshot_path
-    scope = _normalize_challenge_scope(payload.get("scope"))
-    if scope:
-        request["scope"] = scope
-    return request
-
-
-def _refresh_solver_last_request(request_payload):
-    request = _build_solver_request(request_payload)
-    with RUNTIME.lock:
-        merged = RUNTIME.recovery.snapshot().last_request
-        if not request:
-            return merged
-        merged.update(request)
-        return RUNTIME.recovery.set_request(_build_solver_request(merged))
-
-
-def _build_solver_for_request(request_payload):
-    if request_payload and isinstance(request_payload, dict):
-        target_url = request_payload.get("challenge_target_url") or request_payload.get("target_url")
-        if request_payload.get("cdp_endpoint") or target_url:
-            return CaptchaSolver(
-                cdp_endpoint=_normalize_solver_cdp_endpoint(request_payload.get("cdp_endpoint")),
-                target_url=target_url,
-            )
-    return solver
 
 from src.avm.service import AVMService
 from src.avm.pipeline import AVMPipelineManager, AVMPipelineConfig
@@ -236,7 +129,6 @@ BATCH_SIZE = 8  # User Configurable Concurrency
 DISPATCH_COOLDOWN_SECONDS = 20  # Task redispatch cooldown (aggressive profile)
 # Global Thread Pool for AI tasks (Limit 32 to prevent API overload)
 executor = ThreadPoolExecutor(max_workers=32)
-DATA_DIR = "datas"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COLLECTOR_DESKTOP_DIST = REPO_ROOT / "collector-desktop" / "dist"
 AVM_DIR = os.path.join(DATA_DIR, "avm")
@@ -275,14 +167,6 @@ NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS = max(
     60.0,
     float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS", "300")),
 )
-NAS_AUTH_RECOVERY_STATE_PATH = Path(
-    os.getenv("FAPAI_NAS_AUTH_RECOVERY_STATE_PATH")
-    or Path(os.getenv("FAPAI_SOLVER_STATE_DIR") or DATA_DIR) / "nas-auth-recovery.json"
-)
-NAS_AUTH_RECOVERY_TOKEN_FILE = Path(
-    os.getenv("FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE")
-    or Path(os.getenv("FAPAI_SOLVER_STATE_DIR") or DATA_DIR) / "nas-auth-recovery.token"
-)
 NAS_AUTH_RECOVERY = NasAuthRecoveryCoordinator(
     NAS_AUTH_RECOVERY_STATE_PATH,
     enabled=str(os.getenv("FAPAI_NAS_AUTH_RECOVERY_ENABLED", "0")).strip().lower()
@@ -294,66 +178,6 @@ NAS_AUTH_RECOVERY = NasAuthRecoveryCoordinator(
     cooldown_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")),
 )
 
-
-def _utc_now() -> datetime.datetime:
-    """Return an aware UTC instant while tolerating legacy zero-argument clocks."""
-    try:
-        value = datetime.datetime.now(datetime.timezone.utc)
-    except TypeError:
-        value = datetime.datetime.now()
-    return value if value.tzinfo is not None else value.replace(tzinfo=datetime.timezone.utc)
-
-
-def _as_utc_timestamp(value: datetime.datetime | None) -> datetime.datetime | None:
-    """Normalize legacy naive dispatch timestamps as UTC for safe subtraction."""
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=datetime.timezone.utc)
-    return value.astimezone(datetime.timezone.utc)
-
-
-def _parse_utc_timestamp(value: Any) -> datetime.datetime | None:
-    """Parse legacy or ISO timestamps and normalize them to aware UTC."""
-    text = str(value or "").strip()
-    if not text:
-        return None
-    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
-    try:
-        parsed = datetime.datetime.fromisoformat(normalized)
-    except (AttributeError, TypeError, ValueError):
-        try:
-            parsed = datetime.datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
-        except (AttributeError, TypeError, ValueError):
-            return None
-    return _as_utc_timestamp(parsed)
-
-
-def _utc_timestamp_leq(left: Any, right: Any) -> bool:
-    """Compare canonical mixed timestamps by UTC while preserving legacy ordering."""
-    left_text = str(left or "").strip()
-    right_text = str(right or "").strip()
-    left_dt = _parse_utc_timestamp(left_text)
-    right_dt = _parse_utc_timestamp(right_text)
-    canonical = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ].*)?$")
-    if (
-        left_dt is not None
-        and right_dt is not None
-        and canonical.fullmatch(left_text)
-        and canonical.fullmatch(right_text)
-    ):
-        return left_dt <= right_dt
-    return left_text <= right_text
-
-def _collection_runtime_index() -> CollectionRuntimeIndex:
-    """Read the index from the currently injected runtime."""
-    return RUNTIME.collection
-
-
-def _runtime_started_at() -> float:
-    """Read the runtime-owned clock without changing state during a status request."""
-    with RUNTIME.lock:
-        return RUNTIME.started_at
 
 DEFAULT_MARGIN_THRESHOLD = 0.15
 MALIGNANT_RISK_LABELS = {

@@ -14,11 +14,8 @@ from src.auth_recovery_codes import (
     active_code,
     failure_code,
 )
+from src.auth_snapshot_contract import RecoveryError
 from src.collection_api_credentials import secure_api_origin
-
-
-class RecoveryError(RuntimeError):
-    pass
 
 
 def api_origin(value):

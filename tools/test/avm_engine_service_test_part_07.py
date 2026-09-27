@@ -1,11 +1,15 @@
 from tools.test.avm_engine_service_test_context import *  # noqa: F401,F403
 
 
-def test_avm_service_build_feature_dataset_uses_repository_feature_rows_without_canonical_mapper(monkeypatch):
+def test_avm_service_build_feature_dataset_uses_repository_feature_rows_without_canonical_mapper(
+    monkeypatch,
+):
     class _FakeRepo:
         enabled = True
 
-        def yield_feature_source_rows(self, limit: int | None = None, chunk_size: int = 1000):
+        def yield_feature_source_rows(
+            self, limit: int | None = None, chunk_size: int = 1000
+        ):
             yield {
                 "item_id": "repo-1",
                 "auction_date": "2026-01-01 10:00:00",
@@ -30,16 +34,21 @@ def test_avm_service_build_feature_dataset_uses_repository_feature_rows_without_
     service = AVMService(data_dir="unused", repository=_FakeRepo())
 
     def _forbidden_map(_value):
-        raise AssertionError("repository feature rows should bypass map_raw_to_canonical")
+        raise AssertionError(
+            "repository feature rows should bypass map_raw_to_canonical"
+        )
 
-    monkeypatch.setattr("src.avm.service.map_raw_to_canonical", _forbidden_map)
+    monkeypatch.setattr("src.avm.service_data.map_raw_to_canonical", _forbidden_map)
 
     dataset = service._build_feature_dataset()
 
     assert len(dataset) == 1
     assert dataset[0]["item_id"] == "repo-1"
 
-def test_avm_service_predict_by_item_data_uses_repository_candidate_rows_without_full_dataset(monkeypatch):
+
+def test_avm_service_predict_by_item_data_uses_repository_candidate_rows_without_full_dataset(
+    monkeypatch,
+):
     class _FakeRepo:
         enabled = True
 
@@ -73,7 +82,9 @@ def test_avm_service_predict_by_item_data_uses_repository_candidate_rows_without
     service = AVMService(data_dir="unused", repository=_FakeRepo())
 
     def _forbidden_build():
-        raise AssertionError("predict_by_item_data fast path should not build full feature dataset")
+        raise AssertionError(
+            "predict_by_item_data fast path should not build full feature dataset"
+        )
 
     monkeypatch.setattr(service, "_build_feature_dataset", _forbidden_build)
 
@@ -95,7 +106,10 @@ def test_avm_service_predict_by_item_data_uses_repository_candidate_rows_without
     assert result["trace"]["candidate_source"] == "repository_candidates"
     assert result["trace"]["candidate_pool_size"] == 1
 
-def test_avm_service_predict_by_item_data_prefers_repository_analysis_candidate_rows(monkeypatch):
+
+def test_avm_service_predict_by_item_data_prefers_repository_analysis_candidate_rows(
+    monkeypatch,
+):
     class _FakeRepo:
         enabled = True
 
@@ -132,7 +146,9 @@ def test_avm_service_predict_by_item_data_prefers_repository_analysis_candidate_
     service = AVMService(data_dir="unused", repository=_FakeRepo())
 
     def _forbidden_build():
-        raise AssertionError("repository analysis candidate fast path should not build full feature dataset")
+        raise AssertionError(
+            "repository analysis candidate fast path should not build full feature dataset"
+        )
 
     monkeypatch.setattr(service, "_build_feature_dataset", _forbidden_build)
 

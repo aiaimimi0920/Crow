@@ -1,8 +1,14 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import ctypes
+import subprocess
+import sys
+import time
+
+from src import captcha_solver
+from tools.test.captcha_solver_test_context import set_solver_platform
 
 
 def test_linux_map_rejects_far_clipped_match_without_viewport_confirmation(monkeypatch) -> None:
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._target_activation_verified = True
     solver._css_to_client_screen = lambda *_args: {
@@ -129,7 +135,7 @@ def test_bounded_os_cursor_move_uses_fixed_zero_duration_steps(monkeypatch) -> N
         def moveTo(self, x, y, duration=0):
             moves.append((x, y, duration))
 
-    monkeypatch.setattr(captcha_solver.time, "sleep", sleeps.append)
+    monkeypatch.setattr(time, "sleep", sleeps.append)
     solver = captcha_solver.CaptchaSolver(port=9223)
 
     solver._move_os_cursor_bounded(FakePyAutoGUI(), 100.0, 50.0, 0.4)
@@ -155,7 +161,7 @@ def test_timed_os_cursor_move_preserves_pyautogui_duration_by_default(monkeypatc
 
 def test_native_os_input_requires_explicit_opt_in(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(captcha_solver.os, "name", "nt")
+    set_solver_platform(monkeypatch, "nt")
     monkeypatch.delenv("FAPAI_SOLVER_OS_INPUT_BACKEND", raising=False)
 
     assert solver._native_os_input_enabled() is False
@@ -165,7 +171,7 @@ def test_native_os_input_requires_explicit_opt_in(monkeypatch) -> None:
 
 def test_linux_uinput_requires_explicit_opt_in(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     monkeypatch.delenv("FAPAI_SOLVER_OS_INPUT_BACKEND", raising=False)
 
     assert solver._uinput_os_input_enabled() is False
@@ -203,9 +209,9 @@ def test_uinput_moves_with_cursor_feedback_and_emits_button_events(monkeypatch) 
         def syn(self):
             self.events.append(("syn",))
 
-    monkeypatch.setattr(captcha_solver.os, "name", "posix")
+    set_solver_platform(monkeypatch, "posix")
     monkeypatch.setenv("FAPAI_SOLVER_OS_INPUT_BACKEND", "uinput")
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     mouse = FakePyAutoGUI()
     handle = FakeHandle(mouse)
     solver = captcha_solver.CaptchaSolver(port=9223)
@@ -241,8 +247,8 @@ def test_linux_window_focus_activates_visible_chromium(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
     monkeypatch.setenv("DISPLAY", ":99")
     monkeypatch.setattr(solver, "_activate_target_tab", lambda: activations.append(True) or True)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(captcha_solver.subprocess, "run", fake_run)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert solver._focus_linux_window() is True
     assert ("xdotool", "windowactivate", "--sync", "101") in calls
@@ -269,7 +275,7 @@ def test_linux_window_focus_fails_when_exact_target_cannot_be_reactivated(monkey
     solver = captcha_solver.CaptchaSolver(port=9223)
     monkeypatch.setenv("DISPLAY", ":99")
     monkeypatch.setattr(solver, "_activate_target_tab", lambda: next(activations))
-    monkeypatch.setattr(captcha_solver.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert solver._focus_linux_window() is False
     assert ("xdotool", "windowactivate", "--sync", "101") in calls
@@ -278,7 +284,7 @@ def test_linux_window_focus_requires_display(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.setattr(
-        captcha_solver.subprocess,
+        subprocess,
         "run",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("xdotool must not run")),
     )
@@ -366,7 +372,7 @@ def test_os_drag_releases_mouse_after_move_exception(monkeypatch) -> None:
             calls.append("up")
 
     monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGUI())
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._focus_os_window = lambda: True
     solver._map_css_to_screen = lambda *_args, **_kwargs: {
@@ -394,7 +400,7 @@ def test_os_drag_skips_unverified_slider_screen_mapping(monkeypatch) -> None:
 
     map_calls: list[bool] = []
     monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGUI())
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._focus_os_window = lambda: True
 

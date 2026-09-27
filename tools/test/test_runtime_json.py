@@ -72,7 +72,7 @@ def test_collection_data_loader_skips_deep_json_and_keeps_valid_records(tmp_path
     (tmp_path / "valid.json").write_text('{"id":"valid-item","status":"pending"}', encoding="utf-8")
     seen = []
     monkeypatch.setattr(server.RUNTIME.collection, "seen_ids", {})
-    monkeypatch.setattr(server, "PENDING_TASKS", [])
+    monkeypatch.setattr(server.RUNTIME.collection, "pending_tasks", [])
     monkeypatch.setattr(server, "DB_REPOSITORY", type("Repo", (), {"enabled": False})())
     monkeypatch.setattr(server, "sync_collection_record", lambda item: seen.append(item["id"]))
 

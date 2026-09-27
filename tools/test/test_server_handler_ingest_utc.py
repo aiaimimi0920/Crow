@@ -43,7 +43,7 @@ def test_screen_alert_created_at_uses_utc_clock_and_legacy_format():
             "_read_json_body",
             return_value=(True, {"items": [{"id": "item-1"}], "margin_threshold": 0.0}),
         ),
-        mock.patch.object(server_module, "DATA_LOCK", threading.Lock()),
+        mock.patch.object(server_module.RUNTIME.collection, "lock", threading.Lock()),
         mock.patch.object(
             server_module.RUNTIME.collection, "seen_ids", {"item-1": {"data": {"starting_price": 50.0}}}
         ),

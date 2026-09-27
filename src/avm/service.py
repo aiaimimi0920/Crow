@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import types
 from typing import Any, Dict, List, Tuple
 
 from .service_context import (
@@ -9,11 +7,6 @@ from .service_context import (
     MAX_CANDIDATE_POOL,
     MODEL_VERSION,
     RISK_IMPACT_MAP,
-    build_features,
-    get_effective_risk_discount_factor,
-    get_effective_weighting,
-    map_raw_to_canonical,
-    predict_fair_price,
 )
 from .service_data import AVMDataMixin
 from .service_health import AVMHealthMixin
@@ -71,28 +64,10 @@ class AVMService(AVMDataMixin, AVMPredictionMixin, AVMHealthMixin, AVMReviewMixi
         return 3.0 <= float(lat) <= 54.5 and 73.0 <= float(lon) <= 136.0
 
 
-
-__all__ = ["AVMService", "MODEL_VERSION", "MAX_CANDIDATE_POOL", "GLOBAL_RECENT_CANDIDATES", "RISK_IMPACT_MAP"]
-
-
-_PATCHABLE_GLOBALS = {
-    "build_features",
-    "get_effective_risk_discount_factor",
-    "get_effective_weighting",
-    "map_raw_to_canonical",
-    "predict_fair_price",
-}
-
-
-class _ServiceFacadeModule(types.ModuleType):
-    def __setattr__(self, name, value):
-        super().__setattr__(name, value)
-        if name not in _PATCHABLE_GLOBALS:
-            return
-        for suffix in ("service_context", "service_data", "service_prediction", "service_health", "service_review"):
-            module = sys.modules.get(f"{__package__}.{suffix}")
-            if module is not None:
-                setattr(module, name, value)
-
-
-sys.modules[__name__].__class__ = _ServiceFacadeModule
+__all__ = [
+    "AVMService",
+    "MODEL_VERSION",
+    "MAX_CANDIDATE_POOL",
+    "GLOBAL_RECENT_CANDIDATES",
+    "RISK_IMPACT_MAP",
+]

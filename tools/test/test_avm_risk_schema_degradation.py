@@ -135,7 +135,7 @@ def test_extract_avm_risk_features_keeps_partial_payload(monkeypatch) -> None:
     """端到端：LLM 返回枚举外朝向时，抽取不再整条返回 None。"""
     import json
 
-    from src import llm_helper
+    from src import llm_avm_risk, llm_helper
 
     payload = dict(
         _base_features(),
@@ -144,7 +144,7 @@ def test_extract_avm_risk_features_keeps_partial_payload(monkeypatch) -> None:
         clear_delivery=False,
         housing_type="住宅",
     )
-    monkeypatch.setattr(llm_helper, "chat_with_glm", lambda prompt: json.dumps(payload, ensure_ascii=False))
+    monkeypatch.setattr(llm_avm_risk, "chat_with_glm", lambda prompt: json.dumps(payload, ensure_ascii=False))
 
     result = llm_helper.extract_avm_risk_features("公告正文", item_id="E2E")
 

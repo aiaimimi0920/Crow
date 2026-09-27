@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, Sequence
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 
 from src.collection.seed_list_parser import normalize_source_item_id
@@ -66,6 +64,10 @@ class RepositorySeedItemsMixin:
                 ):
                     raise ValueError(f"seed scan lease is not owned by worker: {progress_key}")
             dialect_name = session.get_bind().dialect.name
+            if dialect_name == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert as dialect_insert
+            elif dialect_name == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert as dialect_insert
             for rank, item in enumerate(items, start=1):
                 if not isinstance(item, dict):
                     continue
@@ -116,11 +118,11 @@ class RepositorySeedItemsMixin:
                         "detail_attempt_count": 0,
                     }
                     if dialect_name == "postgresql":
-                        insert_stmt = postgresql_insert(FapaiSeedItem).values(**insert_values)
+                        insert_stmt = dialect_insert(FapaiSeedItem).values(**insert_values)
                         insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=[FapaiSeedItem.item_id])
                         insert_stmt = insert_stmt.returning(FapaiSeedItem.item_id)
                     elif dialect_name == "sqlite":
-                        insert_stmt = sqlite_insert(FapaiSeedItem).values(**insert_values)
+                        insert_stmt = dialect_insert(FapaiSeedItem).values(**insert_values)
                         insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=[FapaiSeedItem.item_id])
                     else:
                         insert_stmt = None
@@ -189,7 +191,7 @@ class RepositorySeedItemsMixin:
                     "seen_at": now,
                 }
                 if dialect_name == "postgresql":
-                    occurrence_stmt = postgresql_insert(FapaiSeedOccurrence).values(**occurrence_values)
+                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(**occurrence_values)
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
                         index_elements=[FapaiSeedOccurrence.occurrence_key]
                     ).returning(FapaiSeedOccurrence.id)
@@ -197,7 +199,7 @@ class RepositorySeedItemsMixin:
                     if occurrence_result.scalar_one_or_none() is not None:
                         new_occurrences += 1
                 elif dialect_name == "sqlite":
-                    occurrence_stmt = sqlite_insert(FapaiSeedOccurrence).values(**occurrence_values)
+                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(**occurrence_values)
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
                         index_elements=[FapaiSeedOccurrence.occurrence_key]
                     )

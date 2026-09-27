@@ -1,4 +1,10 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import json
+import time
+
+import requests
+import websocket
+
+from src import captcha_solver
 
 
 def test_connect_tab_reuses_existing_punish_target_before_opening_new_page() -> None:
@@ -61,7 +67,7 @@ def test_connect_tab_reuses_existing_login_target_and_bootstraps_websocket(monke
         AssertionError("existing login target should be reused")
     )
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -151,7 +157,7 @@ def test_get_json_retries_transient_timeout_before_success(monkeypatch) -> None:
             raise RuntimeError("temporary timeout")
         return FakeResponse()
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
+    monkeypatch.setattr(requests, "get", fake_get)
 
     solver = captcha_solver.CaptchaSolver(
         port=9223,
@@ -195,7 +201,7 @@ def test_connect_tab_suppresses_websocket_origin_for_remote_debugging(monkeypatc
         connection_kwargs.append(kwargs)
         return FakeWebSocket()
 
-    monkeypatch.setattr(captcha_solver.websocket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(websocket, "create_connection", fake_create_connection)
 
     assert solver.connect_tab() is True
     assert connection_kwargs == [{"suppress_origin": True, "timeout": 5}]
@@ -261,7 +267,7 @@ def test_solver_falls_back_to_manual_when_cdp_mouse_input_times_out(monkeypatch)
         AssertionError("verification must not run after CDP mouse input fails")
     )
     solver._reload_page = lambda: reload_calls.append(True)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert solver.last_failure_reason == "manual_required"
@@ -294,7 +300,7 @@ def test_solver_returns_false_quickly_for_baxia_hard_block(monkeypatch) -> None:
         calls["sleep"].append(seconds)
         raise AssertionError("solver should not retry/sleep on an unsupported hard block")
 
-    monkeypatch.setattr(captcha_solver.time, "sleep", fake_sleep)
+    monkeypatch.setattr(time, "sleep", fake_sleep)
 
     assert solver.solve() is False
     assert calls["connect"] == 1
@@ -316,7 +322,7 @@ def test_solver_skips_headed_playwright_branches_without_display(monkeypatch) ->
     solver._solve_with_playwright_stealth = lambda: calls.append("playwright_stealth") or False
     solver._solve_with_userscript = lambda: calls.append("userscript") or True
     solver.connect_tab = lambda: calls.append("cdp") or False
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert "ddddocr" not in calls

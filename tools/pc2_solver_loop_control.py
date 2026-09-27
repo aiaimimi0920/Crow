@@ -1,13 +1,46 @@
 from __future__ import annotations
 
-from tools.pc2_solver_context import *  # noqa: F401,F403
-from tools.pc2_solver_transport import *  # noqa: F401,F403
-from tools.pc2_solver_scope import *  # noqa: F401,F403
-from tools.pc2_solver_auth import *  # noqa: F401,F403
-from tools.pc2_solver_fallback import *  # noqa: F401,F403
-from tools.pc2_solver_auth_pending import *  # noqa: F401,F403
-from tools.pc2_solver_cdp import *  # noqa: F401,F403
-from tools.pc2_solver_execution import *  # noqa: F401,F403
+import os
+import time
+from typing import TypedDict, cast
+
+from tools.pc2_auth_recovery import process_nas_auth_recovery_once
+from tools.pc2_solver_auth import _recent_healthy_auth_snapshot
+from tools.pc2_solver_auth_pending import (
+    _mark_auth_complete_pending,
+    _retry_pending_auth_confirmation,
+)
+from tools.pc2_solver_cdp import check_cdp_browser_for_authenticated_target
+from tools.pc2_solver_config import (
+    AUTH_RECOVERY_MARKER_PATH,
+    AUTH_RECOVERY_SNAPSHOT_PATH,
+    AUTH_RECOVERY_TOKEN_PATH,
+)
+from tools.pc2_solver_execution import (
+    close_stale_challenge_probe_target,
+    rebuild_missing_challenge_target,
+    resolve_stale_challenge_probe_target_after_resume,
+)
+from tools.pc2_solver_fallback import _retry_pending_collection_resume
+from tools.pc2_solver_scope import close_challenge_pages_for_scope, notify_force_reset
+from tools.pc2_solver_scope_policy import (
+    _solver_scope_statuses,
+    node_owns_last_request,
+    solver_request_target_url,
+)
+from tools.pc2_solver_transport import (
+    log_event,
+    nas_auth_recovery_client_enabled,
+    read_solver_status,
+    write_solver_heartbeat,
+)
+
+
+class ControlResult(TypedDict):
+    handled: bool
+    last_probe_target: dict[str, object] | None
+    last_auth_confirmed_at: float
+    reset_probe_counter: bool
 
 
 def process_pending_control_actions(
@@ -16,9 +49,9 @@ def process_pending_control_actions(
     cdp_endpoint: str,
     expected_node_id: str | None,
     poll_seconds: float,
-    last_probe_target: dict[str, Any] | None,
+    last_probe_target: dict[str, object] | None,
     last_auth_confirmed_at: float,
-) -> dict[str, Any]:
+) -> ControlResult:
     if nas_auth_recovery_client_enabled():
         auth_recovery = process_nas_auth_recovery_once(
             api_base_url,
@@ -29,7 +62,11 @@ def process_pending_control_actions(
             AUTH_RECOVERY_TOKEN_PATH,
         )
         recovery_action = str(auth_recovery.get("action") or "")
-        if recovery_action not in {"idle", "ignored", "waiting_for_collection_progress"}:
+        if recovery_action not in {
+            "idle",
+            "ignored",
+            "waiting_for_collection_progress",
+        }:
             log_event({"kind": "nas_auth_recovery", **auth_recovery})
         if recovery_action == "restart_requested":
             write_solver_heartbeat(
@@ -41,7 +78,6 @@ def process_pending_control_actions(
     pending_confirmation = _retry_pending_auth_confirmation(api_base_url)
     if pending_confirmation.get("confirmed"):
         last_auth_confirmed_at = time.time()
-        local_solver_loop._probe_counter = 0
         log_event(
             {
                 "kind": "auth_complete_confirmed",
@@ -51,6 +87,7 @@ def process_pending_control_actions(
         time.sleep(0)
         return {
             "handled": True,
+            "reset_probe_counter": True,
             "last_probe_target": last_probe_target,
             "last_auth_confirmed_at": last_auth_confirmed_at,
         }
@@ -66,6 +103,7 @@ def process_pending_control_actions(
         time.sleep(poll_seconds)
         return {
             "handled": True,
+            "reset_probe_counter": False,
             "last_probe_target": last_probe_target,
             "last_auth_confirmed_at": last_auth_confirmed_at,
         }
@@ -80,7 +118,6 @@ def process_pending_control_actions(
         cleanup = close_stale_challenge_probe_target(cdp_endpoint, cleanup_target)
         last_probe_target = None
         last_auth_confirmed_at = time.time()
-        local_solver_loop._probe_counter = 0
         log_event(
             {
                 "kind": "collection_resume_confirmed",
@@ -91,6 +128,7 @@ def process_pending_control_actions(
         time.sleep(0)
         return {
             "handled": True,
+            "reset_probe_counter": True,
             "last_probe_target": last_probe_target,
             "last_auth_confirmed_at": last_auth_confirmed_at,
         }
@@ -99,7 +137,9 @@ def process_pending_control_actions(
             log_event(
                 {
                     "kind": "collection_resume_pending",
-                    "request_id": pending_resume.get("state", {}).get("collection_resume_request_id"),
+                    "request_id": pending_resume.get("state", {}).get(
+                        "collection_resume_request_id"
+                    ),
                     "next_retry_at": pending_resume.get("next_retry_at"),
                     "result": pending_resume.get("result"),
                 }
@@ -107,11 +147,13 @@ def process_pending_control_actions(
         time.sleep(poll_seconds)
         return {
             "handled": True,
+            "reset_probe_counter": False,
             "last_probe_target": last_probe_target,
             "last_auth_confirmed_at": last_auth_confirmed_at,
         }
     return {
         "handled": False,
+        "reset_probe_counter": False,
         "last_probe_target": last_probe_target,
         "last_auth_confirmed_at": last_auth_confirmed_at,
     }
@@ -120,12 +162,14 @@ def process_pending_control_actions(
 def reset_forced_solver_scopes(
     api_base_url: str,
     cdp_endpoint: str,
-    solver_status: dict[str, Any],
+    solver_status: dict[str, object],
     expected_node_id: str | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     force_reset_done = False
     for scope, scoped_status in _solver_scope_statuses(solver_status).items():
-        if not isinstance(scoped_status, dict) or not scoped_status.get("force_reset_required"):
+        if not isinstance(scoped_status, dict) or not scoped_status.get(
+            "force_reset_required"
+        ):
             continue
         scoped_request = scoped_status.get("last_request")
         if isinstance(scoped_request, dict) and not node_owns_last_request(
@@ -150,7 +194,88 @@ def reset_forced_solver_scopes(
             }
         )
         force_reset_done = force_reset_done or bool(reset_result.get("force_reset"))
-    return read_solver_status(api_base_url) if force_reset_done else solver_status
+    return (
+        cast("dict[str, object]", read_solver_status(api_base_url))
+        if force_reset_done
+        else solver_status
+    )
 
 
-__all__ = ("process_pending_control_actions", "reset_forced_solver_scopes")
+def recover_stale_pause(
+    api_base_url: str,
+    cdp_endpoint: str,
+    solver_status: dict[str, object],
+    requested_target_urls: list[str],
+    expected_node_id: str | None,
+    last_auth_confirmed_at: float,
+) -> ControlResult:
+    result: ControlResult = {
+        "handled": True,
+        "last_probe_target": None,
+        "last_auth_confirmed_at": last_auth_confirmed_at,
+        "reset_probe_counter": False,
+    }
+    target_url = solver_request_target_url(solver_status.get("last_request"))
+    recent_healthy_snapshot = bool(
+        target_url and _recent_healthy_auth_snapshot(solver_status)
+    )
+    authenticated_target_url = ""
+    if not recent_healthy_snapshot:
+        for candidate in requested_target_urls:
+            authenticated = check_cdp_browser_for_authenticated_target(
+                cdp_endpoint, candidate
+            )
+            if authenticated:
+                authenticated_target_url = candidate
+                log_event(
+                    {
+                        "kind": "cdp_authenticated_target_found",
+                        "target_id": authenticated.get("_target_id"),
+                    }
+                )
+                break
+    confirmation_target = (
+        target_url if recent_healthy_snapshot else authenticated_target_url
+    )
+    if confirmation_target:
+        pending = _mark_auth_complete_pending(
+            confirmation_target, challenge_id=solver_status.get("challenge_id")
+        )
+        confirmation = _retry_pending_auth_confirmation(api_base_url, state=pending)
+        log_event({"kind": "stale_pause_auth_complete_result", "result": confirmation})
+        if confirmation.get("confirmed"):
+            result["last_auth_confirmed_at"] = time.time()
+            result["reset_probe_counter"] = True
+    elif (
+        str(solver_status.get("challenge_id") or "").strip()
+        and target_url
+        and node_owns_last_request(solver_status, cdp_endpoint, expected_node_id)
+    ):
+        rebuild = rebuild_missing_challenge_target(cdp_endpoint, target_url)
+        result["last_probe_target"] = rebuild.get("probe_target")
+        result["reset_probe_counter"] = True
+        log_event(
+            {
+                "kind": "missing_challenge_target_rebuild_result",
+                "attempted": bool(rebuild.get("attempted")),
+                "opened": bool(rebuild.get("opened")),
+                "scope": rebuild.get("scope"),
+                "reason": rebuild.get("reason"),
+                "error_type": rebuild.get("error_type"),
+            }
+        )
+    else:
+        log_event(
+            {
+                "kind": "skip_api_pause_without_cdp_challenge",
+                "last_status": solver_status.get("last_status"),
+            }
+        )
+    return result
+
+
+__all__ = (
+    "process_pending_control_actions",
+    "recover_stale_pause",
+    "reset_forced_solver_scopes",
+)

@@ -70,6 +70,68 @@ def test_startup_only_starts_active_background_workers(
     assert startup.runtime.initialized is True
 
 
+def test_saved_native_startup_follows_runtime_and_clock_replacement(
+    startup, monkeypatch
+):
+    from src import server_data_runtime
+    from src.collection_startup import CollectionStartup
+
+    initialize = startup.server.initialize_runtime
+    assert isinstance(initialize.__self__, CollectionStartup)
+    assert startup.server._CONTEXT.initialize_runtime is initialize
+    assert isinstance(
+        server_data_runtime.initialize_runtime.__self__, CollectionStartup
+    )
+    replacement = RuntimeState()
+    monkeypatch.setattr(startup.server, "RUNTIME", replacement)
+    monkeypatch.setattr(startup.server, "time", SimpleNamespace(time=lambda: 321.0))
+    initialize()
+    initialize()
+    assert replacement.initialized is True
+    assert replacement.started_at == 321.0
+    assert startup.runtime.initialized is False
+    assert startup.targets == [startup.server.manual_solver_retry_thread]
+
+
+@pytest.mark.parametrize("failure_stage", ["database", "seed", "sample"])
+def test_optional_startup_failure_preserves_order_and_starts_workers(
+    startup, monkeypatch, caplog, failure_stage
+):
+    server = startup.server
+    events = []
+
+    def stage(name):
+        def run():
+            events.append(name)
+            if name == failure_stage:
+                raise OSError("isolated optional startup failure")
+
+        return run
+
+    monkeypatch.setattr(server, "cleanup_orphaned_files", stage("cleanup"))
+    monkeypatch.setattr(server, "load_data", stage("load"))
+    monkeypatch.setattr(
+        server,
+        "DB_REPOSITORY",
+        SimpleNamespace(enabled=True, initialize=stage("database")),
+    )
+    monkeypatch.setattr(
+        server,
+        "_seed_collection_service",
+        lambda: SimpleNamespace(_bootstrap_db_search_tasks=stage("seed")),
+    )
+    monkeypatch.setattr(server, "_sample_nas_auth_recovery", stage("sample"))
+    server.initialize_runtime()
+    assert events == (
+        ["cleanup", "load", "database", "sample"]
+        if failure_stage == "database"
+        else ["cleanup", "load", "database", "seed", "sample"]
+    )
+    assert startup.targets == [server.manual_solver_retry_thread]
+    assert startup.runtime.initialized is True
+    assert "isolated optional startup failure" in caplog.text
+
+
 def test_failed_data_load_can_retry_without_leaking_background_workers(
     startup, monkeypatch
 ):

@@ -1,27 +1,111 @@
 """Unreadable archive data must never become an empty successful write."""
 
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from src import archive_json_io, server_data_runtime, server_handler_analysis
+from src import archive_json_io, server_handler_analysis
+from src.collection_archive_records import CollectionArchiveRecords
+from src.runtime_json import load_json_file
+from src.runtime_state import RuntimeState
+
+
+@pytest.fixture
+def native_archive():
+    runtime = RuntimeState()
+    return CollectionArchiveRecords(
+        runtime=lambda: runtime, exists=os.path.exists, load=load_json_file
+    )
+
+
+@pytest.mark.parametrize("operation", ["update_file_global", "remove_item_from_json"])
+@pytest.mark.parametrize("failure", ["fsync", "replace"])
+def test_legacy_archive_publish_failure_keeps_confirmed_bytes(
+    tmp_path, monkeypatch, caplog, operation, failure, native_archive
+):
+    archive = tmp_path / "archive.json"
+    raw = b'[{"id":"target"},{"id":"keep","evidence":"confirmed"}]'
+    archive.write_bytes(raw)
+
+    def fail(*_args):
+        raise OSError("synthetic archive publish failure")
+
+    monkeypatch.setattr(archive_json_io.os, failure, fail)
+    function = getattr(native_archive, operation)
+    args = (str(archive), "target")
+    if operation == "update_file_global":
+        args += ({"id": "target", "updated": True},)
+    with pytest.raises(OSError, match="synthetic archive publish failure"):
+        function(*args)
+
+    assert archive.read_bytes() == raw
+    assert "synthetic archive publish failure" in caplog.text
+    assert len(list(tmp_path.glob("*.tmp"))) == 1
+
+
+def test_legacy_archive_serialization_failure_does_not_truncate(
+    tmp_path, caplog, native_archive
+):
+    archive = tmp_path / "archive.json"
+    raw = b'[{"id":"target","evidence":"confirmed"}]'
+    archive.write_bytes(raw)
+    with pytest.raises(TypeError):
+        native_archive.update_file_global(
+            str(archive), "target", {"id": "target", "invalid": object()}
+        )
+    assert archive.read_bytes() == raw
+    assert "Global file write failed" in caplog.text
+
+
+@pytest.mark.parametrize("facade", [False, True])
+@pytest.mark.parametrize("operation", ["update_file_global", "remove_item_from_json"])
+def test_legacy_archive_write_preserves_unrelated_evidence(
+    tmp_path, facade, operation, native_archive
+):
+    from src import server
+
+    module = server if facade else native_archive
+    archive = tmp_path / "archive.json"
+    retained = {"id": "keep", "_raw_detail_artifacts": {"path": "keep.html"}}
+    archive.write_text(json.dumps([{"id": "target"}, retained]), encoding="utf-8")
+    function = getattr(module, operation)
+    replacement = {"id": "target", "updated": True}
+    args = (str(archive), "target")
+    if operation == "update_file_global":
+        args += (replacement,)
+    function(*args)
+    expected = (
+        [replacement, retained] if operation == "update_file_global" else [retained]
+    )
+    assert json.loads(archive.read_text(encoding="utf-8")) == expected
+    assert not list(tmp_path.glob("*.tmp"))
+
+    confirmed = archive.read_bytes()
+    args = (str(archive), "missing")
+    if operation == "update_file_global":
+        args += ({"id": "missing"},)
+    function(*args)
+    assert archive.read_bytes() == confirmed
 
 
 @pytest.mark.parametrize("raw", [b'{"unfinished":', b"{}", b"[null]", b"null"])
-def test_item_update_rejects_corrupt_or_wrong_shape_without_overwriting(tmp_path, raw):
+def test_item_update_rejects_corrupt_or_wrong_shape_without_overwriting(
+    tmp_path, raw, native_archive
+):
     archive = tmp_path / "archive.json"
     archive.write_bytes(raw)
     with pytest.raises(ValueError):
-        server_data_runtime.update_item_in_json(str(archive), "new", {"id": "new"})
+        native_archive.update_item_in_json(str(archive), "new", {"id": "new"})
     assert archive.read_bytes() == raw
     assert list(tmp_path.iterdir()) == [archive]
 
 
 @pytest.mark.parametrize("failure", ["fsync", "replace"])
 def test_failed_publish_preserves_confirmed_archive_and_pending_snapshot(
-    tmp_path, monkeypatch, failure
+    tmp_path, monkeypatch, failure, native_archive
 ):
     archive = tmp_path / "archive.json"
     raw = b'[{"id":"old","evidence":"keep"}]'
@@ -32,18 +116,18 @@ def test_failed_publish_preserves_confirmed_archive_and_pending_snapshot(
 
     monkeypatch.setattr(archive_json_io.os, failure, fail)
     with pytest.raises(OSError):
-        server_data_runtime.update_item_in_json(str(archive), "new", {"id": "new"})
+        native_archive.update_item_in_json(str(archive), "new", {"id": "new"})
     assert archive.read_bytes() == raw
     assert len(list(tmp_path.glob("*.tmp"))) == 1
     assert list(tmp_path.glob("*.json")) == [archive]
 
 
-def test_successful_append_retains_other_archive_records(tmp_path):
+def test_successful_append_retains_other_archive_records(tmp_path, native_archive):
     archive = tmp_path / "archive.json"
     archive.write_text(
         '[{"id":"old","_raw_detail_artifacts":{"path":"keep.html"}}]', encoding="utf-8"
     )
-    server_data_runtime.update_item_in_json(str(archive), "new", {"id": "new"})
+    native_archive.update_item_in_json(str(archive), "new", {"id": "new"})
     assert json.loads(archive.read_text(encoding="utf-8")) == [
         {"id": "old", "_raw_detail_artifacts": {"path": "keep.html"}},
         {"id": "new"},
@@ -67,7 +151,8 @@ def test_location_handler_reports_failure_and_retains_corrupt_input(
     )
 
     class Handler:
-        errors = []
+        def __init__(self):
+            self.errors = []
 
         def send_error_json(self, **kwargs):
             self.errors.append(kwargs)
@@ -85,7 +170,7 @@ def test_concurrent_location_saves_preserve_both_requests(tmp_path, monkeypatch)
     archive = tmp_path / "collected_locations.json"
     archive.write_text('[{"code":"old","name":"Existing"}]', encoding="utf-8")
     monkeypatch.setattr(server_handler_analysis, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(server_handler_analysis, "FILE_LOCK", threading.Lock())
+    monkeypatch.setattr(server_handler_analysis.RUNTIME, "file_lock", threading.Lock())
     monkeypatch.setattr(
         server_handler_analysis, "_require_control_plane", lambda _: True, raising=False
     )

@@ -1,4 +1,10 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import json
+import time
+
+import requests
+import websocket
+
+from src import captcha_solver
 
 
 def test_compact_cdp_pages_keeps_browser_alive_at_threshold(monkeypatch) -> None:
@@ -39,8 +45,8 @@ def test_compact_cdp_pages_keeps_browser_alive_at_threshold(monkeypatch) -> None
             return FakeResponse({"id": "keepalive-page"})
         raise AssertionError(f"unexpected PUT {url}")
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
-    monkeypatch.setattr(captcha_solver.requests, "put", fake_put)
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "put", fake_put)
 
     solver = captcha_solver.CaptchaSolver(
         port=9223,
@@ -90,7 +96,7 @@ def test_compact_cdp_pages_does_not_close_below_threshold(monkeypatch) -> None:
             )
         raise AssertionError(f"unexpected GET {url}")
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
+    monkeypatch.setattr(requests, "get", fake_get)
 
     solver = captcha_solver.CaptchaSolver(
         port=9223,
@@ -151,10 +157,10 @@ def test_connect_tab_compacts_accumulated_pages_then_reopens_current_target(monk
             }
         )
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
-    monkeypatch.setattr(captcha_solver.requests, "put", fake_put)
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "put", fake_put)
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )
@@ -225,10 +231,10 @@ def test_connect_tab_reserves_space_before_opening_twelfth_page(monkeypatch) -> 
             }
         )
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
-    monkeypatch.setattr(captcha_solver.requests, "put", fake_put)
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "put", fake_put)
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda _ws_url, **_kwargs: FakeWebSocket(),
     )
@@ -273,7 +279,7 @@ def test_solver_closes_owned_target_tab_after_cdp_success(monkeypatch) -> None:
     solver._do_drag = lambda _x, _y, _distance: 250
     solver._wait_for_verification_success = lambda: True
     solver._close_cdp_target = lambda target_id: closed.append(target_id) or True
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve() is True
     assert closed == ["owned-target"]
@@ -335,10 +341,10 @@ def test_connect_tab_reuses_cached_target_websocket_when_list_is_unavailable(mon
             }
         )
 
-    monkeypatch.setattr(captcha_solver.requests, "get", fake_get)
-    monkeypatch.setattr(captcha_solver.requests, "put", fake_put)
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "put", fake_put)
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda ws_url, **_kwargs: connected_urls.append(ws_url) or FakeWebSocket(),
     )

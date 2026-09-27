@@ -1,4 +1,6 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import time
+
+from src import captcha_solver
 
 
 def test_verify_success_rejects_local_mock_retry_then_success_without_manual_required(monkeypatch) -> None:
@@ -51,7 +53,7 @@ def test_wait_for_verification_success_short_circuits_local_mock_explicit_fail(m
         "_page_challenge_summary",
         lambda: (_ for _ in ()).throw(AssertionError("explicit_fail terminal state should not need page summary")),
     )
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
 
     assert solver._wait_for_verification_success(max_checks=10) is False
     assert solver.last_failure_reason == "manual_required"
@@ -75,7 +77,7 @@ def test_wait_for_verification_success_short_circuits_local_mock_near_miss(monke
         "_page_challenge_summary",
         lambda: (_ for _ in ()).throw(AssertionError("near_miss must not use explicit-fail terminal check")),
     )
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
 
     assert solver._wait_for_verification_success(max_checks=3) is False
     assert solver.last_failure_reason is None
@@ -99,7 +101,7 @@ def test_wait_for_verification_success_short_circuits_local_mock_retry_then_succ
         "_page_challenge_summary",
         lambda: (_ for _ in ()).throw(AssertionError("retry_then_success must not force manual-required summary checks")),
     )
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
 
     assert solver._wait_for_verification_success(max_checks=5) is False
     assert solver.last_failure_reason is None
@@ -118,7 +120,7 @@ def test_wait_for_verification_success_keeps_polling_local_mock_without_terminal
         return False
 
     monkeypatch.setattr(solver, "_verify_success", fake_verify)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: calls.__setitem__("sleep", calls["sleep"] + 1))
 
     assert solver._wait_for_verification_success(max_checks=3) is False
     assert calls == {"verify": 10, "sleep": 9}
@@ -173,7 +175,7 @@ def test_solver_returns_immediately_when_local_mock_wait_sets_manual_required(mo
     )
     monkeypatch.setattr(solver, "_reload_page", lambda: calls.__setitem__("reload", calls["reload"] + 1))
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert solver.last_failure_reason == "manual_required"
@@ -233,7 +235,7 @@ def test_solver_local_mock_retry_then_success_replays_without_spending_main_atte
     ]
     monkeypatch.setattr(solver, "_page_challenge_summary", lambda: summaries.pop(0))
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is True
     assert calls == {"connect": 1, "drag": 2, "reset": 1, "verify": 2}
@@ -280,7 +282,7 @@ def test_solver_near_miss_reloads_and_exhausts_attempts_without_manual_required(
     monkeypatch.setattr(solver, "_page_challenge_summary", lambda: {"explicitFailure": False})
     monkeypatch.setattr(solver, "_reload_page", lambda: calls.__setitem__("reload", calls["reload"] + 1))
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert solver.last_failure_reason == "max_attempts_exceeded"
@@ -310,7 +312,7 @@ def test_live_solve_uses_os_mouse_when_enabled(monkeypatch) -> None:
     solver._do_drag = lambda _x, _y, _d: calls.append("cdp") or 250
     solver._wait_for_verification_success = lambda: True
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     assert solver.solve(max_attempts=1) is True
     assert calls == ["os"]
 
@@ -342,7 +344,7 @@ def test_live_solve_does_not_fall_back_to_cdp_after_unverified_screen_mapping(mo
     solver._reload_page = lambda: calls.__setitem__("reload", calls["reload"] + 1)
     solver._recover_authenticated_list_page = lambda: False
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert calls == {"os": 1, "cdp": 0, "reload": 1}
@@ -355,7 +357,7 @@ def test_wait_for_verification_success_accepts_authenticated_auction_page(monkey
         "hasSlider": False,
         "explicitFailure": False,
     }
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     assert solver._wait_for_verification_success(max_checks=2) is True
 
 def test_solve_treats_authenticated_page_after_drag_as_success(monkeypatch) -> None:
@@ -382,7 +384,7 @@ def test_solve_treats_authenticated_page_after_drag_as_success(monkeypatch) -> N
         "hasSlider": False,
     }
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     assert solver.solve(max_attempts=1) is True
     assert solver.last_failure_reason is None
 

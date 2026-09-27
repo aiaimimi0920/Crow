@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from src.archive_json_io import write_json
+from src.collection_job_control import job_checkpoint
 from src.collection_jobs import JobResult, JobWork
 from src.collection_maintenance_options import nonnegative_integer
 
@@ -68,7 +69,9 @@ def prepare_maintenance(
         raise ValueError("Unknown collection maintenance operation")
 
     def run() -> JobResult:
+        job_checkpoint()
         result = runner(**options)
+        job_checkpoint()
         report = data_root / "avm" / f"{operation}.json"
         report.parent.mkdir(parents=True, exist_ok=True)
         write_json(report, result, indent=2)
@@ -76,6 +79,7 @@ def prepare_maintenance(
         if isinstance(changed, dict):
             changed = changed.get("prepared_count")
         if not dry_run and changed:
+            job_checkpoint()
             reload_data(data_root)
         return result
 

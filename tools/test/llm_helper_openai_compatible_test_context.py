@@ -1,22 +1,7 @@
 from __future__ import annotations
 
-import os
-
-import shutil
-
-import subprocess
-
-import sys
-
-from pathlib import Path
-
 from typing import Any
 
-import pytest
-
-import requests
-
-from src import llm_helper
 
 class _FakeResponse:
     status_code = 200
@@ -31,7 +16,7 @@ class _FakeResponse:
             "choices": [
                 {
                     "message": {
-                        "content": "```json\n{\"ok\":true}\n```",
+                        "content": '```json\n{"ok":true}\n```',
                     }
                 }
             ]
@@ -39,6 +24,7 @@ class _FakeResponse:
 
     def raise_for_status(self) -> None:
         return None
+
 
 class _FakeUtf8Response:
     status_code = 200
@@ -60,7 +46,7 @@ class _FakeUtf8Response:
             "choices": [
                 {
                     "message": {
-                        "content": "{\"å¸\u0082å\u009cºè¯\u0084ä¼°ä»·\":1,\"æ\u0098¯å\u0090¦æ\u0088\u0090äº¤\":true}",
+                        "content": '{"å¸\u0082å\u009cºè¯\u0084ä¼°ä»·":1,"æ\u0098¯å\u0090¦æ\u0088\u0090äº¤":true}',
                     }
                 }
             ]
@@ -70,4 +56,4 @@ class _FakeUtf8Response:
         return None
 
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+__all__ = ["_FakeResponse", "_FakeUtf8Response"]

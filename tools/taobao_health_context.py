@@ -66,37 +66,18 @@ _AUTH_PAGE_LOCKS: dict[str, threading.Lock] = {}
 
 _AUTH_PAGE_LOCKS_GUARD = threading.Lock()
 
-HEALTHY_LIST_PAYLOAD = "healthy_list_payload"
-
-PARTIAL_AVAILABLE = "partial_available"
-
-ALL_SAMPLES_BLOCKED = "all_samples_blocked"
-
-LOGIN_REQUIRED = "login_required"
-
-CHALLENGE_REQUIRED = "challenge_required"
-
-PUNISH_PAGE = "punish_page"
-
-CAPTCHA_PAGE = "captcha_page"
-
-CDP_UNREACHABLE = "cdp_unreachable"
-
-UNKNOWN_BLOCKED = "unknown_blocked"
-
-SENSITIVE_QUERY_KEYS = {
-    "x5secdata",
-    "x5sec",
-    "cookie2",
-    "sgcookie",
-    "_tb_token_",
-}
-
-SENSITIVE_INLINE_PATTERNS = (
-    re.compile(r"x5secdata\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"cookie2\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"sgcookie\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
-    re.compile(r"_tb_token_\s*=\s*[^&\s\"'<>]+", re.IGNORECASE),
+from src.collection.adapters.taobao_health import (
+    ALL_SAMPLES_BLOCKED,
+    CAPTCHA_PAGE,
+    CDP_UNREACHABLE,
+    CHALLENGE_REQUIRED,
+    HEALTHY_LIST_PAYLOAD,
+    LOGIN_REQUIRED,
+    PARTIAL_AVAILABLE,
+    PUNISH_PAGE,
+    SENSITIVE_INLINE_PATTERNS,
+    SENSITIVE_QUERY_KEYS,
+    UNKNOWN_BLOCKED,
 )
 
 FetchPageFunc = Callable[[str, str], tuple[str, str]]

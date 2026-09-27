@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src import llm_helper
+from src import llm_helper, llm_product_extraction
 from src.collection import GenericProductAdapter, TaobaoJudicialAuctionAdapter
 from src.collection.runtime_adapter import resolve_record_adapter
 from tools import detail_worker, live_batch_smoke, seed_collector
@@ -83,7 +83,7 @@ def test_generic_detail_target_uses_explicit_source_url() -> None:
 
 
 def test_generic_product_extractor_rejects_non_object_json(monkeypatch) -> None:
-    monkeypatch.setattr(llm_helper, "chat_with_glm", lambda _prompt: "[]")
+    monkeypatch.setattr(llm_product_extraction, "chat_with_glm", lambda _prompt: "[]")
 
     with pytest.raises(ValueError, match="must return a JSON object"):
         llm_helper.extract_product_data("name: reusable item", item_id="sku-1")

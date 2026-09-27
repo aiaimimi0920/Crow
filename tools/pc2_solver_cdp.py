@@ -1,13 +1,52 @@
 from __future__ import annotations
-from tools.pc2_solver_context import *  # noqa: F401,F403
-from tools.pc2_solver_transport import *  # noqa: F401,F403
-from tools.pc2_solver_scope import *  # noqa: F401,F403
-from tools.pc2_solver_auth import *  # noqa: F401,F403
-from tools.pc2_solver_fallback import *  # noqa: F401,F403
-from tools.pc2_solver_auth_pending import *  # noqa: F401,F403
+
+import json
+from importlib import import_module
+from typing import Protocol, cast
+from urllib.parse import urlsplit
+
+from tools.internal_api_http import fetch_json
+from tools.pc2_solver_scope_policy import (
+    _challenge_scope_for_url,
+    solver_request_target_url,
+    solver_request_target_urls,
+)
+from tools.pc2_solver_transport import log_event
 
 
-def get_cdp_page_url(cdp_endpoint):
+class ProbeSocket(Protocol):
+    def send(self, payload: str) -> object: ...
+
+    def recv(self) -> str | bytes: ...
+
+
+class ProbeSolver(Protocol):
+    def _solver_target_route(self, value: object) -> str: ...
+
+    def _normalize_target_url(self, value: object) -> str: ...
+
+    def _is_manual_challenge_url(self, value: object) -> bool: ...
+
+    def _remember_target_tab(self, tab: dict[str, object]) -> None: ...
+
+    def _connect_to_target(self, target_ws: str, target_title: str) -> bool: ...
+
+    def _page_challenge_summary(self) -> dict[str, object]: ...
+
+    def _close_solver_ws(self) -> None: ...
+
+
+def _create_probe_solver(
+    *, cdp_endpoint: str, target_url: str | None = None
+) -> ProbeSolver:
+    from src.captcha_solver import CaptchaSolver
+
+    return cast(
+        ProbeSolver, CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+    )
+
+
+def get_cdp_page_url(cdp_endpoint: str) -> str | None:
     """Get the URL of the first page tab from CDP."""
     try:
         tabs = fetch_json(f"{cdp_endpoint.rstrip('/')}/json/list", timeout=5)
@@ -23,26 +62,34 @@ def get_cdp_page_url(cdp_endpoint):
             if url:
                 return url
         return None
-    except Exception:
+    except Exception:  # noqa: BLE001 -- a failed CDP probe remains inconclusive
         return None
 
 
-def _challenge_target_matches_request(solver, target_url, tab_url):
+def _challenge_target_matches_request(
+    solver: ProbeSolver, target_url: str | None, tab_url: object
+) -> bool:
     requested = solver._solver_target_route(target_url)
     candidate = solver._solver_target_route(tab_url)
     if requested == candidate:
         return True
-    if (_challenge_scope_for_url(target_url) != "seed"
-            or not CaptchaSolver._is_manual_challenge_url(tab_url)):
+    if _challenge_scope_for_url(
+        target_url
+    ) != "seed" or not solver._is_manual_challenge_url(tab_url):
         return False
     # The site may omit list parameters on its challenge redirect. This fallback
     # locates that challenge only; authenticated-page matching remains exact.
     expected, redirected = urlsplit(requested), urlsplit(candidate)
     return not redirected.query and (
-        expected.scheme, expected.netloc, expected.path
+        expected.scheme,
+        expected.netloc,
+        expected.path,
     ) == (redirected.scheme, redirected.netloc, redirected.path)
 
-def check_cdp_browser_for_challenge_page(cdp_endpoint, target_url=None):
+
+def check_cdp_browser_for_challenge_page(
+    cdp_endpoint: str, target_url: str | None = None
+) -> dict[str, object] | None:
     """Find an existing challenge target using metadata, then fail-closed DOM evidence."""
     solver = None
     try:
@@ -58,7 +105,9 @@ def check_cdp_browser_for_challenge_page(cdp_endpoint, target_url=None):
         ]
         requested_route = None
         if target_url:
-            solver = CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+            solver = _create_probe_solver(
+                cdp_endpoint=cdp_endpoint, target_url=target_url
+            )
             requested_route = solver._solver_target_route(target_url)
         candidates = []
         for tab in page_tabs:
@@ -72,7 +121,7 @@ def check_cdp_browser_for_challenge_page(cdp_endpoint, target_url=None):
             )
             if is_challenge:
                 candidates.append(tab)
-        if requested_route:
+        if requested_route and solver is not None:
             candidates = [
                 tab
                 for tab in candidates
@@ -87,7 +136,9 @@ def check_cdp_browser_for_challenge_page(cdp_endpoint, target_url=None):
             }
 
         if solver is None:
-            solver = CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+            solver = _create_probe_solver(
+                cdp_endpoint=cdp_endpoint, target_url=target_url
+            )
         dom_candidates = page_tabs
         if requested_route:
             dom_candidates = [
@@ -106,53 +157,53 @@ def check_cdp_browser_for_challenge_page(cdp_endpoint, target_url=None):
                 summary = solver._page_challenge_summary()
                 evidence = [
                     key
-                    for key in ("challengePresent", "explicitFailure", "hardBlock", "hasSlider")
+                    for key in (
+                        "challengePresent",
+                        "explicitFailure",
+                        "hardBlock",
+                        "hasSlider",
+                    )
                     if summary.get(key) is True
                 ]
                 if evidence:
                     return {
                         "_target_id": str(tab.get("id") or "").strip(),
                         "_target_url": str(tab.get("url") or "").strip(),
-                        "_target_ws_url": str(tab.get("webSocketDebuggerUrl") or "").strip(),
+                        "_target_ws_url": str(
+                            tab.get("webSocketDebuggerUrl") or ""
+                        ).strip(),
                         "_challenge_evidence": evidence,
                     }
-            except Exception as error:
-                log_event({
-                    "kind": "cdp_challenge_probe_target_error",
-                    "target_id": str(tab.get("id") or "").strip(),
-                    "error_type": type(error).__name__,
-                })
+            except Exception as error:  # noqa: BLE001 -- isolate each failed target probe
+                log_event(
+                    {
+                        "kind": "cdp_challenge_probe_target_error",
+                        "target_id": str(tab.get("id") or "").strip(),
+                        "error_type": type(error).__name__,
+                    }
+                )
                 continue
             finally:
                 solver._close_solver_ws()
         return None
-    except Exception as error:
-        log_event({
-            "kind": "cdp_challenge_probe_error",
-            "error_type": type(error).__name__,
-        })
+    except Exception as error:  # noqa: BLE001 -- preserve the inconclusive probe contract
+        log_event(
+            {
+                "kind": "cdp_challenge_probe_error",
+                "error_type": type(error).__name__,
+            }
+        )
         return None
     finally:
         if solver is not None:
             solver._close_solver_ws()
 
-def solver_request_target_urls(last_request):
-    if not isinstance(last_request, dict):
-        return []
-    targets = []
-    for key in ("challenge_target_url", "target_url", "url"):
-        target_url = str(last_request.get(key) or "").strip()
-        if target_url and target_url not in targets:
-            targets.append(target_url)
-    return targets
 
-def solver_request_target_url(last_request):
-    targets = solver_request_target_urls(last_request)
-    return targets[0] if targets else ""
-
-def match_solver_request_target_url(last_request, selected_target_url, cdp_endpoint):
+def match_solver_request_target_url(
+    last_request: object, selected_target_url: object, cdp_endpoint: str
+) -> str:
     """Revalidate the probed request route against the latest control-plane state."""
-    candidates = solver_request_target_urls(last_request)
+    candidates: list[str] = solver_request_target_urls(last_request)
     if not candidates:
         return ""
     selected_target_url = str(selected_target_url or "").strip()
@@ -160,7 +211,9 @@ def match_solver_request_target_url(last_request, selected_target_url, cdp_endpo
         return candidates[0]
     if selected_target_url in candidates:
         return selected_target_url
-    solver = CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=selected_target_url)
+    solver = _create_probe_solver(
+        cdp_endpoint=cdp_endpoint, target_url=selected_target_url
+    )
     selected_route = solver._solver_target_route(selected_target_url)
     if not selected_route:
         return ""
@@ -169,12 +222,15 @@ def match_solver_request_target_url(last_request, selected_target_url, cdp_endpo
             return candidate
     return ""
 
-def check_cdp_browser_for_authenticated_target(cdp_endpoint, target_url):
+
+def check_cdp_browser_for_authenticated_target(
+    cdp_endpoint: str, target_url: str
+) -> dict[str, object] | None:
     """Confirm that an existing target page is healthy without opening a new tab."""
     target_url = str(target_url or "").strip()
     if not target_url:
         return None
-    solver = CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+    solver = _create_probe_solver(cdp_endpoint=cdp_endpoint, target_url=target_url)
     try:
         tabs = fetch_json(f"{cdp_endpoint.rstrip('/')}/json/list", timeout=5)
         if not isinstance(tabs, list):
@@ -194,7 +250,10 @@ def check_cdp_browser_for_authenticated_target(cdp_endpoint, target_url):
             normalized_tab = solver._normalize_target_url(tab_url)
             if normalized_tab == normalized_target:
                 exact_tabs.append(tab)
-            elif requested_route and solver._solver_target_route(tab_url) == requested_route:
+            elif (
+                requested_route
+                and solver._solver_target_route(tab_url) == requested_route
+            ):
                 route_tabs.append(tab)
         scoped_tabs = exact_tabs + route_tabs
         if _challenge_scope_for_url(target_url) == "seed" and not scoped_tabs:
@@ -204,7 +263,7 @@ def check_cdp_browser_for_authenticated_target(cdp_endpoint, target_url):
         if not candidates:
             return None
 
-        healthy_target = None
+        healthy_target: dict[str, object] | None = None
         for tab in candidates:
             solver._remember_target_tab(tab)
             if not solver._connect_to_target(
@@ -231,19 +290,22 @@ def check_cdp_browser_for_authenticated_target(cdp_endpoint, target_url):
             elif target_scoped and summary.get("authenticatedPage") is not True:
                 return None
         return healthy_target
-    except Exception:
+    except Exception:  # noqa: BLE001 -- probe failures cannot establish authentication
         return None
     finally:
         solver._close_solver_ws()
 
-def check_cdp_browser_for_slider(cdp_endpoint, target_url=None):
+
+def check_cdp_browser_for_slider(
+    cdp_endpoint: str, target_url: str | None = None
+) -> dict[str, object] | None:
     """Lightweight CDP check: probe browser tabs for a visible NC slider.
     Returns the slider_info dict if found, or None."""
     try:
         tabs = fetch_json(f"{cdp_endpoint.rstrip('/')}/json/list", timeout=5)
         if not isinstance(tabs, list) or not tabs:
             return None
-        import websocket
+        websocket = import_module("websocket")
 
         js = r"""
         (function() {
@@ -266,7 +328,11 @@ def check_cdp_browser_for_slider(cdp_endpoint, target_url=None):
             if not isinstance(tab, dict) or not tab.get("webSocketDebuggerUrl"):
                 continue
             url = str(tab.get("url") or "").lower()
-            if "/_____tmd_____/" in url or "sec.taobao.com" in url or "login.taobao.com" in url:
+            if (
+                "/_____tmd_____/" in url
+                or "sec.taobao.com" in url
+                or "login.taobao.com" in url
+            ):
                 challenge_tabs.append(tab)
             elif tab.get("type") == "page":
                 page_tabs.append(tab)
@@ -275,63 +341,95 @@ def check_cdp_browser_for_slider(cdp_endpoint, target_url=None):
 
         requested_route = None
         if target_url:
-            solver = CaptchaSolver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+            solver = _create_probe_solver(
+                cdp_endpoint=cdp_endpoint, target_url=target_url
+            )
             requested_route = solver._solver_target_route(target_url)
             if requested_route:
                 challenge_tabs = [
                     tab
                     for tab in challenge_tabs
-                    if _challenge_target_matches_request(solver, target_url, tab.get("url"))
+                    if _challenge_target_matches_request(
+                        solver, target_url, tab.get("url")
+                    )
                 ]
         for target in challenge_tabs + page_tabs + other_tabs:
             ws_url = str(target.get("webSocketDebuggerUrl") or "").strip()
             ws = None
             try:
-                ws = websocket.create_connection(ws_url, suppress_origin=True, timeout=5)
+                ws = websocket.create_connection(
+                    ws_url, suppress_origin=True, timeout=5
+                )
                 ws.settimeout(5)
                 send_id = 0
 
-                def _send(method, params=None):
+                def _send(
+                    method: str,
+                    params: dict[str, object] | None = None,
+                    socket: ProbeSocket = ws,
+                ) -> object:
                     nonlocal send_id
                     send_id += 1
                     mid = send_id
                     msg = {"id": mid, "method": method, "params": params or {}}
-                    ws.send(json.dumps(msg))
+                    socket.send(json.dumps(msg))
                     while True:
-                        resp = json.loads(ws.recv())
+                        resp = json.loads(socket.recv())
                         if resp.get("id") == mid:
                             return resp.get("result")
 
                 _send("Runtime.enable")
-                ret = _send("Runtime.evaluate", {"expression": js, "returnByValue": True})
-                value = ret.get("result", {}).get("value", {}) if isinstance(ret, dict) else {}
+                ret = _send(
+                    "Runtime.evaluate", {"expression": js, "returnByValue": True}
+                )
+                value = (
+                    ret.get("result", {}).get("value", {})
+                    if isinstance(ret, dict)
+                    else {}
+                )
                 if isinstance(value, dict) and value.get("found"):
                     slider_info = dict(value)
-                    slider_info.update({
-                        "_target_id": str(target.get("id") or "").strip(),
-                        "_target_url": str(target.get("url") or "").strip(),
-                        "_target_ws_url": ws_url,
-                    })
+                    slider_info.update(
+                        {
+                            "_target_id": str(target.get("id") or "").strip(),
+                            "_target_url": str(target.get("url") or "").strip(),
+                            "_target_ws_url": ws_url,
+                        }
+                    )
                     return slider_info
-            except Exception as error:
-                log_event({
-                    "kind": "cdp_slider_probe_target_error",
-                    "target_id": str(target.get("id") or "").strip(),
-                    "error_type": type(error).__name__,
-                })
+            except Exception as error:  # noqa: BLE001 -- continue probing other targets
+                log_event(
+                    {
+                        "kind": "cdp_slider_probe_target_error",
+                        "target_id": str(target.get("id") or "").strip(),
+                        "error_type": type(error).__name__,
+                    }
+                )
                 continue
             finally:
                 if ws is not None:
                     try:
                         ws.close()
-                    except Exception:
+                    except Exception:  # noqa: BLE001,S110 -- retain best-effort socket cleanup
                         pass
         return None
-    except Exception as error:
-        log_event({
-            "kind": "cdp_slider_probe_error",
-            "error_type": type(error).__name__,
-        })
+    except Exception as error:  # noqa: BLE001 -- preserve the inconclusive probe contract
+        log_event(
+            {
+                "kind": "cdp_slider_probe_error",
+                "error_type": type(error).__name__,
+            }
+        )
         return None
 
-__all__ = ('get_cdp_page_url', '_challenge_target_matches_request', 'check_cdp_browser_for_challenge_page', 'solver_request_target_urls', 'solver_request_target_url', 'match_solver_request_target_url', 'check_cdp_browser_for_authenticated_target', 'check_cdp_browser_for_slider')
+
+__all__ = (
+    "_challenge_target_matches_request",
+    "check_cdp_browser_for_authenticated_target",
+    "check_cdp_browser_for_challenge_page",
+    "check_cdp_browser_for_slider",
+    "get_cdp_page_url",
+    "match_solver_request_target_url",
+    "solver_request_target_url",
+    "solver_request_target_urls",
+)

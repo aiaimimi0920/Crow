@@ -12,7 +12,7 @@ def test_http_status_can_surface_incomplete_manual_review_receipt(tmp_path: Path
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -21,12 +21,12 @@ def test_http_status_can_surface_incomplete_manual_review_receipt(tmp_path: Path
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.manual_review_status"),
         "load_manual_review_receipt_snapshot",
-        lambda path=None: {
+        lambda path=None, *, repository=None: {
             "receipts": [
                 {
                     "action": "manual_location_review",
@@ -74,7 +74,7 @@ def test_http_receipt_control_plane_can_feed_status_summary_end_to_end(tmp_path:
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("FAPAI_DB_PREFER_RUNTIME_INDEX", "1")
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -83,8 +83,8 @@ def test_http_receipt_control_plane_can_feed_status_summary_end_to_end(tmp_path:
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     original_service = server_module.AVM_SERVICE
     original_start_time = server_module.RUNTIME.started_at
     server_module.AVM_SERVICE = AVMService(data_dir=server_module.DATA_DIR, repository=repo)
@@ -165,7 +165,7 @@ def test_http_receipt_control_plane_prefers_database_backed_state_when_repo_enab
     Path(server_module.DATA_DIR).mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(server_module, "run_recent_enrich_maintenance", lambda **kwargs: {"generated_at": "x"})
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -174,8 +174,8 @@ def test_http_receipt_control_plane_prefers_database_backed_state_when_repo_enab
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     original_service = server_module.AVM_SERVICE
     original_start_time = server_module.RUNTIME.started_at
     server_module.AVM_SERVICE = AVMService(data_dir=server_module.DATA_DIR, repository=repo)
@@ -315,7 +315,7 @@ def test_http_receipt_control_plane_bootstraps_db_from_existing_json_files(tmp_p
     monkeypatch.setattr(server_module, "DB_REPOSITORY", repo)
     monkeypatch.setattr(server_module, "DATA_DIR", str(data_root))
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -324,8 +324,8 @@ def test_http_receipt_control_plane_bootstraps_db_from_existing_json_files(tmp_p
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     original_service = server_module.AVM_SERVICE
     original_start_time = server_module.RUNTIME.started_at
     server_module.AVM_SERVICE = AVMService(data_dir=server_module.DATA_DIR, repository=repo)

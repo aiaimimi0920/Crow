@@ -79,6 +79,11 @@ def merge_job_snapshot(
         "jobs": ordered,
         "queue": [job["job_id"] for job in ordered if job.get("status") == "queued"],
         "running_job_id": next(
-            (job["job_id"] for job in ordered if job.get("status") == "running"), None
+            (
+                job["job_id"]
+                for job in ordered
+                if job.get("status") in {"running", "cancelling"}
+            ),
+            None,
         ),
     }

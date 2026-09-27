@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from src import server
+from src import server, server_request_guard
 
 
 class FakeCoordinator:
@@ -73,7 +73,7 @@ def test_recovery_api_exposes_safe_state_and_accepts_exact_pc1_claim(monkeypatch
     token_path = tmp_path / "nas-auth-recovery.token"
     token_path.write_text("test-recovery-token\n", encoding="utf-8")
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", coordinator)
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
     httpd = server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -124,7 +124,7 @@ def test_recovery_snapshot_endpoint_relays_only_the_active_digest_matched_file(m
             }
 
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", SnapshotCoordinator())
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
     monkeypatch.setattr(server, "_resolve_auth_cookie_snapshot_path", lambda _payload: str(snapshot_path))
     httpd = server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -160,7 +160,7 @@ def test_recovery_snapshot_endpoint_reports_each_validation_failure(monkeypatch,
     token_path = tmp_path / "nas-auth-recovery.token"
     token_path.write_text("test-recovery-token\n", encoding="utf-8")
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", coordinator)
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
     monkeypatch.setattr(server, "_resolve_auth_cookie_snapshot_path", lambda _payload: str(snapshot_path))
     httpd = server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -234,7 +234,7 @@ def test_recovery_post_routes_validate_authenticated_object_bodies(monkeypatch, 
     token_path = tmp_path / "nas-auth-recovery.token"
     token_path.write_text("test-recovery-token\n", encoding="utf-8")
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", FakeCoordinator())
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
     httpd = server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -275,7 +275,7 @@ def test_recovery_claim_and_force_reset_expose_structured_rejections(monkeypatch
     token_path = tmp_path / "nas-auth-recovery.token"
     token_path.write_text("test-recovery-token\n", encoding="utf-8")
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", coordinator)
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", token_path)
     monkeypatch.setattr(server, "_force_reset_solver_scope", lambda *_args: {"ok": False})
     httpd = server.ReusableTCPServer(("127.0.0.1", 0), server.DataHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)

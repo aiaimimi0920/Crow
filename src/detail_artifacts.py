@@ -7,7 +7,10 @@ import re
 from pathlib import Path
 from urllib.parse import unquote, urljoin
 
-from bs4 import BeautifulSoup
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bs4 import BeautifulSoup
 
 from src import llm_helper
 
@@ -59,6 +62,8 @@ def extract_detail_artifacts(
     auction_date=None,
     source_url: str | None = None,
 ) -> dict[str, object]:
+    from bs4 import BeautifulSoup
+
     artifact_fields: dict[str, object] = {}
     soup = BeautifulSoup(html_content, "html.parser")
     base_url = source_url or ""

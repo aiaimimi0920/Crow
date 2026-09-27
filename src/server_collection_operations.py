@@ -5,8 +5,26 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+import datetime
 from typing import Any
+from typing import cast
+import sys
+from .collection_file_runtime import CollectionFileHost, CollectionFileRuntime
+from .solver_retry_loop import RetryLoopHost, SolverRetryLoop
+from .screen_alert_store import ScreenAlertHost, ScreenAlertStore
+from .screen_result_summary import ScreenResultSummary, ScreenSummaryHost
+from .collection_working_items import CollectionWorkingItems, WorkingItemHost
+from .collection.adapters.auction_prices import AuctionPriceHost, AuctionPricePolicy
+from .collection.adapters.auction_risks import AuctionRiskHost, AuctionRiskPolicy
+from .collection.adapters.auction_record_patch import (
+    FLAT_OVERRIDE_ALIASES as _FLAT_OVERRIDE_ALIAS_MAP,
+    AuctionPatchHost,
+    AuctionRecordPatch,
+)
+from .collection_service_operations import (
+    CollectionServiceHost,
+    CollectionServiceOperations,
+)
 
 from .server_context import (
     AVM_ALERTS_PATH,
@@ -21,399 +39,104 @@ from .server_context import (
     collection_adapter_from_env,
     executor,
     sync_collection_record,
+    _runtime_env_flag,
 )
+from .server_http_responses import _json_payload_type_name
 
 logger = logging.getLogger(__name__)
 
-def _json_payload_type_name(payload: Any) -> str:
-    if payload is None:
-        return "null"
-    if isinstance(payload, dict):
-        return "object"
-    if isinstance(payload, list):
-        return "list"
-    if isinstance(payload, bool):
-        return "boolean"
-    if isinstance(payload, (int, float)):
-        return "number"
-    if isinstance(payload, str):
-        return "string"
-    return type(payload).__name__
 
-def _evict_runtime_item(item_id):
-    item_id = str(item_id)
-    collection = _collection_runtime_index()
-    collection.remove_seen(item_id)
-    collection.remove_pending(item_id)
+_working_items = CollectionWorkingItems(cast(WorkingItemHost, sys.modules[__name__]))
+_collection_runtime_index = _working_items._collection_runtime_index
+_evict_runtime_item = _working_items._evict_runtime_item
+_get_working_item = _working_items._get_working_item
 
-def _reset_structured_sections_for_resync(item):
-    for key in ("source", "archive", "auction", "location", "property", "legal_context", "risk_flags", "audit"):
-        item.pop(key, None)
 
-_FLAT_OVERRIDE_ALIAS_MAP = {
-    "status": "status",
-    "状态": "status",
-    "交易时间": "auction_date",
-    "auction_date": "auction_date",
-    "成交价格": "transaction_price",
-    "currentPrice": "transaction_price",
-    "transaction_price": "transaction_price",
-    "起拍价格": "starting_price",
-    "initialPrice": "starting_price",
-    "starting_price": "starting_price",
-    "保证金": "deposit",
-    "deposit": "deposit",
-    "竞拍人数": "apply_count",
-    "applyCount": "apply_count",
-    "apply_count": "apply_count",
-    "出价次数": "bid_count",
-    "bidCount": "bid_count",
-    "bid_count": "bid_count",
-    "出价人数": "bidder_count",
-    "bidderCount": "bidder_count",
-    "bidder_count": "bidder_count",
-    "地点": "full_address",
-    "完整地址": "full_address",
-    "full_address": "full_address",
-    "城市": "city",
-    "city": "city",
-    "区": "district",
-    "district": "district",
-    "最靠近商圈": "business_area",
-    "business_area": "business_area",
-    "所属小区": "community_name",
-    "community_name": "community_name",
-    "纬度": "latitude",
-    "latitude": "latitude",
-    "经度": "longitude",
-    "longitude": "longitude",
-    "建筑面积": "area_sqm",
-    "建设面积": "area_sqm",
-    "area_sqm": "area_sqm",
-    "产权建筑面积": "gross_area_sqm",
-    "原始建筑面积": "gross_area_sqm",
-    "gross_area_sqm": "gross_area_sqm",
-    "产权份额比例": "ownership_share_ratio",
-    "ownership_share_ratio": "ownership_share_ratio",
-}
-
-def _apply_flat_override_patch(item, patch):
-    for patch_key, target_key in _FLAT_OVERRIDE_ALIAS_MAP.items():
-        if patch_key in patch and patch.get(patch_key) not in (None, ""):
-            item[target_key] = patch.get(patch_key)
-
-def _get_working_item(item_id, include_processed=False):
-    item_id = str(item_id)
-    collection = _collection_runtime_index()
-    entry = collection.get_seen(item_id)
-    if entry:
-        return {
-            "data": entry["data"],
-            "file_path": entry["file_path"],
-            "cached": True,
-        }
-    if DB_REPOSITORY.enabled:
-        try:
-            item = DB_REPOSITORY.get_flat_item(item_id)
-        except Exception as error:
-            logger.exception("Working item fetch failed item=%s", item_id)
-            return None
-        if not item:
-            return None
-        sync_collection_record(item)
-        if item.get("is_processed") and not include_processed:
-            return None
-        return {
-            "data": item,
-            "file_path": get_data_path(item.get("auction_date") or datetime.datetime.now()),
-            "cached": False,
-        }
-    return None
-
-def manual_solver_retry_thread():
-    """Retry the automated solver at a controlled interval while manual verification is required."""
-    while True:
-        try:
-            result = _trigger_manual_solver_retry_if_due()
-            if result.get("queued"):
-                solver_request = result.get("solver_request") if isinstance(result.get("solver_request"), dict) else {}
-                logger.info(
-                    "Manual-required solver retry queued attempt=%s target=%s",
-                    result.get("attempt"), solver_request.get("target_url"),
-                )
-        except Exception as error:
-            logger.exception("Manual-required solver retry monitor failed")
-        time.sleep(_manual_solver_retry_poll_seconds())
-
-JOBS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "jobs")
-
-def _seed_collection_service():
-    return SeedCollectionService(
-        repository=DB_REPOSITORY,
-        jobs_dir=JOBS_DIR,
-        data_root=DATA_DIR,
-        adapter=collection_adapter_from_env(default="taobao_judicial"),
+def _prefer_db_task_reads() -> bool:
+    return DB_REPOSITORY.enabled and _runtime_env_flag(
+        "FAPAI_DB_PREFER_RUNTIME_INDEX", True
     )
 
-def _detail_collection_service(data_root=None):
-    return DetailCollectionService(
-        data_root=data_root or DATA_DIR,
-        repository=DB_REPOSITORY,
-        adapter=collection_adapter_from_env(default="taobao_judicial"),
-        dispatch_lock=_collection_runtime_index().lock,
-    )
 
-def submit_task(file_path):
-    """
-    Thread-safe task submission helper.
-    Ensures we don't submit the same file twice.
-    """
-    if not RUNTIME.processing.claim(file_path):
-        return
+_record_patch = AuctionRecordPatch(cast(AuctionPatchHost, sys.modules[__name__]))
+_reset_structured_sections_for_resync = (
+    _record_patch._reset_structured_sections_for_resync
+)
+_apply_flat_override_patch = _record_patch._apply_flat_override_patch
 
-    try:
-        # Submit to global executor
-        future = executor.submit(process_single_file, file_path)
-        # Ensure cleanup
-        future.add_done_callback(lambda f: RUNTIME.processing.release(file_path))
-    except Exception as e:
-        logger.exception("Failed to submit task file=%s", file_path)
-        RUNTIME.processing.release(file_path)
 
-def parse_price(raw_value):
-    """Parse price-like fields to float (RMB Yuan)."""
-    if raw_value is None:
-        return None
+manual_solver_retry_thread = SolverRetryLoop(
+    cast(RetryLoopHost, sys.modules[__name__])
+).manual_solver_retry_thread
 
-    if isinstance(raw_value, (int, float)):
-        return float(raw_value)
+JOBS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "jobs"
+)
 
-    if not isinstance(raw_value, str):
-        return None
 
-    text = raw_value.strip().replace(",", "")
-    if not text:
-        return None
+_service_operations = CollectionServiceOperations(
+    cast(CollectionServiceHost, sys.modules[__name__])
+)
+_seed_collection_service = _service_operations._seed_collection_service
+_detail_collection_service = _service_operations._detail_collection_service
+build_sniff_stub = _service_operations.build_sniff_stub
+handle_seed_batch_submission = _service_operations.handle_seed_batch_submission
 
-    multiplier = 1.0
-    if "亿" in text:
-        multiplier = 100000000.0
-    elif "万元" in text or "万" in text:
-        multiplier = 10000.0
 
-    numeric_text = re.sub(r"[^0-9.]", "", text)
-    if not numeric_text:
-        return None
+submit_task = CollectionFileRuntime(
+    cast(CollectionFileHost, sys.modules[__name__])
+).submit_task
 
-    try:
-        return float(numeric_text) * multiplier
-    except ValueError:
-        return None
 
-def get_starting_price(item):
-    return (
-        parse_price(item.get("starting_price"))
-        or parse_price(item.get("起拍价格"))
-    )
+_auction_prices = AuctionPricePolicy(cast(AuctionPriceHost, sys.modules[__name__]))
+parse_price = _auction_prices.parse_price
+get_starting_price = _auction_prices.get_starting_price
+get_predicted_price = _auction_prices.get_predicted_price
+compute_margin = _auction_prices.compute_margin
+_safe_int = _auction_prices._safe_int
 
-def get_predicted_price(item):
-    return (
-        parse_price(item.get("predicted_price"))
-        or parse_price(item.get("估值"))
-        or parse_price(item.get("市场评估价"))
-        or parse_price(item.get("evaluation_price"))
-        or parse_price(item.get("transaction_price"))
-        or parse_price(item.get("成交价格"))
-    )
 
-def compute_margin(predicted_price, starting_price):
-    """margin = (predicted_price - starting_price) / predicted_price"""
-    if not predicted_price or predicted_price <= 0 or starting_price is None:
-        return None
-    return (predicted_price - starting_price) / predicted_price
+_auction_risks = AuctionRiskPolicy(cast(AuctionRiskHost, sys.modules[__name__]))
+_get_risk_payload = _auction_risks._get_risk_payload
+_risk_value = _auction_risks._risk_value
+sync_avm_risk_aliases = _auction_risks.sync_avm_risk_aliases
+extract_risk_signals = _auction_risks.extract_risk_signals
+build_avm_result = _auction_risks.build_avm_result
 
-def _safe_int(value):
-    parsed = parse_price(value)
-    if parsed is None:
-        return None
-    try:
-        return int(parsed)
-    except (TypeError, ValueError):
-        return None
 
-def _get_risk_payload(item):
-    payload = item.get("avm_risk_features")
-    return payload if isinstance(payload, dict) else {}
+_screen_summary = ScreenResultSummary(cast(ScreenSummaryHost, sys.modules[__name__]))
+_prediction_confidence_bucket = _screen_summary._prediction_confidence_bucket
+summarize_screen_results = _screen_summary.summarize_screen_results
+write_avm_alerts = ScreenAlertStore(
+    cast(ScreenAlertHost, sys.modules[__name__])
+).write_avm_alerts
 
-def _risk_value(item, key):
-    if item.get(key) is not None:
-        return item.get(key)
-    return _get_risk_payload(item).get(key)
 
-def sync_avm_risk_aliases(item):
-    risk_payload = _get_risk_payload(item)
-    if not risk_payload:
-        return item
-
-    for key in RISK_ALIAS_KEYS:
-        value = risk_payload.get(key)
-        if value in (None, ""):
-            continue
-        item.setdefault(key, value)
-
-    if risk_payload.get("community_name") and not item.get("所属小区"):
-        item["所属小区"] = risk_payload["community_name"]
-    if risk_payload.get("housing_type") and not item.get("housing_type"):
-        item["housing_type"] = risk_payload["housing_type"]
-    return item
-
-def build_sniff_stub(item):
-    return _seed_collection_service().build_seed_stub(item, parse_price=parse_price, safe_int=_safe_int)
-
-def handle_seed_batch_submission(data):
-    collection = _collection_runtime_index()
-    with collection.lock:
-        return _seed_collection_service().submit_batch(
-            data,
-            parse_price=parse_price,
-            safe_int=_safe_int,
-            prefer_db_task_reads=_prefer_db_task_reads,
-            get_seen_entry=getattr(collection, "get_seen", lambda item_id: collection.seen_ids.get(item_id)),
-            get_flat_item=lambda item_id: DB_REPOSITORY.get_flat_item(item_id) if DB_REPOSITORY.enabled else None,
-            get_data_path=get_data_path,
-            update_file_global=update_file_global,
-            persist_item_to_db=persist_item_to_db,
-            evict_runtime_item=_evict_runtime_item,
-            archive_list_payload=archive_list_payload,
-            set_seen=collection.set_seen,
-            queue_pending=collection.queue_pending,
-        )
-
-def extract_risk_signals(item):
-    major_risks = []
-
-    for key, label in MALIGNANT_RISK_LABELS.items():
-        if _risk_value(item, key) is True:
-            major_risks.append(label)
-
-    if _risk_value(item, "clear_delivery") is False:
-        major_risks.append("法院不负责清场交付")
-
-    if _risk_value(item, "land_right_type") == "划拨":
-        major_risks.append("土地性质为划拨")
-
-    return major_risks
-
-def build_avm_result(item_id, item):
-    predicted_price = get_predicted_price(item)
-    starting_price = get_starting_price(item)
-    margin = compute_margin(predicted_price, starting_price)
-    major_risks = extract_risk_signals(item)
-
-    return {
-        "id": str(item_id),
-        "predicted_price": predicted_price,
-        "starting_price": starting_price,
-        "margin": margin,
-        "is_malignant_risk": len(major_risks) > 0,
-        "major_risks": major_risks,
-        "risk_summary": "；".join(major_risks) if major_risks else "未发现恶性风控标签",
-    }
-
-def _prediction_confidence_bucket(confidence):
-    if confidence is None:
-        return "unknown"
-    try:
-        value = float(confidence)
-    except (TypeError, ValueError):
-        return "unknown"
-    if value >= 0.75:
-        return "high"
-    if value >= 0.45:
-        return "medium"
-    return "low"
-
-def summarize_screen_results(results):
-    strategy_counts = {}
-    coordinate_strategy_counts = {}
-    confidence_bucket_counts = {}
-    blocked_reason_counts = {}
-    malignant_count = 0
-    alert_candidate_count = 0
-    manual_review_count = 0
-    manual_review_blocked_count = 0
-    risk_validation_blocked_count = 0
-    margin_values = []
-
-    for result in results:
-        prediction = result.get("prediction") or {}
-        strategy = str(prediction.get("strategy") or "unknown")
-        strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
-
-        trace = prediction.get("trace") or {}
-        coordinate_strategy = str(trace.get("subject_coordinate_strategy") or "unknown")
-        coordinate_strategy_counts[coordinate_strategy] = coordinate_strategy_counts.get(coordinate_strategy, 0) + 1
-
-        bucket = _prediction_confidence_bucket(prediction.get("confidence"))
-        confidence_bucket_counts[bucket] = confidence_bucket_counts.get(bucket, 0) + 1
-        if prediction.get("manual_review_recommended"):
-            manual_review_count += 1
-        blockers = result.get("alert_blockers") or []
-        for blocker in blockers:
-            blocked_reason_counts[blocker] = blocked_reason_counts.get(blocker, 0) + 1
-        if "manual_review_required" in blockers:
-            manual_review_blocked_count += 1
-        if "risk_validation_incomplete" in blockers or "risk_validation_invalid" in blockers:
-            risk_validation_blocked_count += 1
-
-        if result.get("is_malignant_risk"):
-            malignant_count += 1
-        if result.get("meets_alert_threshold"):
-            alert_candidate_count += 1
-
-        margin = result.get("margin")
-        if isinstance(margin, (int, float)):
-            margin_values.append(float(margin))
-
-    average_margin = round(sum(margin_values) / len(margin_values), 4) if margin_values else None
-    top_result_id = results[0]["id"] if results else None
-
-    return {
-        "strategy_counts": dict(sorted(strategy_counts.items())),
-        "coordinate_strategy_counts": dict(sorted(coordinate_strategy_counts.items())),
-        "confidence_bucket_counts": dict(sorted(confidence_bucket_counts.items())),
-        "malignant_risk_count": malignant_count,
-        "alert_candidate_count": alert_candidate_count,
-        "manual_review_count": manual_review_count,
-        "blocked_reason_counts": dict(sorted(blocked_reason_counts.items())),
-        "manual_review_blocked_count": manual_review_blocked_count,
-        "risk_validation_blocked_count": risk_validation_blocked_count,
-        "average_margin": average_margin,
-        "top_result_id": top_result_id,
-    }
-
-def write_avm_alerts(alerts):
-    if not alerts:
-        return
-
-    os.makedirs(AVM_DIR, exist_ok=True)
-
-    with RUNTIME.file_lock:
-        existing = []
-        if os.path.exists(AVM_ALERTS_PATH):
-            try:
-                with open(AVM_ALERTS_PATH, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                    if isinstance(loaded, list):
-                        existing = loaded
-            except Exception:
-                existing = []
-
-        existing_by_id = {str(alert.get("id")): alert for alert in existing}
-        for alert in alerts:
-            existing_by_id[str(alert["id"])] = alert
-
-        with open(AVM_ALERTS_PATH, "w", encoding="utf-8") as f:
-            json.dump(list(existing_by_id.values()), f, ensure_ascii=False, indent=2)
-
-__all__ = ["_json_payload_type_name", "_evict_runtime_item", "_reset_structured_sections_for_resync", "_FLAT_OVERRIDE_ALIAS_MAP", "_apply_flat_override_patch", "_get_working_item", "manual_solver_retry_thread", "JOBS_DIR", "_seed_collection_service", "_detail_collection_service", "submit_task", "parse_price", "get_starting_price", "get_predicted_price", "compute_margin", "_safe_int", "_get_risk_payload", "_risk_value", "sync_avm_risk_aliases", "build_sniff_stub", "handle_seed_batch_submission", "extract_risk_signals", "build_avm_result", "_prediction_confidence_bucket", "summarize_screen_results", "write_avm_alerts"]
+__all__ = [
+    "_json_payload_type_name",
+    "_evict_runtime_item",
+    "_reset_structured_sections_for_resync",
+    "_FLAT_OVERRIDE_ALIAS_MAP",
+    "_apply_flat_override_patch",
+    "_get_working_item",
+    "manual_solver_retry_thread",
+    "JOBS_DIR",
+    "_seed_collection_service",
+    "_detail_collection_service",
+    "submit_task",
+    "parse_price",
+    "get_starting_price",
+    "get_predicted_price",
+    "compute_margin",
+    "_safe_int",
+    "_get_risk_payload",
+    "_risk_value",
+    "sync_avm_risk_aliases",
+    "build_sniff_stub",
+    "handle_seed_batch_submission",
+    "extract_risk_signals",
+    "build_avm_result",
+    "_prediction_confidence_bucket",
+    "summarize_screen_results",
+    "write_avm_alerts",
+]

@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.status_snapshot_values import (
+    _coerce_optional_bool,
+    _coerce_optional_float,
+    _coerce_optional_int,
+    _coerce_optional_mapping,
+    _coerce_optional_text,
+)
+
+
 def _hybrid_collection_lifecycle_state_summary(
     runtime_summary: dict[str, Any],
     recovery_policy: dict[str, Any],
@@ -15,15 +24,22 @@ def _hybrid_collection_lifecycle_state_summary(
     active_high_priority_unresolved_count = 0
     active_unresolved_priority = None
     priority_hint = "no_active_priority_backlog"
-    window_open = _coerce_optional_bool(unresolved_window_summary.get("window_open")) is True
+    window_open = (
+        _coerce_optional_bool(unresolved_window_summary.get("window_open")) is True
+    )
     runtime_available = _coerce_optional_bool(runtime_summary.get("available")) is True
     if window_open:
         active_high_priority_unresolved_count = (
-            _coerce_optional_int(priority_mix_summary.get("recent_high_priority_unresolved_count")) or 0
+            _coerce_optional_int(
+                priority_mix_summary.get("recent_high_priority_unresolved_count")
+            )
+            or 0
         )
         if active_high_priority_unresolved_count < 0:
             active_high_priority_unresolved_count = 0
-        active_unresolved_priority = _coerce_optional_text(priority_mix_summary.get("top_recent_unresolved_priority"))
+        active_unresolved_priority = _coerce_optional_text(
+            priority_mix_summary.get("top_recent_unresolved_priority")
+        )
         if active_high_priority_unresolved_count > 0:
             priority_hint = "high_priority_backlog_present"
         elif active_unresolved_priority:
@@ -45,10 +61,16 @@ def _hybrid_collection_lifecycle_state_summary(
             "window_open": False,
         }
 
-    runtime_policy_status = _coerce_optional_text(runtime_summary.get("recovery_policy_status")) or ""
-    computed_policy_status = _coerce_optional_text(recovery_policy.get("policy_status")) or ""
+    runtime_policy_status = (
+        _coerce_optional_text(runtime_summary.get("recovery_policy_status")) or ""
+    )
+    computed_policy_status = (
+        _coerce_optional_text(recovery_policy.get("policy_status")) or ""
+    )
     policy_status = runtime_policy_status or computed_policy_status
-    runtime_operator_action_hint = _coerce_optional_text(runtime_summary.get("operator_action_hint"))
+    runtime_operator_action_hint = _coerce_optional_text(
+        runtime_summary.get("operator_action_hint")
+    )
 
     def _resolve_action_hint(lifecycle_state: str, suggested_mode: str) -> str:
         if runtime_operator_action_hint is not None:
@@ -86,7 +108,9 @@ def _hybrid_collection_lifecycle_state_summary(
             "lifecycle_reason": "hybrid_retrial_budget_active",
             "recommended_follow_up": "continue_hybrid_with_budget_watch",
             "suggested_mode": "hybrid",
-            "operator_action_hint": _resolve_action_hint("retrial_window_open", "hybrid"),
+            "operator_action_hint": _resolve_action_hint(
+                "retrial_window_open", "hybrid"
+            ),
             "priority_hint": priority_hint,
             "active_unresolved_priority": active_unresolved_priority,
             "active_high_priority_unresolved_count": active_high_priority_unresolved_count,
@@ -121,6 +145,7 @@ def _hybrid_collection_lifecycle_state_summary(
         "window_open": False,
     }
 
+
 def _hybrid_collection_action_hint_consistency_summary(
     runtime_summary: dict[str, Any],
     lifecycle_summary: dict[str, Any],
@@ -151,7 +176,11 @@ def _hybrid_collection_action_hint_consistency_summary(
 
     runtime_hint_str = _coerce_optional_text(runtime_hint)
     lifecycle_hint_str = _coerce_optional_text(lifecycle_hint)
-    if runtime_hint_str and lifecycle_hint_str and runtime_hint_str == lifecycle_hint_str:
+    if (
+        runtime_hint_str
+        and lifecycle_hint_str
+        and runtime_hint_str == lifecycle_hint_str
+    ):
         consistency_status = "aligned"
         hints_match = True
         drift_reason = None
@@ -177,7 +206,9 @@ def _hybrid_collection_action_hint_consistency_summary(
         severity_reason = "lifecycle_missing_runtime_only"
         hint_source_preference = "runtime_preferred"
         preferred_hint_source_detail = "runtime_only_available"
-        preferred_hint_explanation = "Lifecycle action hint is missing; using the runtime-only hint."
+        preferred_hint_explanation = (
+            "Lifecycle action hint is missing; using the runtime-only hint."
+        )
     elif lifecycle_hint_str:
         consistency_status = "lifecycle_only"
         hints_match = False
@@ -186,7 +217,9 @@ def _hybrid_collection_action_hint_consistency_summary(
         severity_reason = "runtime_missing_lifecycle_fallback"
         hint_source_preference = "lifecycle_preferred"
         preferred_hint_source_detail = "lifecycle_fallback_used"
-        preferred_hint_explanation = "Runtime action hint is missing; using the lifecycle fallback hint."
+        preferred_hint_explanation = (
+            "Runtime action hint is missing; using the lifecycle fallback hint."
+        )
     else:
         consistency_status = "no_hint_available"
         hints_match = False
@@ -212,6 +245,7 @@ def _hybrid_collection_action_hint_consistency_summary(
         "preferred_operator_action_hint": runtime_hint_str or lifecycle_hint_str,
     }
 
+
 def _hybrid_collection_operator_intervention_policy_summary(
     lifecycle_summary: dict[str, Any],
     action_hint_consistency_summary: dict[str, Any],
@@ -219,12 +253,15 @@ def _hybrid_collection_operator_intervention_policy_summary(
     recovery_latency_summary: dict[str, Any],
 ) -> dict[str, Any]:
     lifecycle_summary = _coerce_optional_mapping(lifecycle_summary)
-    action_hint_consistency_summary = _coerce_optional_mapping(action_hint_consistency_summary)
+    action_hint_consistency_summary = _coerce_optional_mapping(
+        action_hint_consistency_summary
+    )
     resolution_trend_summary = _coerce_optional_mapping(resolution_trend_summary)
     recovery_latency_summary = _coerce_optional_mapping(recovery_latency_summary)
     available = (
         _coerce_optional_bool(lifecycle_summary.get("available")) is True
-        or _coerce_optional_bool(action_hint_consistency_summary.get("available")) is True
+        or _coerce_optional_bool(action_hint_consistency_summary.get("available"))
+        is True
     )
     if not available:
         return {
@@ -247,7 +284,9 @@ def _hybrid_collection_operator_intervention_policy_summary(
             "last_recovery_latency_minutes": None,
         }
 
-    lifecycle_state = _coerce_optional_text(lifecycle_summary.get("lifecycle_state")) or "unknown"
+    lifecycle_state = (
+        _coerce_optional_text(lifecycle_summary.get("lifecycle_state")) or "unknown"
+    )
     lifecycle_reason = _coerce_optional_text(lifecycle_summary.get("lifecycle_reason"))
     if lifecycle_reason is None:
         if lifecycle_state == "escalated":
@@ -262,7 +301,10 @@ def _hybrid_collection_operator_intervention_policy_summary(
             lifecycle_reason = "no_runtime_signals"
     priority_hint = _coerce_optional_text(lifecycle_summary.get("priority_hint")) or ""
     active_high_priority_unresolved_count = (
-        _coerce_optional_int(lifecycle_summary.get("active_high_priority_unresolved_count")) or 0
+        _coerce_optional_int(
+            lifecycle_summary.get("active_high_priority_unresolved_count")
+        )
+        or 0
     )
     if active_high_priority_unresolved_count < 0:
         active_high_priority_unresolved_count = 0
@@ -276,25 +318,47 @@ def _hybrid_collection_operator_intervention_policy_summary(
         action_hint_consistency_summary.get("preferred_operator_action_hint")
     )
     if preferred_operator_action_hint is None:
-        preferred_operator_action_hint = _coerce_optional_text(lifecycle_summary.get("operator_action_hint"))
-    hint_consistency_status = _coerce_optional_text(action_hint_consistency_summary.get("consistency_status"))
-    hint_consistency_severity = _coerce_optional_text(action_hint_consistency_summary.get("consistency_severity"))
-    resolution_trend_available = _coerce_optional_bool(resolution_trend_summary.get("available")) is True
-    recovery_latency_available = _coerce_optional_bool(recovery_latency_summary.get("available")) is True
-    recent_unresolved_count = _coerce_optional_int(resolution_trend_summary.get("recent_unresolved_count")) or 0
+        preferred_operator_action_hint = _coerce_optional_text(
+            lifecycle_summary.get("operator_action_hint")
+        )
+    hint_consistency_status = _coerce_optional_text(
+        action_hint_consistency_summary.get("consistency_status")
+    )
+    hint_consistency_severity = _coerce_optional_text(
+        action_hint_consistency_summary.get("consistency_severity")
+    )
+    resolution_trend_available = (
+        _coerce_optional_bool(resolution_trend_summary.get("available")) is True
+    )
+    recovery_latency_available = (
+        _coerce_optional_bool(recovery_latency_summary.get("available")) is True
+    )
+    recent_unresolved_count = (
+        _coerce_optional_int(resolution_trend_summary.get("recent_unresolved_count"))
+        or 0
+    )
     if recent_unresolved_count < 0:
         recent_unresolved_count = 0
-    recent_resolution_rate = _coerce_optional_float(resolution_trend_summary.get("recent_resolution_rate")) or 0.0
+    recent_resolution_rate = (
+        _coerce_optional_float(resolution_trend_summary.get("recent_resolution_rate"))
+        or 0.0
+    )
     if recent_resolution_rate < 0:
         recent_resolution_rate = 0.0
     elif recent_resolution_rate > 1:
         recent_resolution_rate = 1.0
-    last_recovery_latency_minutes = _coerce_optional_float(recovery_latency_summary.get("last_recovery_latency_minutes"))
+    last_recovery_latency_minutes = _coerce_optional_float(
+        recovery_latency_summary.get("last_recovery_latency_minutes")
+    )
     if last_recovery_latency_minutes is not None and last_recovery_latency_minutes < 0:
         last_recovery_latency_minutes = None
     window_open = _coerce_optional_bool(lifecycle_summary.get("window_open")) is True
 
-    if lifecycle_state == "escalated" and priority_hint == "high_priority_backlog_present" and active_high_priority_unresolved_count > 0:
+    if (
+        lifecycle_state == "escalated"
+        and priority_hint == "high_priority_backlog_present"
+        and active_high_priority_unresolved_count > 0
+    ):
         intervention_status = "intervention_required"
         intervention_required = True
         intervention_priority = "high"
@@ -345,6 +409,7 @@ def _hybrid_collection_operator_intervention_policy_summary(
         "last_recovery_latency_minutes": last_recovery_latency_minutes,
     }
 
+
 def _hybrid_collection_operator_intervention_stability_summary(
     intervention_trend_summary: dict[str, Any],
 ) -> dict[str, Any]:
@@ -362,35 +427,55 @@ def _hybrid_collection_operator_intervention_stability_summary(
             "stability_action_hint": None,
         }
 
-    current_status = _coerce_optional_text(intervention_trend_summary.get("current_intervention_status"))
-    previous_status = _coerce_optional_text(intervention_trend_summary.get("previous_distinct_intervention_status"))
-    recent_change_count = _coerce_optional_int(intervention_trend_summary.get("recent_change_count")) or 0
+    current_status = _coerce_optional_text(
+        intervention_trend_summary.get("current_intervention_status")
+    )
+    previous_status = _coerce_optional_text(
+        intervention_trend_summary.get("previous_distinct_intervention_status")
+    )
+    recent_change_count = (
+        _coerce_optional_int(intervention_trend_summary.get("recent_change_count")) or 0
+    )
     if recent_change_count < 0:
         recent_change_count = 0
-    last_change_at = _coerce_optional_text(intervention_trend_summary.get("last_change_at"))
+    last_change_at = _coerce_optional_text(
+        intervention_trend_summary.get("last_change_at")
+    )
 
-    if current_status == "intervention_required" and recent_change_count > 0 and previous_status:
+    if (
+        current_status == "intervention_required"
+        and recent_change_count > 0
+        and previous_status
+    ):
         stability_status = "escalating"
         stability_severity = "high"
-        operator_readable_explanation = (
-            f"Intervention escalated from {previous_status} to intervention_required recently."
-        )
+        operator_readable_explanation = f"Intervention escalated from {previous_status} to intervention_required recently."
         stability_action_hint = "prefer browser and investigate escalating intervention"
     elif current_status == "ready" and recent_change_count == 0:
         stability_status = "stable_ready"
         stability_severity = "info"
-        operator_readable_explanation = "Intervention remains ready with no recent status changes."
+        operator_readable_explanation = (
+            "Intervention remains ready with no recent status changes."
+        )
         stability_action_hint = "keep hybrid and continue monitoring"
     elif current_status == "intervention_required" and recent_change_count == 0:
         stability_status = "persistent_intervention_required"
         stability_severity = "high"
-        operator_readable_explanation = "Intervention remains required with no recent status changes."
-        stability_action_hint = "treat as sustained intervention and investigate backlog"
+        operator_readable_explanation = (
+            "Intervention remains required with no recent status changes."
+        )
+        stability_action_hint = (
+            "treat as sustained intervention and investigate backlog"
+        )
     elif recent_change_count >= 2:
         stability_status = "flapping"
         stability_severity = "warning"
-        operator_readable_explanation = "Intervention status changed multiple times recently."
-        stability_action_hint = "pause automation and inspect instability before resuming"
+        operator_readable_explanation = (
+            "Intervention status changed multiple times recently."
+        )
+        stability_action_hint = (
+            "pause automation and inspect instability before resuming"
+        )
     else:
         stability_status = "transitioning"
         stability_severity = "warning"
@@ -399,7 +484,9 @@ def _hybrid_collection_operator_intervention_stability_summary(
             if current_status is not None
             else "Intervention is transitioning."
         )
-        stability_action_hint = "monitor until stable before resuming aggressive intervention"
+        stability_action_hint = (
+            "monitor until stable before resuming aggressive intervention"
+        )
 
     return {
         "available": True,
@@ -413,4 +500,10 @@ def _hybrid_collection_operator_intervention_stability_summary(
         "stability_action_hint": stability_action_hint,
     }
 
-__all__ = ["_hybrid_collection_lifecycle_state_summary", "_hybrid_collection_action_hint_consistency_summary", "_hybrid_collection_operator_intervention_policy_summary", "_hybrid_collection_operator_intervention_stability_summary"]
+
+__all__ = [
+    "_hybrid_collection_lifecycle_state_summary",
+    "_hybrid_collection_action_hint_consistency_summary",
+    "_hybrid_collection_operator_intervention_policy_summary",
+    "_hybrid_collection_operator_intervention_stability_summary",
+]

@@ -49,6 +49,7 @@ COPY ops/pc2-linux/process-supervisor.sh /usr/local/bin/process-supervisor.sh
 COPY tools/internal_api_http.py /app/tools/internal_api_http.py
 COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py
 COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py
+COPY tools/pc2_solver_*.py /app/tools/
 COPY tools/cdp_host_relay.py /app/tools/cdp_host_relay.py
 COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py

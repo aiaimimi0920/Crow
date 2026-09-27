@@ -1,37 +1,29 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any, cast
 
-def _hybrid_collection_operator_intervention_policy_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "hybrid_collection_operator_intervention_status": _coerce_optional_text(summary.get("intervention_status")),
-        "hybrid_collection_operator_intervention_required": _coerce_optional_bool(
-            summary.get("intervention_required")
-        )
-        is True,
-        "hybrid_collection_operator_intervention_priority": _coerce_optional_text(
-            summary.get("intervention_priority")
-        ),
-        "hybrid_collection_operator_intervention_reason": _coerce_optional_text(summary.get("intervention_reason")),
-        "hybrid_collection_operator_intervention_action_hint": _coerce_optional_text(
-            summary.get("preferred_operator_action_hint")
-        ),
-        "hybrid_collection_operator_intervention_suggested_mode": _coerce_optional_text(summary.get("suggested_mode")),
-    }
+from src.server_hybrid_overview import (
+    _hybrid_collection_operator_digest_overview_fields,
+    _hybrid_collection_operator_escalation_event_overview_fields,
+    _hybrid_collection_operator_final_guidance_overview_fields,
+    _hybrid_collection_operator_guidance_overview_fields,
+    _hybrid_collection_operator_intervention_policy_overview_fields,
+    _hybrid_collection_operator_mode_switch_overview_fields,
+    _hybrid_collection_operator_recovery_policy_event_overview_fields,
+    _hybrid_collection_operator_recovery_policy_overview_fields,
+)
+from src.status_snapshot_values import (
+    _coerce_optional_bool,
+    _coerce_optional_float,
+    _coerce_optional_int,
+    _coerce_optional_mapping,
+    _coerce_optional_text,
+    _load_jsonl_snapshots,
+)
+from src.utc_timestamps import _utc_timestamp_leq
 
-def _hybrid_collection_operator_final_guidance_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "hybrid_collection_operator_final_guidance_label": _coerce_optional_text(summary.get("guidance_label")),
-        "hybrid_collection_operator_final_guidance_priority": _coerce_optional_text(summary.get("guidance_priority")),
-        "hybrid_collection_operator_final_guidance_message": _coerce_optional_text(summary.get("guidance_message")),
-    }
-
-def _hybrid_collection_operator_digest_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "hybrid_collection_operator_digest_status": _coerce_optional_text(summary.get("digest_status")),
-        "hybrid_collection_operator_digest_priority": _coerce_optional_text(summary.get("digest_priority")),
-        "hybrid_collection_operator_digest_message": _coerce_optional_text(summary.get("operator_digest_message")),
-    }
 
 def _hybrid_collection_strategy_guidance(
     latest_summary: dict[str, Any],
@@ -48,14 +40,26 @@ def _hybrid_collection_strategy_guidance(
         }
 
     recent_runs = _coerce_optional_int(history_summary.get("recent_runs")) or 0
-    success_rate = _coerce_optional_float(history_summary.get("recent_browserless_success_rate")) or 0.0
+    success_rate = (
+        _coerce_optional_float(history_summary.get("recent_browserless_success_rate"))
+        or 0.0
+    )
     if success_rate < 0:
         success_rate = 0.0
     elif success_rate > 1:
         success_rate = 1.0
-    fallback_count = _coerce_optional_int(history_summary.get("recent_browser_fallback_required_count")) or 0
-    top_fallback_reason = _coerce_optional_text(history_summary.get("recent_top_fallback_reason"))
-    top_termination_reason = _coerce_optional_text(history_summary.get("recent_top_termination_reason"))
+    fallback_count = (
+        _coerce_optional_int(
+            history_summary.get("recent_browser_fallback_required_count")
+        )
+        or 0
+    )
+    top_fallback_reason = _coerce_optional_text(
+        history_summary.get("recent_top_fallback_reason")
+    )
+    top_termination_reason = _coerce_optional_text(
+        history_summary.get("recent_top_termination_reason")
+    )
     last_decision = _coerce_optional_text(latest_summary.get("last_decision"))
 
     if (
@@ -75,11 +79,7 @@ def _hybrid_collection_strategy_guidance(
             "top_guidance_reason": "challenge_detected",
         }
 
-    if (
-        recent_runs >= 3
-        and fallback_count > 0
-        and success_rate < 0.5
-    ):
+    if recent_runs >= 3 and fallback_count > 0 and success_rate < 0.5:
         return {
             "guidance_status": "prefer_browser_fallback",
             "priority": "warning",
@@ -88,7 +88,9 @@ def _hybrid_collection_strategy_guidance(
                 "prefer_browser_fallback_for_next_runs",
                 "review_browserless_failure_reasons",
             ],
-            "top_guidance_reason": str(top_fallback_reason or "browserless_low_success_rate"),
+            "top_guidance_reason": str(
+                top_fallback_reason or "browserless_low_success_rate"
+            ),
         }
 
     if recent_runs < 3:
@@ -117,23 +119,6 @@ def _hybrid_collection_strategy_guidance(
         "top_guidance_reason": str(top_fallback_reason or "mixed_runtime_signals"),
     }
 
-def _hybrid_collection_operator_guidance_overview_fields(guidance: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "hybrid_collection_guidance_status": _coerce_optional_text(guidance.get("guidance_status")),
-        "hybrid_collection_guidance_priority": _coerce_optional_text(guidance.get("priority")),
-        "hybrid_collection_recommended_mode": _coerce_optional_text(guidance.get("recommended_mode")),
-        "hybrid_collection_top_guidance_reason": _coerce_optional_text(guidance.get("top_guidance_reason")),
-    }
-
-def _hybrid_collection_operator_mode_switch_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    recent_switch_count = _coerce_optional_int(summary.get("recent_switch_count")) or 0
-    if recent_switch_count < 0:
-        recent_switch_count = 0
-    return {
-        "hybrid_collection_recent_mode_switch_count": recent_switch_count,
-        "hybrid_collection_top_switch_target_mode": _coerce_optional_text(summary.get("top_target_mode")),
-        "hybrid_collection_top_switch_guidance_reason": _coerce_optional_text(summary.get("top_guidance_reason")),
-    }
 
 def _hybrid_collection_recovery_policy(
     data_root: Path,
@@ -150,13 +135,22 @@ def _hybrid_collection_recovery_policy(
     recovery_event_summary = _coerce_optional_mapping(recovery_event_summary)
     guidance_status = _coerce_optional_text(guidance.get("guidance_status"))
     guidance_recommended_mode = _coerce_optional_text(guidance.get("recommended_mode"))
-    top_switch_target_mode = _coerce_optional_text(switch_summary.get("top_target_mode"))
-    top_switch_guidance_reason = _coerce_optional_text(switch_summary.get("top_guidance_reason"))
+    top_switch_target_mode = _coerce_optional_text(
+        switch_summary.get("top_target_mode")
+    )
+    top_switch_guidance_reason = _coerce_optional_text(
+        switch_summary.get("top_guidance_reason")
+    )
     last_switch_at = _coerce_optional_text(switch_summary.get("last_switch_at"))
-    recent_switch_count = _coerce_optional_int(switch_summary.get("recent_switch_count")) or 0
+    recent_switch_count = (
+        _coerce_optional_int(switch_summary.get("recent_switch_count")) or 0
+    )
     if recent_switch_count < 0:
         recent_switch_count = 0
-    recent_browserless_success_rate = _coerce_optional_float(history_summary.get("recent_browserless_success_rate")) or 0.0
+    recent_browserless_success_rate = (
+        _coerce_optional_float(history_summary.get("recent_browserless_success_rate"))
+        or 0.0
+    )
     if recent_browserless_success_rate < 0:
         recent_browserless_success_rate = 0.0
     elif recent_browserless_success_rate > 1:
@@ -182,33 +176,54 @@ def _hybrid_collection_recovery_policy(
     guidance_mode = guidance_recommended_mode or "hybrid"
     guidance_priority = _coerce_optional_text(guidance.get("priority")) or "info"
     success_rate = recent_browserless_success_rate
-    top_policy_reason = top_switch_guidance_reason or _coerce_optional_text(guidance.get("top_guidance_reason")) or "mixed_runtime_signals"
-    last_recovery_transition_kind = _coerce_optional_text(recovery_event_summary.get("last_transition_kind"))
-    last_recovery_to_policy_status = _coerce_optional_text(recovery_event_summary.get("last_to_policy_status"))
-    last_recovery_transition_at = _coerce_optional_text(recovery_event_summary.get("last_transition_at"))
+    top_policy_reason = (
+        top_switch_guidance_reason
+        or _coerce_optional_text(guidance.get("top_guidance_reason"))
+        or "mixed_runtime_signals"
+    )
+    last_recovery_transition_kind = _coerce_optional_text(
+        recovery_event_summary.get("last_transition_kind")
+    )
+    last_recovery_to_policy_status = _coerce_optional_text(
+        recovery_event_summary.get("last_to_policy_status")
+    )
+    last_recovery_transition_at = _coerce_optional_text(
+        recovery_event_summary.get("last_transition_at")
+    )
     last_decision = _coerce_optional_text(latest_summary.get("last_decision")) or ""
     last_reason = _coerce_optional_text(latest_summary.get("last_reason")) or ""
     recovery_transition_kind_counts = _coerce_optional_mapping(
         recovery_event_summary.get("recent_transition_kind_counts")
     )
-    pin_released_count = _coerce_optional_int(recovery_transition_kind_counts.get("pin_released")) or 0
-    pin_activated_count = _coerce_optional_int(recovery_transition_kind_counts.get("pin_activated")) or 0
+    pin_released_count = (
+        _coerce_optional_int(recovery_transition_kind_counts.get("pin_released")) or 0
+    )
+    pin_activated_count = (
+        _coerce_optional_int(recovery_transition_kind_counts.get("pin_activated")) or 0
+    )
 
     budget_total = 1
     budget_attempts_used = 0
     if last_recovery_transition_kind == "pin_released" and last_recovery_transition_at:
-        history_entries = _load_jsonl_snapshots(data_root / "avm" / "hybrid_seed_collection_runtime_history.jsonl")
+        history_entries = _load_jsonl_snapshots(
+            data_root / "avm" / "hybrid_seed_collection_runtime_history.jsonl"
+        )
         for entry in history_entries:
             generated_at = _coerce_optional_text(entry.get("generated_at"))
-            if not generated_at or generated_at <= last_recovery_transition_at:
+            if not generated_at or _utc_timestamp_leq(
+                generated_at, last_recovery_transition_at
+            ):
                 continue
             decision_counts = _coerce_optional_mapping(entry.get("decision_counts"))
-            browserless_success_count = _coerce_optional_int(decision_counts.get("browserless_success")) or 0
+            browserless_success_count = (
+                _coerce_optional_int(decision_counts.get("browserless_success")) or 0
+            )
             if browserless_success_count < 0:
                 browserless_success_count = 0
-            browser_fallback_required_count = _coerce_optional_int(
-                decision_counts.get("browser_fallback_required")
-            ) or 0
+            browser_fallback_required_count = (
+                _coerce_optional_int(decision_counts.get("browser_fallback_required"))
+                or 0
+            )
             if browser_fallback_required_count < 0:
                 browser_fallback_required_count = 0
             budget_attempts_used += browserless_success_count
@@ -217,7 +232,7 @@ def _hybrid_collection_recovery_policy(
         if (
             budget_attempts_used == 0
             and latest_generated_at
-            and latest_generated_at > last_recovery_transition_at
+            and not _utc_timestamp_leq(latest_generated_at, last_recovery_transition_at)
             and last_decision in {"browserless_success", "browser_fallback_required"}
         ):
             budget_attempts_used = 1
@@ -285,7 +300,11 @@ def _hybrid_collection_recovery_policy(
             **common_policy_fields,
         }
 
-    if recent_switch_count >= 2 and top_switch_target_mode == "browser" and guidance_mode == "browser":
+    if (
+        recent_switch_count >= 2
+        and top_switch_target_mode == "browser"
+        and guidance_mode == "browser"
+    ):
         return {
             "policy_status": "pin_browser_mode_temporarily",
             "priority": "high" if guidance_priority == "high" else "warning",
@@ -306,7 +325,12 @@ def _hybrid_collection_recovery_policy(
             **common_policy_fields,
         }
 
-    if recent_switch_count >= 1 and top_switch_target_mode == "browser" and guidance_mode == "hybrid" and success_rate >= 0.8:
+    if (
+        recent_switch_count >= 1
+        and top_switch_target_mode == "browser"
+        and guidance_mode == "hybrid"
+        and success_rate >= 0.8
+    ):
         return {
             "policy_status": "allow_hybrid_retrial",
             "priority": "info",
@@ -333,7 +357,12 @@ def _hybrid_collection_recovery_policy(
             "priority": guidance_priority,
             "effective_recommended_mode": "browser",
             "mode_pin_active": False,
-            "recommended_actions": list(guidance.get("recommended_actions") or ["follow_browser_guidance"]),
+            "recommended_actions": list(
+                cast(
+                    Iterable[object],
+                    guidance.get("recommended_actions") or ["follow_browser_guidance"],
+                )
+            ),
             "top_policy_reason": top_policy_reason,
             "guidance_status": guidance_status,
             "guidance_recommended_mode": guidance_mode,
@@ -352,7 +381,10 @@ def _hybrid_collection_recovery_policy(
             "effective_recommended_mode": "hybrid",
             "mode_pin_active": False,
             "recommended_actions": ["keep_browserless_fast_path_enabled"],
-            "top_policy_reason": _coerce_optional_text(guidance.get("top_guidance_reason")) or "hybrid_stable",
+            "top_policy_reason": _coerce_optional_text(
+                guidance.get("top_guidance_reason")
+            )
+            or "hybrid_stable",
             "guidance_status": guidance_status,
             "guidance_recommended_mode": guidance_mode,
             "recent_mode_switch_count": recent_switch_count,
@@ -380,51 +412,16 @@ def _hybrid_collection_recovery_policy(
         **common_policy_fields,
     }
 
-def _hybrid_collection_operator_recovery_policy_overview_fields(policy: dict[str, Any]) -> dict[str, Any]:
-    budget_remaining = _coerce_optional_int(policy.get("hybrid_retrial_budget_remaining")) or 0
-    if budget_remaining < 0:
-        budget_remaining = 0
-    return {
-        "hybrid_collection_recovery_policy_status": _coerce_optional_text(policy.get("policy_status")),
-        "hybrid_collection_recovery_policy_priority": _coerce_optional_text(policy.get("priority")),
-        "hybrid_collection_recovery_effective_mode": _coerce_optional_text(policy.get("effective_recommended_mode")),
-        "hybrid_collection_recovery_mode_pin_active": _coerce_optional_bool(policy.get("mode_pin_active")) is True,
-        "hybrid_collection_recovery_top_policy_reason": _coerce_optional_text(policy.get("top_policy_reason")),
-        "hybrid_collection_recovery_budget_remaining": budget_remaining,
-        "hybrid_collection_recovery_last_transition_kind": _coerce_optional_text(
-            policy.get("last_recovery_transition_kind")
-        ),
-    }
 
-def _hybrid_collection_operator_recovery_policy_event_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    recent_transition_count = _coerce_optional_int(summary.get("recent_transition_count")) or 0
-    if recent_transition_count < 0:
-        recent_transition_count = 0
-    return {
-        "hybrid_collection_recent_recovery_policy_transition_count": recent_transition_count,
-        "hybrid_collection_last_recovery_transition_kind": _coerce_optional_text(summary.get("last_transition_kind")),
-        "hybrid_collection_last_recovery_to_policy_status": _coerce_optional_text(summary.get("last_to_policy_status")),
-    }
-
-def _hybrid_collection_operator_escalation_event_overview_fields(summary: dict[str, Any]) -> dict[str, Any]:
-    recent_event_count = _coerce_optional_int(summary.get("recent_event_count")) or 0
-    if recent_event_count < 0:
-        recent_event_count = 0
-    return {
-        "hybrid_collection_recent_operator_escalation_count": recent_event_count,
-        "hybrid_collection_top_operator_escalation_kind": _coerce_optional_text(summary.get("top_escalation_kind")),
-        "hybrid_collection_top_operator_escalation_source": _coerce_optional_text(
-            summary.get("top_operator_escalation_source")
-        ),
-        "hybrid_collection_top_operator_escalation_policy_status": _coerce_optional_text(
-            summary.get("top_policy_status")
-        ),
-        "hybrid_collection_last_operator_escalation_source": _coerce_optional_text(
-            summary.get("last_operator_escalation_source")
-        ),
-        "hybrid_collection_last_operator_escalation_audit_message": _coerce_optional_text(
-            summary.get("last_operator_escalation_audit_message")
-        ),
-    }
-
-__all__ = ["_hybrid_collection_operator_intervention_policy_overview_fields", "_hybrid_collection_operator_final_guidance_overview_fields", "_hybrid_collection_operator_digest_overview_fields", "_hybrid_collection_strategy_guidance", "_hybrid_collection_operator_guidance_overview_fields", "_hybrid_collection_operator_mode_switch_overview_fields", "_hybrid_collection_recovery_policy", "_hybrid_collection_operator_recovery_policy_overview_fields", "_hybrid_collection_operator_recovery_policy_event_overview_fields", "_hybrid_collection_operator_escalation_event_overview_fields"]
+__all__ = [
+    "_hybrid_collection_operator_intervention_policy_overview_fields",
+    "_hybrid_collection_operator_final_guidance_overview_fields",
+    "_hybrid_collection_operator_digest_overview_fields",
+    "_hybrid_collection_strategy_guidance",
+    "_hybrid_collection_operator_guidance_overview_fields",
+    "_hybrid_collection_operator_mode_switch_overview_fields",
+    "_hybrid_collection_recovery_policy",
+    "_hybrid_collection_operator_recovery_policy_overview_fields",
+    "_hybrid_collection_operator_recovery_policy_event_overview_fields",
+    "_hybrid_collection_operator_escalation_event_overview_fields",
+]

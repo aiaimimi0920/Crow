@@ -1,4 +1,6 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import time
+
+from src import captcha_solver
 
 
 def test_preflight_clears_login_wait_when_page_becomes_authenticated() -> None:
@@ -123,7 +125,7 @@ def test_solver_stops_without_reload_when_login_page_appears_during_attempt(monk
         "bodyText": "请登录后继续",
     }
     solver._reload_page = lambda: reload_calls.append(True)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
     assert solver.last_failure_reason == "manual_required"
@@ -164,7 +166,7 @@ def test_solver_accepts_authenticated_page_when_slider_disappears_during_attempt
         "bodyText": "normal auction list",
     }
     solver._reload_page = lambda: calls.__setitem__("reload", calls["reload"] + 1)
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is True
     assert calls["reload"] == 0
@@ -232,7 +234,7 @@ def test_solver_returns_false_when_official_challenge_explicitly_rejects_drag(mo
         "className": "",
         "bodyText": "验证失败，点击框体重试(error:KzCFR9)",
     }
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve() is False
     assert calls == {"connect": 1, "drag": 1, "reload": 0}
@@ -284,7 +286,7 @@ def test_solver_retries_drag_after_nc_asks_to_click_the_bar(monkeypatch) -> None
         "hasSlider": True,
     }
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=2) is True
     assert calls == {"connect": 2, "drag": 2, "reset": 1, "verify": 2}
@@ -317,7 +319,7 @@ def test_solver_retries_drag_after_nc_retry_without_spending_main_attempt(monkey
         "hasSlider": True,
     }
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is True
     assert calls == {"connect": 2, "drag": 2, "reset": 1, "verify": 2}
@@ -347,7 +349,7 @@ def test_solver_can_disable_nc_replay_for_externally_scheduled_attempt(monkeypat
         "hasSlider": True,
     }
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1, nc_retry_replay_limit=0) is False
     assert calls == {"connect": 1, "drag": 1, "reset": 0, "verify": 1}
@@ -375,7 +377,7 @@ def test_solver_can_limit_slider_lookup_for_externally_scheduled_attempt(monkeyp
     solver._reload_page = lambda: None
     solver._recover_authenticated_list_page = lambda: False
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(
         max_attempts=1,
@@ -424,7 +426,7 @@ def test_solver_switches_profile_without_reset_when_slider_still_present(monkeyp
     ]
     solver._page_challenge_summary = lambda: summaries.pop(0)
     solver._close_owned_target_tabs = lambda: None
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1, drag_profile_offset=1) is True
     assert calls == {"connect": 1, "drag": 2, "reset": 0, "verify": 2}

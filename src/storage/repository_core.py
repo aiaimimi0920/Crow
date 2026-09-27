@@ -44,8 +44,18 @@ class RepositoryCoreMixin:
             if not self.enabled or self._initialized:
                 return
             if self.settings.auto_create:
-                Base.metadata.create_all(self.engine)
-            if self.settings.enable_postgis and self.engine.dialect.name == "postgresql":
+                if self.engine.dialect.name == "sqlite":
+                    with self.engine.begin() as connection:
+                        # SQLite legacy transaction mode does not begin for DDL.
+                        if not connection.connection.driver_connection.in_transaction:
+                            connection.exec_driver_sql("BEGIN")
+                        Base.metadata.create_all(connection)
+                else:
+                    Base.metadata.create_all(self.engine)
+            if (
+                self.settings.enable_postgis
+                and self.engine.dialect.name == "postgresql"
+            ):
                 self._ensure_postgis()
             self._initialized = True
 

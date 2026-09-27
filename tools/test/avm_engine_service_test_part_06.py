@@ -32,7 +32,9 @@ def test_predict_by_item_id_surfaces_risk_validation_and_review_reason(tmp_path:
             "经度": 121.5001,
         },
     ]
-    (data_dir / "2026-01-01.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (data_dir / "2026-01-01.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
 
     service = AVMService(data_dir=str(data_dir))
     result = service.predict_by_item_id("4701")
@@ -41,6 +43,7 @@ def test_predict_by_item_id_surfaces_risk_validation_and_review_reason(tmp_path:
     assert result["risk_validation"]["missing_required_count"] > 0
     assert "risk_feature_incomplete" in result["manual_review_reasons"]
     assert result["manual_review_recommended"] is True
+
 
 def test_avm_service_fills_missing_subject_coordinates_from_centroid(tmp_path: Path):
     data_dir = tmp_path / "datas"
@@ -84,7 +87,9 @@ def test_avm_service_fills_missing_subject_coordinates_from_centroid(tmp_path: P
             "经度": 121.500101,
         },
     ]
-    (data_dir / "2026-01-01.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (data_dir / "2026-01-01.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
 
     service = AVMService(data_dir=str(data_dir))
     result = service.predict_by_item_id("2001")
@@ -92,7 +97,10 @@ def test_avm_service_fills_missing_subject_coordinates_from_centroid(tmp_path: P
     assert result["predicted_price"] is not None
     assert result["trace"]["subject_coordinate_strategy"] == "community_centroid"
 
-def test_avm_service_predict_by_item_id_uses_repository_subject_without_file_scan(monkeypatch):
+
+def test_avm_service_predict_by_item_id_uses_repository_subject_without_file_scan(
+    monkeypatch,
+):
     class _FakeRepo:
         enabled = True
 
@@ -149,7 +157,11 @@ def test_avm_service_predict_by_item_id_uses_repository_subject_without_file_sca
 
     repo = _FakeRepo()
     service = AVMService(data_dir="unused", repository=repo)
-    monkeypatch.setattr(service, "_iter_data_files", lambda: (_ for _ in ()).throw(RuntimeError("file scan should not happen")))
+    monkeypatch.setattr(
+        service,
+        "_iter_data_files",
+        lambda: (_ for _ in ()).throw(RuntimeError("file scan should not happen")),
+    )
 
     result = service.predict_by_item_id("repo-1")
 
@@ -157,7 +169,10 @@ def test_avm_service_predict_by_item_id_uses_repository_subject_without_file_sca
     assert result["comparable_count"] == 1
     assert repo.lookup_calls == 1
 
-def test_avm_service_ensure_coordinate_cache_uses_canonical_rows_without_feature_build(monkeypatch):
+
+def test_avm_service_ensure_coordinate_cache_uses_canonical_rows_without_feature_build(
+    monkeypatch,
+):
     class _FakeRepo:
         enabled = True
 
@@ -188,17 +203,22 @@ def test_avm_service_ensure_coordinate_cache_uses_canonical_rows_without_feature
     def _forbidden_build_features(_value):
         raise AssertionError("ensure_coordinate_cache should not call build_features")
 
-    monkeypatch.setattr("src.avm.service.build_features", _forbidden_build_features)
+    monkeypatch.setattr(
+        "src.avm.service_data.build_features", _forbidden_build_features
+    )
 
     centroids = service.ensure_coordinate_cache()
 
     assert centroids["community::测试小区"] == (31.2, 121.5)
 
+
 def test_avm_service_health_snapshot_lightweight_does_not_build_dataset(monkeypatch):
     service = AVMService(data_dir="unused", repository=None)
 
     def _forbidden_build():
-        raise AssertionError("lightweight health snapshot should not build feature dataset when cache is empty")
+        raise AssertionError(
+            "lightweight health snapshot should not build feature dataset when cache is empty"
+        )
 
     monkeypatch.setattr(service, "_build_feature_dataset", _forbidden_build)
 
@@ -209,6 +229,7 @@ def test_avm_service_health_snapshot_lightweight_does_not_build_dataset(monkeypa
     assert health["risk_feature_completeness_avg"] == 0.0
     assert health["feature_cache_ready"] is False
     assert health["model_version"] == service.model_version()
+
 
 def test_avm_service_health_snapshot_surfaces_risk_validation_summary(tmp_path: Path):
     data_dir = tmp_path / "datas"
@@ -263,7 +284,9 @@ def test_avm_service_health_snapshot_surfaces_risk_validation_summary(tmp_path: 
             "经度": 121.5001,
         },
     ]
-    (data_dir / "2026-01-01.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (data_dir / "2026-01-01.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
 
     service = AVMService(data_dir=str(data_dir))
     health = service.health_snapshot(lightweight=False)
@@ -274,7 +297,10 @@ def test_avm_service_health_snapshot_surfaces_risk_validation_summary(tmp_path: 
     assert health["risk_validation_counts"]["invalid"] == 0
     assert 0.0 < health["risk_feature_completeness_avg"] < 1.0
 
-def test_avm_service_health_snapshot_surfaces_active_risk_factor_overrides(tmp_path: Path, monkeypatch):
+
+def test_avm_service_health_snapshot_surfaces_active_risk_factor_overrides(
+    tmp_path: Path, monkeypatch
+):
     data_dir = tmp_path / "datas"
     data_dir.mkdir()
     (data_dir / "2026-01-01.json").write_text("[]", encoding="utf-8")
@@ -290,14 +316,21 @@ def test_avm_service_health_snapshot_surfaces_active_risk_factor_overrides(tmp_p
     assert health["active_risk_factor_override_count"] == 1
     assert health["active_risk_factor_overrides"]["is_occupied"] == 0.5
 
-def test_avm_service_health_snapshot_surfaces_active_weighting(tmp_path: Path, monkeypatch):
+
+def test_avm_service_health_snapshot_surfaces_active_weighting(
+    tmp_path: Path, monkeypatch
+):
     data_dir = tmp_path / "datas"
     data_dir.mkdir()
     (data_dir / "2026-01-01.json").write_text("[]", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.avm.service.get_effective_weighting",
-        lambda defaults=None: {"distance_power": 1.7, "time_decay": 0.8, "community_boost": 2.2},
+        "src.avm.service_health.get_effective_weighting",
+        lambda defaults=None: {
+            "distance_power": 1.7,
+            "time_decay": 0.8,
+            "community_boost": 2.2,
+        },
     )
 
     service = AVMService(data_dir=str(data_dir))
@@ -306,13 +339,16 @@ def test_avm_service_health_snapshot_surfaces_active_weighting(tmp_path: Path, m
     assert health["active_weighting"]["distance_power"] == 1.7
     assert health["active_weighting"]["community_boost"] == 2.2
 
-def test_avm_service_health_snapshot_surfaces_active_risk_discount_factor(tmp_path: Path, monkeypatch):
+
+def test_avm_service_health_snapshot_surfaces_active_risk_discount_factor(
+    tmp_path: Path, monkeypatch
+):
     data_dir = tmp_path / "datas"
     data_dir.mkdir()
     (data_dir / "2026-01-01.json").write_text("[]", encoding="utf-8")
 
     monkeypatch.setattr(
-        "src.avm.service.get_effective_risk_discount_factor",
+        "src.avm.service_health.get_effective_risk_discount_factor",
         lambda default=0.9: 0.45,
     )
 
@@ -321,7 +357,10 @@ def test_avm_service_health_snapshot_surfaces_active_risk_discount_factor(tmp_pa
 
     assert health["active_risk_discount_factor"] == 0.45
 
-def test_avm_service_health_snapshot_surfaces_coordinate_strategy_counts(tmp_path: Path):
+
+def test_avm_service_health_snapshot_surfaces_coordinate_strategy_counts(
+    tmp_path: Path,
+):
     data_dir = tmp_path / "datas"
     data_dir.mkdir()
     payload = [
@@ -348,13 +387,16 @@ def test_avm_service_health_snapshot_surfaces_coordinate_strategy_counts(tmp_pat
             "所属小区": "测试小区",
         },
     ]
-    (data_dir / "2026-01-01.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (data_dir / "2026-01-01.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
 
     service = AVMService(data_dir=str(data_dir))
     health = service.health_snapshot(lightweight=False)
 
     assert health["coordinate_strategy_counts"]["observed"] == 1
     assert health["coordinate_strategy_counts"]["community_centroid"] == 1
+
 
 def test_avm_service_limits_candidate_pool_for_large_dataset(monkeypatch):
     service = AVMService(data_dir="unused", repository=None)
@@ -395,7 +437,7 @@ def test_avm_service_limits_candidate_pool_for_large_dataset(monkeypatch):
             "top_factors": [],
         }
 
-    monkeypatch.setattr("src.avm.service.predict_fair_price", _fake_predict)
+    monkeypatch.setattr("src.avm.service_prediction.predict_fair_price", _fake_predict)
 
     result = service.predict_by_item_data(
         {

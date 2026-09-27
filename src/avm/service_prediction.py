@@ -3,16 +3,19 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .service_context import (
-    MAX_CANDIDATE_POOL,
-    build_features,
-    map_raw_to_canonical,
-    predict_fair_price,
-)
+from .canonical_mapper import map_raw_to_canonical
+from .engine import predict_fair_price
+from .feature_builder import build_features
+from .service_context import MAX_CANDIDATE_POOL
 
 
 class AVMPredictionMixin:
-    def _candidate_pool(self, subject: Dict[str, Any], dataset: List[Dict[str, Any]], signature: Tuple[Any, ...]) -> List[Dict[str, Any]]:
+    def _candidate_pool(
+        self,
+        subject: Dict[str, Any],
+        dataset: List[Dict[str, Any]],
+        signature: Tuple[Any, ...],
+    ) -> List[Dict[str, Any]]:
         if len(dataset) <= MAX_CANDIDATE_POOL:
             return dataset
 
@@ -47,9 +50,15 @@ class AVMPredictionMixin:
         started = time.perf_counter()
         signature = self._dataset_signature()
         if self._centroid_cache is None:
-            self.ensure_coordinate_cache(allow_file_fallback=not bool(self.repository and getattr(self.repository, "enabled", False)))
+            self.ensure_coordinate_cache(
+                allow_file_fallback=not bool(
+                    self.repository and getattr(self.repository, "enabled", False)
+                )
+            )
         subject = build_features(map_raw_to_canonical(item_data))
-        subject["valuation_mode"] = self._normalize_valuation_mode(item_data.get("valuation_mode"))
+        subject["valuation_mode"] = self._normalize_valuation_mode(
+            item_data.get("valuation_mode")
+        )
         subject = self._enrich_coordinates(subject, self._centroid_cache or {})
         candidate_dataset: List[Dict[str, Any]] = []
         candidate_source = "feature_cache"
@@ -71,7 +80,11 @@ class AVMPredictionMixin:
             except Exception:
                 repo_rows = []
             if repo_rows:
-                candidate_source = "repository_analysis_candidates" if hasattr(self.repository, "iter_analysis_candidate_rows") else "repository_candidates"
+                candidate_source = (
+                    "repository_analysis_candidates"
+                    if hasattr(self.repository, "iter_analysis_candidate_rows")
+                    else "repository_candidates"
+                )
                 candidate_dataset = [build_features(row) for row in repo_rows]
 
         if not candidate_dataset:
@@ -84,11 +97,15 @@ class AVMPredictionMixin:
             if str(record.get("item_id")) != str(subject.get("item_id"))
         ]
         result = predict_fair_price(subject, comparable_dataset)
-        result["risk_validation"] = self._public_risk_validation_payload(self._build_risk_validation(subject))
+        result["risk_validation"] = self._public_risk_validation_payload(
+            self._build_risk_validation(subject)
+        )
         result["item_id"] = str(subject.get("item_id"))
         result["id"] = str(subject.get("item_id"))
         result.setdefault("trace", {})
-        result["trace"]["subject_coordinate_strategy"] = subject.get("coordinate_strategy", "missing")
+        result["trace"]["subject_coordinate_strategy"] = subject.get(
+            "coordinate_strategy", "missing"
+        )
         result["trace"]["candidate_source"] = candidate_source
         self._attach_manual_review(subject, result)
         strategy = str(result.get("strategy") or "unknown")
@@ -99,7 +116,8 @@ class AVMPredictionMixin:
         if starting_price and predicted_price:
             try:
                 result["margin_of_safety"] = round(
-                    (float(predicted_price) - float(starting_price)) / float(predicted_price),
+                    (float(predicted_price) - float(starting_price))
+                    / float(predicted_price),
                     4,
                 )
             except (TypeError, ValueError, ZeroDivisionError):
@@ -130,7 +148,6 @@ class AVMPredictionMixin:
         result = self.predict_by_item_data(subject)
         self._lookup_total_ms += (time.perf_counter() - started) * 1000
         return result
-
 
 
 __all__ = ["AVMPredictionMixin"]

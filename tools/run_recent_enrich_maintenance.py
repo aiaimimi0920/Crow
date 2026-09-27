@@ -15,25 +15,26 @@ import sys
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.audit_recent_avm_gaps import build_recent_gap_audit
+from src.collection.detail_archive_fetch import fetch_missing_detail_archives
+from src.collection_job_control import job_checkpoint
+from src.storage.repository import create_repository_from_env
 from tools.analysis_stage_planner import (
     load_manual_review_receipt_snapshot,
     recommend_analysis_stage_actions,
     summarize_action_effectiveness_snapshot,
     summarize_action_feedback,
     summarize_manual_review_backlog,
-    summarize_manual_review_reentry_application_summary,
     summarize_manual_review_receipt_snapshot,
+    summarize_manual_review_reentry_application_summary,
     summarize_operator_action_surface,
     summarize_operator_overview,
     summarize_recoverability_snapshot,
 )
+from tools.audit_recent_avm_gaps import build_recent_gap_audit
 from tools.backfill_archived_details import backfill_archived_details
 from tools.backfill_recent_coordinates import backfill_recent_coordinates
-from tools.fetch_missing_detail_archives import fetch_missing_detail_archives
 from tools.prepare_recent_detail_replay import prepare_recent_detail_replay
 from tools.run_analysis_stage_reconcile import run_analysis_stage_reconcile
-from src.storage.repository import create_repository_from_env
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,6 +110,7 @@ def run_recent_enrich_maintenance(
     action_effectiveness: dict[str, Any] | None = None,
     repository: Any | None = None,
 ) -> dict:
+    job_checkpoint()
     before_stage = get_collection_stage_snapshot()
     before = build_recent_gap_audit(data_root, window_days, sample_limit)
     recoverability_summary = summarize_recoverability_snapshot(before)
@@ -125,6 +127,7 @@ def run_recent_enrich_maintenance(
         fetch_archives=fetch_archives,
         prepare_replay=prepare_replay,
     )
+    job_checkpoint()
     fetched = fetch_missing_detail_archives(
         data_root=data_root,
         limit=fetch_limit,
@@ -143,6 +146,7 @@ def run_recent_enrich_maintenance(
         "samples": [],
         "skipped": True,
     }
+    job_checkpoint()
     archived = backfill_archived_details(
         data_root=data_root,
         limit=archive_limit,
@@ -159,6 +163,7 @@ def run_recent_enrich_maintenance(
         "samples": [],
         "skipped": True,
     }
+    job_checkpoint()
     coordinates = backfill_recent_coordinates(
         data_root=data_root,
         window_days=window_days,
@@ -173,6 +178,7 @@ def run_recent_enrich_maintenance(
         "samples": [],
         "skipped": True,
     }
+    job_checkpoint()
     replay = prepare_recent_detail_replay(
         data_root=data_root,
         window_days=window_days,
@@ -189,6 +195,7 @@ def run_recent_enrich_maintenance(
         "samples": [],
         "skipped": True,
     }
+    job_checkpoint()
     analysis_ready_recheck = run_analysis_stage_reconcile(
         data_root=data_root,
         window_days=window_days,
@@ -210,6 +217,7 @@ def run_recent_enrich_maintenance(
         "skipped": True,
         "skip_reason": "not_recommended",
     }
+    job_checkpoint()
     stage_state_reconcile = run_analysis_stage_reconcile(
         data_root=data_root,
         window_days=window_days,
@@ -231,6 +239,7 @@ def run_recent_enrich_maintenance(
         "skipped": True,
         "skip_reason": "not_recommended",
     }
+    job_checkpoint()
     after = build_recent_gap_audit(data_root, window_days, sample_limit)
     next_recoverability_summary = summarize_recoverability_snapshot(after)
     after_stage = get_collection_stage_snapshot()

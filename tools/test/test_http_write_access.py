@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import server
+from src import server, server_request_guard
 from src.server_route_access import required_access
 from src.server_routes import RETIRED_GET_ROUTES
 from tools.test.test_quality_http_guards import WORKER_HEADERS, WORKER_TOKEN, api
@@ -25,7 +25,7 @@ def configured_api(api, tmp_path, monkeypatch):
     monkeypatch.setenv("FAPAI_CONTROL_PLANE_TOKEN", OPERATOR)
     path = tmp_path / "recovery.token"
     path.write_text(RECOVERY, encoding="utf-8")
-    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_TOKEN_FILE", path)
+    monkeypatch.setattr(server_request_guard, "NAS_AUTH_RECOVERY_TOKEN_FILE", path)
     monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", SimpleNamespace(enabled=True))
     return api
 
@@ -94,8 +94,8 @@ def test_retired_get_routes_cannot_claim_resume_or_write_reports(configured_api,
     evidence = tmp_path / "organized.json"
     evidence.write_bytes(b"preserve this evidence")
     monkeypatch.setattr(server.RUNTIME.control, "paused", True)
-    monkeypatch.setattr(server, "PENDING_TASKS", ["pending-item"])
-    monkeypatch.setattr(server, "DISPATCHED_TASKS", {})
+    monkeypatch.setattr(server.RUNTIME.collection, "pending_tasks", ["pending-item"])
+    monkeypatch.setattr(server.RUNTIME.collection, "dispatched_tasks", {})
     before = set(tmp_path.rglob("*"))
     for path, replacement in RETIRED_GET_ROUTES.items():
         status, headers, raw = configured_api("GET", path + "?dry_run=false", headers={"X-FAPAI-Control-Token": OPERATOR})

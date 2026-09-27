@@ -354,7 +354,7 @@ def test_http_receipt_control_plane_can_repair_missing_backup_from_repository_st
     monkeypatch.setattr(server_module, "DB_REPOSITORY", repo)
     monkeypatch.setattr(server_module, "DATA_DIR", str(data_root))
     monkeypatch.setattr(
-        server_module,
+        importlib.import_module("src.collection_stage_status"),
         "load_recent_gap_audit_snapshot",
         lambda path=None: {
             "recoverability_counts": {"future_fixable": 1, "historical_unrecoverable": 1},
@@ -363,8 +363,8 @@ def test_http_receipt_control_plane_can_repair_missing_backup_from_repository_st
             ],
         },
     )
-    monkeypatch.setattr(server_module, "load_action_effectiveness_snapshot", lambda path=None: {})
-    monkeypatch.setattr(server_module, "load_optimization_loop_progress_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_action_effectiveness_snapshot", lambda path=None: {})
+    monkeypatch.setattr(importlib.import_module("src.collection_stage_status"), "load_optimization_loop_progress_snapshot", lambda path=None: {})
     original_service = server_module.AVM_SERVICE
     original_start_time = server_module.RUNTIME.started_at
     server_module.AVM_SERVICE = AVMService(data_dir=server_module.DATA_DIR, repository=repo)

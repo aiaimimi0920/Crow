@@ -1,3 +1,4 @@
+from src import llm_openai_compatible
 from tools.test.live_batch_smoke_test_context import *  # noqa: F401,F403
 
 
@@ -21,9 +22,9 @@ def test_preflight_llm_backend_skips_models_already_disabled_by_auth_failures(mo
         {"name": "model-b", "app_id": "b", "api_key": "bk", "api_secret": "bs", "ws_url": "wss://unit.test/b", "model_id": "mid-b", "max_concurrent": 1},
     ]
     selector = llm_helper.ModelSelector(pool)
-    monkeypatch.setattr(llm_helper, "get_model_pool", lambda: pool)
-    monkeypatch.setattr(llm_helper, "get_model_selector", lambda: selector)
-    monkeypatch.setattr(llm_helper, "_get_openai_compatible_config", lambda: None)
+    monkeypatch.setattr(llm_openai_compatible, "get_model_pool", lambda: pool)
+    monkeypatch.setattr(llm_openai_compatible, "get_model_selector", lambda: selector)
+    monkeypatch.setattr(llm_openai_compatible, "_get_openai_compatible_config", lambda: None)
 
     calls = {"count": 0}
 

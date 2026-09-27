@@ -78,6 +78,30 @@ for _original, _clone in _function_pairs:
         }
 
 
+_REPOSITORY_EXPORTS = {
+    "DatabaseSettings",
+    "PropertyRepository",
+    "create_repository_from_env",
+}
+
+
+def __getattr__(name: str) -> object:
+    if name not in _REPOSITORY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(_importlib.import_module("src.storage.repository"), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | _REPOSITORY_EXPORTS)
+
+
+__all__ = sorted(
+    {name for name in globals() if not name.startswith("_")} | _REPOSITORY_EXPORTS
+)
+
+
 if __name__ == "__main__":
     args = _parse_args()
     if args.mode == "export":

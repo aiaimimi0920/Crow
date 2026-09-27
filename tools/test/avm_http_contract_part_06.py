@@ -82,7 +82,7 @@ class AVMHttpContractPart06:
             self._assert_collection_job_failed(resp.status, accepted, 'AVM_RECENT_ENRICH_MAINTENANCE_FAILED')
 
     def test_fetch_missing_detail_archives_endpoint(self):
-        with mock.patch('tools.fetch_missing_detail_archives.fetch_missing_detail_archives') as mocked_fetch:
+        with mock.patch('src.collection.detail_archive_fetch.fetch_missing_detail_archives') as mocked_fetch:
             mocked_fetch.return_value = {'limit': 1, 'timeout': 9, 'dry_run': True, 'candidate_count': 2, 'fetched_count': 1, 'failed_count': 0, 'blocked_count': 1, 'touched_files': 0, 'samples': [{'item_id': 'x-1'}]}
             (status, payload) = self._post_collection_job('/api/avm/fetch_missing_detail_archives', {'limit': 1, 'timeout': 9, 'dry_run': True})
         self.assertEqual(status, 202)

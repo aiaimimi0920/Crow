@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from tools.test.llm_helper_openai_compatible_test_context import *
+import json
+import time
+from typing import Any
+
+import pytest
+import requests
+
+from src import llm_auction_extraction, llm_avm_risk, llm_helper
+from tools.test.llm_helper_openai_compatible_test_context import _FakeResponse
 
 
 def test_chat_with_glm_falls_back_across_openai_model_candidates(monkeypatch):
@@ -29,7 +37,7 @@ def test_chat_with_glm_falls_back_across_openai_model_candidates(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "primary-model")
     monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "primary-model;fallback-model")
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.chat_with_glm("return json")
 
@@ -60,7 +68,7 @@ def test_chat_with_glm_does_not_hide_openai_candidate_auth_failure(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "bad-key")
     monkeypatch.setenv("OPENAI_MODEL", "primary-model")
     monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "fallback-model")
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     with pytest.raises(requests.HTTPError):
         llm_helper.chat_with_glm("return json")
@@ -93,7 +101,7 @@ def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "primary-model")
     monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "fallback-model")
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.preflight_openai_compatible_backend(timeout=7.5, check_chat=True)
 
@@ -114,7 +122,7 @@ def test_preflight_openai_compatible_backend_reports_network_unavailable_without
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.preflight_openai_compatible_backend(timeout=1.0, check_chat=True)
 
@@ -146,8 +154,8 @@ def test_chat_with_glm_does_not_retry_non_transient_openai_compatible_400(monkey
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.setenv("OPENAI_MAX_RETRIES", "3")
-    monkeypatch.setattr(llm_helper.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     with pytest.raises(requests.HTTPError):
         llm_helper.chat_with_glm("return json")
@@ -171,7 +179,7 @@ def test_extract_auction_data_prompt_asks_for_stable_reusable_location_index_nam
         captured["prompt"] = prompt
         return "{}"
 
-    monkeypatch.setattr(llm_helper, "chat_with_glm", fake_chat_with_glm)
+    monkeypatch.setattr(llm_auction_extraction, "chat_with_glm", fake_chat_with_glm)
 
     llm_helper.extract_auction_data(
         """
@@ -207,7 +215,7 @@ def test_extract_avm_risk_features_normalizes_list_evidence_source(monkeypatch):
         }
     )
 
-    monkeypatch.setattr(llm_helper, "chat_with_glm", lambda _prompt: llm_helper.json.dumps(payload, ensure_ascii=False))
+    monkeypatch.setattr(llm_avm_risk, "chat_with_glm", lambda _prompt: json.dumps(payload, ensure_ascii=False))
 
     features = llm_helper.extract_avm_risk_features("北京市东城区朝阳门内大街288号院3号楼", item_id="risk-list-source")
 
@@ -248,7 +256,7 @@ def test_fetch_description_data_text_decodes_gbk_description(monkeypatch):
             assert self.trust_env is False
             return FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     text = llm_helper.fetch_description_data_text(html)
 
@@ -278,7 +286,7 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
 
     def fake_chat_with_glm(prompt: str) -> str:
         captured["prompt"] = prompt
-        return llm_helper.json.dumps(
+        return json.dumps(
             {
                 "id": 747988656830,
                 "市场评估价": 9001680,
@@ -297,7 +305,7 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
             ensure_ascii=False,
         )
 
-    monkeypatch.setattr(llm_helper, "chat_with_glm", fake_chat_with_glm)
+    monkeypatch.setattr(llm_auction_extraction, "chat_with_glm", fake_chat_with_glm)
 
     class FakeResponse:
         content = desc_html.encode("utf-8")
@@ -318,9 +326,9 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
             return FakeResponse()
 
     fake_session = FakeSession()
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: fake_session)
+    monkeypatch.setattr(requests, "Session", lambda: fake_session)
 
-    result = llm_helper.json.loads(llm_helper.extract_auction_data(html, item_id="747988656830"))
+    result = json.loads(llm_helper.extract_auction_data(html, item_id="747988656830"))
 
     assert result["建筑面积"] == 117.06
     assert result["产权建筑面积"] == 117.06
@@ -343,9 +351,9 @@ def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional
     """
 
     monkeypatch.setattr(
-        llm_helper,
+        llm_auction_extraction,
         "chat_with_glm",
-        lambda _prompt: llm_helper.json.dumps(
+        lambda _prompt: json.dumps(
             {
                 "id": 1,
                 "成交价格": 6000000,
@@ -376,9 +384,9 @@ def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional
             assert self.trust_env is False
             return FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
-    result = llm_helper.json.loads(llm_helper.extract_auction_data(html, item_id="fractional"))
+    result = json.loads(llm_helper.extract_auction_data(html, item_id="fractional"))
 
     assert result["产权建筑面积"] == 120.0
     assert result["建筑面积"] == 60.0

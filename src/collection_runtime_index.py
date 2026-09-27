@@ -55,7 +55,9 @@ class CollectionRuntimeIndex:
             self.pending_tasks[:] = [
                 item_id
                 for item_id in self.pending_tasks
-                if not self.seen_ids.get(item_id, {}).get("data", {}).get("is_processed")
+                if not self.seen_ids.get(item_id, {})
+                .get("data", {})
+                .get("is_processed")
             ]
             return before - len(self.pending_tasks)
 
@@ -98,17 +100,24 @@ class CollectionRuntimeIndex:
     ) -> tuple[dict[str, dict[str, object]], tuple[str, ...], dict[str, Any]]:
         """Return consistent copies for status and read-only dispatch decisions."""
         with self.lock:
-            return dict(self.seen_ids), tuple(self.pending_tasks), dict(self.dispatched_tasks)
+            return (
+                dict(self.seen_ids),
+                tuple(self.pending_tasks),
+                dict(self.dispatched_tasks),
+            )
 
     def counts_snapshot(self) -> tuple[int, int]:
         with self.lock:
             return len(self.seen_ids), len(self.pending_tasks)
 
-    def claim_next_pending(self, now: datetime, cooldown_seconds: int) -> dict[str, object] | None:
+    def claim_next_pending(
+        self, now: datetime, cooldown_seconds: int
+    ) -> dict[str, object] | None:
         """Atomically choose and mark one legacy detail task."""
         with self.lock:
             self.pending_tasks[:] = [
-                item_id for item_id in self.pending_tasks
+                item_id
+                for item_id in self.pending_tasks
                 if item_id in self.seen_ids
                 and not self.seen_ids[item_id].get("data", {}).get("is_processed")
             ]
@@ -129,8 +138,10 @@ class CollectionRuntimeIndex:
         """Atomically select legacy detail tasks and mark their dispatch times."""
         with self.lock:
             self.pending_tasks[:] = [
-                item_id for item_id in self.pending_tasks
-                if not self.seen_ids.get(item_id, {}).get("data", {}).get("is_processed")
+                item_id
+                for item_id in self.pending_tasks
+                if item_id in self.seen_ids
+                and not self.seen_ids[item_id].get("data", {}).get("is_processed")
             ]
             total_count = len(self.seen_ids)
             pending_count = len(self.pending_tasks)

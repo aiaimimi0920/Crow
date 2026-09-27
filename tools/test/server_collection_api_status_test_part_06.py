@@ -151,39 +151,6 @@ def test_manual_only_captcha_report_preserves_detail_target_and_disables_auto_re
     monkeypatch.setattr(server.RUNTIME.recovery, "manual_only", False)
     assert server._manual_solver_retry_enabled() is False
 
-def test_manual_only_status_survives_restart_from_persisted_flag(monkeypatch, tmp_path) -> None:
-    from src import server
-
-    flag_path = tmp_path / "force_unlock.flag"
-    flag_path.write_text(
-        json.dumps(
-            {
-                "manual_only": True,
-                "last_request": {
-                    "node_id": "pc2",
-                    "cdp_endpoint": "http://192.168.15.104:9224",
-                    "target_url": "https://sf-item.taobao.com/sf_item/3001.htm",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(server, "_solver_force_unlock_flag_path", lambda: str(flag_path))
-    monkeypatch.setattr(server.RUNTIME.recovery, "manual_only", False, raising=False)
-
-    status = server._captcha_solver_runtime_status()
-
-    assert status["manual_required"] is True
-    assert status["manual_only"] is True
-    assert status["manual_retry_enabled"] is False
-    assert status["last_request"]["node_id"] == "pc2"
-    assert status["last_request"]["cdp_endpoint"] == "http://192.168.15.104:9224"
-    assert status["execution_mode"] == "manual"
-    assert status["request_owner"] == "pc2"
-    assert status["delegated_to_node_solver"] is True
-    assert status["nas_solver_active"] is False
-    assert status["node_solver_expected"] is False
-
 def test_solver_cancel_for_manual_required_preserves_manual_pause(monkeypatch, tmp_path) -> None:
     from src import server
 

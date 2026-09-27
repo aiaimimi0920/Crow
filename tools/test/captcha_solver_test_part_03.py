@@ -1,4 +1,9 @@
-from tools.test.captcha_solver_test_context import *  # noqa: F401,F403
+import json
+import time
+
+import websocket
+
+from src import captcha_solver
 
 
 def test_connect_tab_keeps_other_collection_scope_challenge_open() -> None:
@@ -178,7 +183,7 @@ def test_slider_miss_clears_closed_websocket_before_recovery(monkeypatch) -> Non
         return False
 
     solver._recover_authenticated_list_page = fake_recover
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1, nc_retry_replay_limit=0, slider_find_max_retries=1) is False
     assert socket.closed is True
@@ -227,7 +232,7 @@ def test_verification_failure_recovers_before_closing_websocket(monkeypatch) -> 
         return False
 
     solver._recover_authenticated_list_page = fake_recover
-    monkeypatch.setattr(captcha_solver.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1, nc_retry_replay_limit=0, slider_find_max_retries=1) is False
     assert recovery_websockets == [socket]
@@ -249,7 +254,7 @@ def test_connect_tab_falls_back_when_cached_websocket_cdp_bootstrap_times_out(mo
             self.last_message_id = int(json.loads(payload)["id"])
 
         def recv(self) -> str:
-            raise captcha_solver.websocket.WebSocketTimeoutException("stale target")
+            raise websocket.WebSocketTimeoutException("stale target")
 
         def close(self) -> None:
             return None
@@ -294,7 +299,7 @@ def test_connect_tab_falls_back_when_cached_websocket_cdp_bootstrap_times_out(mo
             return stale
         return healthy
 
-    monkeypatch.setattr(captcha_solver.websocket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(websocket, "create_connection", fake_create_connection)
 
     assert solver.connect_tab() is True
     assert connected_urls == [
@@ -313,7 +318,7 @@ def test_punish_target_connection_failure_marks_manual_required(monkeypatch) -> 
         }
     )
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("cdp bootstrap unavailable")),
     )
@@ -342,7 +347,7 @@ def test_target_websocket_connection_has_a_bounded_bootstrap_timeout(monkeypatch
         return fake_websocket
 
     monkeypatch.setenv("FAPAI_SOLVER_DISABLE_STEALTH", "1")
-    monkeypatch.setattr(captcha_solver.websocket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(websocket, "create_connection", fake_create_connection)
     monkeypatch.setattr(solver, "_send_cdp", lambda *_args, **_kwargs: {})
 
     assert solver._connect_to_target("ws://127.0.0.1:9223/devtools/page/test", "test") is True
@@ -370,7 +375,7 @@ def test_target_connection_applies_windows_identity_to_the_current_challenge(mon
     )
     monkeypatch.setenv("FAPAI_BROWSER_IDENTITY_FULL_VERSION", "151.0.7922.174")
     monkeypatch.setattr(
-        captcha_solver.websocket,
+        websocket,
         "create_connection",
         lambda *_args, **_kwargs: FakeWebSocket(),
     )

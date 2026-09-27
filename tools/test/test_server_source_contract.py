@@ -3,7 +3,11 @@ from __future__ import annotations
 import ast
 import inspect
 import re
+import textwrap
+from functools import cache
 from pathlib import Path
+
+import pytest
 
 import src.server as server_module
 from src.server_routes import RETIRED_GET_ROUTES
@@ -16,6 +20,7 @@ CONTRACT_TEST_PATHS = sorted(
     | set((REPO_ROOT / "tests").rglob("test_*.py"))
 )
 AUTHENTICATED_OBJECT_JSON_ROUTES = {
+    "/api/collection/jobs/cancel",
     "/api/collection/auth/recovery/heartbeat",
     "/api/collection/auth/recovery/claim",
     "/api/collection/auth/recovery/pc2_restarting",
@@ -33,19 +38,60 @@ def _function_sources() -> dict[str, str]:
     for path in [*SERVER_PATHS, REPO_ROOT / "src/collection_maintenance_jobs.py"]:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
+        lines = source.encode("utf-8").splitlines(keepends=True)
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                functions[node.name] = ast.get_source_segment(source, node) or ""
+                functions[node.name] = _source_segment(lines, node)
             elif isinstance(node, ast.ClassDef) and node.name == "DataHandler":
                 for child in node.body:
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        functions[child.name] = (
-                            ast.get_source_segment(source, child) or ""
-                        )
+                        functions[child.name] = _source_segment(lines, child)
+    # Registered handlers may be native closures outside the legacy server files.
+    for name in set(server_module.ROUTES.values()) | {
+        "_get_api_not_found",
+        "_server_get_fallback",
+        "_server_post_fallback",
+    }:
+        handler = getattr(server_module.DataHandler, name)
+        functions[name] = textwrap.dedent(inspect.getsource(handler))
     return functions
 
 
+def _source_segment(lines: list[bytes], node: ast.AST) -> str:
+    start, end = node.lineno - 1, node.end_lineno - 1
+    if start == end:
+        return lines[start][node.col_offset : node.end_col_offset].decode("utf-8")
+    return b"".join(
+        [
+            lines[start][node.col_offset :],
+            *lines[start + 1 : end],
+            lines[end][: node.end_col_offset],
+        ]
+    ).decode("utf-8")
+
+
+@cache
+def _syntax_nodes(source: str) -> tuple[ast.AST, ...]:
+    # Cache by source bytes, not symbol names; changed source gets a fresh AST.
+    return tuple(ast.walk(ast.parse(source)))
+
+
 FUNCTION_SOURCES = _function_sources()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def example():\n    value = '中文'\n    return value\n",
+        "value = 'π'; result = 'é'\r\n",
+        "def outer():\n    def inner():\n        return 1\n    return inner()\n",
+    ],
+)
+def test_indexed_source_segments_match_ast_unicode_offsets(source):
+    lines = source.encode("utf-8").splitlines(keepends=True)
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.stmt, ast.expr)):
+            assert _source_segment(lines, node) == ast.get_source_segment(source, node)
 
 
 def _delegated_source(name: str, visited: set[str] | None = None) -> str:
@@ -54,15 +100,15 @@ def _delegated_source(name: str, visited: set[str] | None = None) -> str:
         return ""
     visited.add(name)
     source = FUNCTION_SOURCES[name]
-    tree = ast.parse(source)
+    nodes = _syntax_nodes(source)
     imports = {
         alias.asname or alias.name
-        for node in ast.walk(tree)
+        for node in nodes
         if isinstance(node, ast.ImportFrom)
         for alias in node.names
     }
     children = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         if not isinstance(node, ast.Call):
             continue
         target = node.func
@@ -74,6 +120,15 @@ def _delegated_source(name: str, visited: set[str] | None = None) -> str:
             children.add(target.attr)
         elif isinstance(target, ast.Name) and target.id in imports:
             children.add(target.id)
+        elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            module = getattr(server_module, target.value.id, None)
+            source_path = getattr(module, "__file__", None)
+            if (
+                inspect.ismodule(module)
+                and source_path
+                and Path(source_path) in SERVER_PATHS
+            ):
+                children.add(target.attr)
     return "\n".join(
         [
             source,
@@ -104,7 +159,7 @@ def _route_sources(method_name: str) -> list[tuple[list[str], str]]:
 
 
 def _catches_value_error(source: str) -> bool:
-    for node in ast.walk(ast.parse(source)):
+    for node in _syntax_nodes(source):
         if not isinstance(node, ast.ExceptHandler) or node.type is None:
             continue
         exception_names = {
@@ -116,7 +171,7 @@ def _catches_value_error(source: str) -> bool:
 
 
 def _has_negative_compare(source: str, *, variable: str | None = None) -> bool:
-    for node in ast.walk(ast.parse(source)):
+    for node in _syntax_nodes(source):
         if not isinstance(node, ast.Compare) or not any(
             isinstance(op, ast.Lt) for op in node.ops
         ):
@@ -209,14 +264,15 @@ def _asserted_error_codes() -> set[str]:
     asserted: set[str] = set()
     for path in CONTRACT_TEST_PATHS:
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        for assertion in (
-            node for node in ast.walk(tree) if isinstance(node, ast.Assert)
-        ):
-            for child in ast.walk(assertion.test):
-                if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                    if re.fullmatch(r"[A-Z][A-Z0-9_]+", child.value):
-                        asserted.add(child.value)
         for node in ast.walk(tree):
+            if isinstance(node, ast.Assert):
+                for child in ast.walk(node.test):
+                    if (
+                        isinstance(child, ast.Constant)
+                        and isinstance(child.value, str)
+                        and re.fullmatch(r"[A-Z][A-Z0-9_]+", child.value)
+                    ):
+                        asserted.add(child.value)
             if not isinstance(node, ast.Call):
                 continue
             function_name = (
@@ -231,11 +287,12 @@ def _asserted_error_codes() -> set[str]:
             }:
                 continue
             for argument in node.args:
-                if isinstance(argument, ast.Constant) and isinstance(
-                    argument.value, str
+                if (
+                    isinstance(argument, ast.Constant)
+                    and isinstance(argument.value, str)
+                    and re.fullmatch(r"[A-Z][A-Z0-9_]+", argument.value)
                 ):
-                    if re.fullmatch(r"[A-Z][A-Z0-9_]+", argument.value):
-                        asserted.add(argument.value)
+                    asserted.add(argument.value)
     return asserted
 
 
@@ -262,7 +319,7 @@ def test_public_route_json_loads_have_invalid_json_guardrails():
     route_sources = _route_sources("do_POST") + [
         (
             list(server_module.MANUAL_REVIEW_RECEIPT_ENDPOINTS),
-            FUNCTION_SOURCES["do_DELETE"],
+            _delegated_source("do_DELETE"),
         )
     ]
     missing = [
@@ -277,7 +334,7 @@ def test_public_route_object_json_sites_have_non_object_guardrails():
     route_sources = _route_sources("do_POST") + [
         (
             list(server_module.MANUAL_REVIEW_RECEIPT_ENDPOINTS),
-            FUNCTION_SOURCES["do_DELETE"],
+            _delegated_source("do_DELETE"),
         )
     ]
     missing = [
@@ -296,8 +353,9 @@ def test_live_sweep_object_json_route_inventory_matches_source():
         if "json.loads" in source or "_read_json_body(" in source:
             actual.update((route, "POST") for route in routes)
     if (
-        "json.loads" in FUNCTION_SOURCES["do_DELETE"]
-        or "_read_json_body(" in FUNCTION_SOURCES["do_DELETE"]
+        "json.loads" in _delegated_source("do_DELETE")
+        or "_read_json_body(" in _delegated_source("do_DELETE")
+        or "read_body(" in _delegated_source("do_DELETE")
     ):
         actual.update(
             (route, "DELETE") for route in server_module.MANUAL_REVIEW_RECEIPT_ENDPOINTS
@@ -357,26 +415,70 @@ def test_server_has_no_legacy_send_error_calls_in_public_handler():
     assert "self.send_error(" not in _read(SERVER_PATHS)
 
 
-def test_server_bare_404s_are_only_non_api_fallbacks():
-    bare_404_functions = {
-        name
-        for name, source in FUNCTION_SOURCES.items()
-        if "self.send_response(404)" in source
+def _bare_404_owners(source: str) -> set[str]:
+    owners: set[str] = set()
+
+    def visit(node: ast.AST, owner: str) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            owner = node.name
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "send_response"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == 404
+        ):
+            owners.add(owner)
+        for child in ast.iter_child_nodes(node):
+            visit(child, owner)
+
+    visit(ast.parse(source), "<module>")
+    return owners
+
+
+def test_bare_404_inventory_attributes_nested_calls_without_hiding_them():
+    source = (
+        "def bind():\n"
+        "    def callback(handler):\n"
+        "        handler.send_response(404)\n"
+        "    return callback\n"
+    )
+    assert _bare_404_owners(source) == {"callback"}
+    assert _bare_404_owners(source + "    handler.send_response(404)\n") == {
+        "bind",
+        "callback",
     }
+
+
+def test_server_bare_404s_are_only_non_api_fallbacks():
+    bare_404_functions = set().union(
+        *(_bare_404_owners(source) for source in FUNCTION_SOURCES.values())
+    )
     assert bare_404_functions == {
         "do_HEAD",
-        "do_DELETE",
+        "delete_receipt",
         "_server_get_fallback",
         "_server_post_fallback",
     }
-    assert "AVM_ENDPOINT_NOT_FOUND" in FUNCTION_SOURCES["do_DELETE"]
+    assert "AVM_ENDPOINT_NOT_FOUND" in _delegated_source("do_DELETE")
     assert "AVM_ENDPOINT_NOT_FOUND" in FUNCTION_SOURCES["_server_post_fallback"]
     get_source = FUNCTION_SOURCES["do_GET"]
-    assert "request_path.startswith('/api/')" in get_source
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "startswith"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "request_path"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "/api/"
+        for node in ast.walk(ast.parse(get_source))
+    )
     assert "self._server_get_fallback" in get_source
 
 
-def test_rebound_server_functions_use_server_facade_globals():
+def test_facade_defined_functions_use_server_facade_globals():
     mismatches = [
         name
         for name, value in vars(server_module).items()

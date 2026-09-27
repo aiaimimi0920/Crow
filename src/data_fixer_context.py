@@ -37,10 +37,6 @@ HTTP_PORT = 5001
 
 AI_REQUEST_INTERVAL = 5  # seconds between AI requests
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
 FIELDS_SCHEMA = [
     {'key': 'id', 'label': 'ID', 'type': 'number', 'readonly': True},
     {'key': '市场评估价', 'label': '市场评估价', 'type': 'number'},
@@ -69,7 +65,7 @@ INFERABLE_FIELDS = {'所属小区', '最靠近商圈', '省份', '城市', '区'
 AI_AVAILABLE = False
 
 try:
-    from llm_helper import Ws_Param, get_model_pool, AIService
+    from src.llm_helper import Ws_Param, get_model_pool, AIService
     import websocket
     import ssl
 
@@ -138,7 +134,7 @@ except ImportError as e:
     logger.warning(f"[WARNING] AI verification disabled: {e}")
 
 try:
-    from avm.community_resolver import apply_community_resolution, load_default_community_index, resolve_community_name
+    from src.avm.community_resolver import apply_community_resolution, load_default_community_index, resolve_community_name
 except ImportError:
     apply_community_resolution = None
     load_default_community_index = None

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import os
 import sys
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -13,12 +13,30 @@ from src.captcha_solver import CaptchaSolver
 
 def pointer_rows(owner="xwayland-relative-pointer:16", *, pressed=True):
     return [
-        {"id": 2, "name": "Virtual core pointer", "use": 1, "attachment": 3,
-         "enabled": True, "left_pressed": pressed},
-        {"id": 4, "name": "Virtual core XTEST pointer", "use": 3, "attachment": 2,
-         "enabled": True, "left_pressed": False},
-        {"id": 7, "name": owner, "use": 3, "attachment": 2,
-         "enabled": True, "left_pressed": pressed},
+        {
+            "id": 2,
+            "name": "Virtual core pointer",
+            "use": 1,
+            "attachment": 3,
+            "enabled": True,
+            "left_pressed": pressed,
+        },
+        {
+            "id": 4,
+            "name": "Virtual core XTEST pointer",
+            "use": 3,
+            "attachment": 2,
+            "enabled": True,
+            "left_pressed": False,
+        },
+        {
+            "id": 7,
+            "name": owner,
+            "use": 3,
+            "attachment": 2,
+            "enabled": True,
+            "left_pressed": pressed,
+        },
     ]
 
 
@@ -55,7 +73,9 @@ def test_releases_only_stale_relative_pointer_and_confirms_core_state(pointer):
     assert pointer.closed
 
 
-@pytest.mark.parametrize("owner", ["Virtual core XTEST pointer", "USB Mouse", "xwayland-pointer:16"])
+@pytest.mark.parametrize(
+    "owner", ["Virtual core XTEST pointer", "USB Mouse", "xwayland-pointer:16"]
+)
 def test_does_not_release_another_input_owner(pointer, owner):
     pointer.rows = pointer_rows(owner)
 
@@ -102,17 +122,29 @@ def test_server_release_error_closes_the_display(pointer):
 
 
 def test_drag_stops_before_motion_when_button_release_is_not_verified(monkeypatch):
-    monkeypatch.setattr(captcha_os_input, "os", SimpleNamespace(name="posix", getenv=os.getenv))
-    monkeypatch.setattr(captcha_os_input.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(captcha_os_input, "recover_xwayland_left_button", lambda: {"verified": False})
-    monkeypatch.setitem(sys.modules, "pyautogui", SimpleNamespace(FAILSAFE=True, PAUSE=0))
+    monkeypatch.setattr(
+        captcha_os_input, "os", SimpleNamespace(name="posix", getenv=os.getenv)
+    )
+    monkeypatch.setattr(
+        captcha_os_input, "recover_xwayland_left_button", lambda: {"verified": False}
+    )
+    monkeypatch.setitem(
+        sys.modules, "pyautogui", SimpleNamespace(FAILSAFE=True, PAUSE=0)
+    )
     monkeypatch.setenv("FAPAI_SOLVER_OS_INPUT_BACKEND", "pyautogui")
     solver = CaptchaSolver(port=9223)
+    monkeypatch.setattr(solver, "_wait_interruptibly", lambda _seconds: None)
     solver._focus_os_window = lambda: True
     solver._map_css_to_screen = lambda *_args, **_kwargs: {
-        "x": 593, "y": 604, "distance": 256, "located": True, "source": "x11_window_geometry",
+        "x": 593,
+        "y": 604,
+        "distance": 256,
+        "located": True,
+        "source": "x11_window_geometry",
     }
-    solver._move_os_cursor_timed = lambda *_args: pytest.fail("Motion while left button is held")
+    solver._move_os_cursor_timed = lambda *_args: pytest.fail(
+        "Motion while left button is held"
+    )
 
     assert solver._do_drag_os(577, 486, 256, slider_info={}) is None
     assert solver.last_failure_reason == "os_button_state_unverified"

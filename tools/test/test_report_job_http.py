@@ -15,15 +15,29 @@ from tools.test.test_quality_http_guards import api as api
 
 REPORTS = (
     ("/api/avm/drift_status", "tools.check_feature_drift", "generate_drift_report"),
-    ("/api/analysis/drift_status", "tools.check_feature_drift", "generate_drift_report"),
+    (
+        "/api/analysis/drift_status",
+        "tools.check_feature_drift",
+        "generate_drift_report",
+    ),
     ("/api/avm/release_gate", "tools.avm_release_gate", "generate_release_gate_report"),
-    ("/api/analysis/release_gate", "tools.avm_release_gate", "generate_release_gate_report"),
-    ("/api/avm/recent_gap_audit", "tools.audit_recent_avm_gaps", "build_recent_gap_audit"),
+    (
+        "/api/analysis/release_gate",
+        "tools.avm_release_gate",
+        "generate_release_gate_report",
+    ),
+    (
+        "/api/avm/recent_gap_audit",
+        "tools.audit_recent_avm_gaps",
+        "build_recent_gap_audit",
+    ),
 )
 
 
 @pytest.mark.parametrize("path,module,function", REPORTS)
-def test_report_generation_is_polled(job_api, monkeypatch, path, module, function, tmp_path):
+def test_report_generation_is_polled(
+    job_api, monkeypatch, path, module, function, tmp_path
+):
     entered, release = threading.Event(), threading.Event()
     calls = []
 
@@ -34,7 +48,11 @@ def test_report_generation_is_polled(job_api, monkeypatch, path, module, functio
         return {"pass": False, "assessment": "insufficient-data"}
 
     monkeypatch.setattr(importlib.import_module(module), function, generate)
-    monkeypatch.setattr(server, "_avm_operator_eval_summary", lambda *_args, **_kwargs: {"summary": "available"})
+    monkeypatch.setattr(
+        server,
+        "_avm_operator_eval_summary",
+        lambda *_args, **_kwargs: {"summary": "available"},
+    )
     try:
         status, _, raw = job_api("POST", path, b'{"window_days":0}', HEADERS)
         assert status == 202, raw
@@ -55,7 +73,9 @@ def test_report_generation_is_polled(job_api, monkeypatch, path, module, functio
         assert json.loads(saved.read_text(encoding="utf-8")) == job["result"]
 
 
-def test_gap_report_publish_failure_keeps_confirmed_bytes(job_api, monkeypatch, tmp_path):
+def test_gap_report_publish_failure_keeps_confirmed_bytes(
+    job_api, monkeypatch, tmp_path
+):
     report = tmp_path / "avm" / "recent_gap_audit.json"
     report.parent.mkdir(parents=True)
     before = b'{"previous":"confirmed"}'
@@ -68,7 +88,9 @@ def test_gap_report_publish_failure_keeps_confirmed_bytes(job_api, monkeypatch, 
         return original_replace(source, target)
 
     module = importlib.import_module("tools.audit_recent_avm_gaps")
-    monkeypatch.setattr(module, "build_recent_gap_audit", lambda **_options: {"new": "report"})
+    monkeypatch.setattr(
+        module, "build_recent_gap_audit", lambda **_options: {"new": "report"}
+    )
     monkeypatch.setattr(archive_json_io.os, "replace", replace)
     status, _, raw = job_api("POST", "/api/avm/recent_gap_audit", b"{}", HEADERS)
     assert status == 202, raw

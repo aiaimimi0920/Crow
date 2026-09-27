@@ -1,7 +1,21 @@
 from __future__ import annotations
 
-from src import llm_model_selector, llm_websocket
-from tools.test.llm_helper_openai_compatible_test_context import *
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+import requests
+
+from src import llm_helper, llm_model_selector, llm_openai_compatible, llm_websocket
+from tools.test.llm_helper_openai_compatible_test_context import (
+    _FakeResponse,
+    _FakeUtf8Response,
+)
 
 
 def test_compatibility_facade_preserves_exported_class_identity(monkeypatch):
@@ -9,7 +23,7 @@ def test_compatibility_facade_preserves_exported_class_identity(monkeypatch):
     assert llm_helper.AIService is llm_websocket.AIService
     assert llm_helper.Ws_Param is llm_websocket.Ws_Param
     monkeypatch.setattr(llm_model_selector, "_selector", None)
-    monkeypatch.setattr(llm_helper, "get_model_pool", lambda: [])
+    monkeypatch.setattr(llm_model_selector, "get_model_pool", lambda: [])
     assert isinstance(llm_helper.get_model_selector(), llm_helper.ModelSelector)
 
 
@@ -27,7 +41,7 @@ def test_chat_with_glm_uses_openai_compatible_backend_when_env_is_set(monkeypatc
     def fake_session_factory():
         return FakeSession()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", fake_session_factory)
+    monkeypatch.setattr(requests, "Session", fake_session_factory)
 
     class BrokenAIService:
         def __init__(self, *args, **kwargs):
@@ -36,7 +50,7 @@ def test_chat_with_glm_uses_openai_compatible_backend_when_env_is_set(monkeypatc
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
-    monkeypatch.setattr(llm_helper, "AIService", BrokenAIService)
+    monkeypatch.setattr(llm_openai_compatible, "AIService", BrokenAIService)
 
     result = llm_helper.chat_with_glm("return json")
 
@@ -62,7 +76,7 @@ def test_chat_with_glm_forwards_valid_reasoning_effort(monkeypatch):
             calls.append(json)
             return _FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
@@ -98,7 +112,7 @@ def test_explicit_analysis_model_rejects_gpt_route_before_request(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-flash-0731")
     monkeypatch.setattr(
-        llm_helper,
+        llm_openai_compatible,
         "_chat_with_openai_compatible",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("rejected GPT route must not reach the gateway")
@@ -121,7 +135,7 @@ def test_chat_with_glm_applies_explicit_openai_compatible_proxy_without_trusting
             calls.append({"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env})
             return _FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
@@ -159,7 +173,7 @@ def test_preflight_openai_compatible_backend_uses_same_proxy_controls(monkeypatc
             calls.append({"url": url, "headers": headers, "timeout": timeout, "proxies": dict(self.proxies), "trust_env": self.trust_env})
             return FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("FAPAI_HTTPS_PROXY", "http://fapai-proxy.local:3128")
@@ -194,7 +208,7 @@ def test_preflight_local_openai_compatible_backend_bypasses_generic_fapai_proxy(
             calls.append({"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env})
             return FakeResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
     monkeypatch.setenv("OPENAI_BASE_URL", "http://host.docker.internal:8317/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("FAPAI_HTTP_PROXY", "http://collector-proxy.local:3128")
@@ -245,7 +259,7 @@ def test_preflight_openai_compatible_backend_can_probe_chat_completions(monkeypa
             )
             return BusyChatResponse()
 
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
@@ -337,7 +351,7 @@ def test_chat_with_glm_decodes_openai_compatible_utf8_even_without_charset(monke
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.chat_with_glm("return json")
 
@@ -372,8 +386,8 @@ def test_chat_with_glm_retries_transient_openai_compatible_503(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.setenv("OPENAI_MAX_RETRIES", "2")
-    monkeypatch.setattr(llm_helper.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.chat_with_glm("return json")
 
@@ -409,8 +423,8 @@ def test_chat_with_glm_retries_transient_openai_compatible_524(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.setenv("OPENAI_MAX_RETRIES", "2")
-    monkeypatch.setattr(llm_helper.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(llm_helper.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
     result = llm_helper.chat_with_glm("return json")
 

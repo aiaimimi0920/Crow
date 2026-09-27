@@ -7,6 +7,7 @@ import threading
 from collections.abc import Mapping
 from pathlib import Path
 
+from src.collection_job_control import DEFAULT_TIMEOUT_SECONDS, positive_timeout
 from src.collection_jobs import CollectionJobManager, JobQueueFull
 
 CERT_ENV = "FAPAI_API_TLS_CERT_FILE"
@@ -44,8 +45,10 @@ class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         bind_and_activate: bool = True,
         *,
         tls: ssl.SSLContext | None = None,
+        job_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         self.tls = tls
+        self._job_timeout = positive_timeout(job_timeout_seconds)
         self._jobs_lock = threading.Lock()
         self._jobs: CollectionJobManager | None = None
         self._jobs_root: Path | None = None
@@ -58,7 +61,9 @@ class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
             if self._closing:
                 raise JobQueueFull("Collection API is closing")
             if self._jobs is None:
-                self._jobs = CollectionJobManager(root)
+                self._jobs = CollectionJobManager(
+                    root, timeout_seconds=self._job_timeout
+                )
                 self._jobs_root = root
             if self._jobs_root != root:
                 raise ValueError("Collection job data root changed; restart the API")

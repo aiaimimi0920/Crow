@@ -307,37 +307,6 @@ class DataFixerAppPart04:
 
         self.log(f"已按面积排序 (有效面积优先)")
 
-    def setup_routes(self, server):
-        # Task retrieval advances shared collection state and must not be
-        # triggerable by browser prefetches or cross-site GET requests.
-        @server.app.route('/api/next_task', methods=['POST'])
-        def get_next_task():
-            return jsonify(self.get_next_task())
-
-        @server.app.route('/api/get_item', methods=['GET'])
-        def get_item():
-            item_id = request.args.get('id')
-            if not item_id:
-                return jsonify({'error': 'No ID provided'}), 400
-
-            item = self.get_item_by_id(item_id)
-            if item:
-                return jsonify(item)
-            else:
-                return jsonify({'error': 'Item not found'}), 404
-
-        @server.app.route('/api/area_result', methods=['POST'])
-        def receive_area():
-            data = request.json
-            self.root.after(0, lambda: self.add_item(data))
-            return jsonify({'status': 'ok'})
-
-        @server.app.route('/api/approve_area', methods=['POST'])
-        def approve_area():
-            data = request.json
-            self.root.after(0, lambda: self.approve_external(data))
-            return jsonify({'status': 'ok'})
-
     def skip_single(self, idx):
         """Skip single item"""
         self.remove_row_by_idx(idx)

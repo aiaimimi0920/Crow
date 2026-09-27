@@ -6,7 +6,6 @@ import logging
 import re
 
 import requests
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +15,8 @@ def filter_content(html_content):
     Filter HTML content using BeautifulSoup to preserve structure (divs, tables)
     but remove scripts, styles, and other noise.
     """
+    from bs4 import BeautifulSoup
+
     try:
         # Use lxml if available, else html.parser
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -144,6 +145,8 @@ def _parse_description_data_link(soup):
 
 def fetch_description_data_text(html_content, *, timeout=20):
     """Fetch Taobao/Tmall async description HTML referenced by #description-data."""
+    from bs4 import BeautifulSoup
+
     if not html_content:
         return None
     try:
