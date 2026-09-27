@@ -1,5 +1,11 @@
 # Crow code-quality remaining work (2026-09-25)
 
+> Superseded as the active development plan on 2026-09-26 by
+> [the collection-engine independence plan](collection-engine-independence-20260926.md).
+> Keep this file as historical findings and verification evidence. R1-R9 are not
+> mandatory completion items for the adopted collection pipeline; unused AVM,
+> valuation and prediction optimization is deferred. Follow the new plan's scope.
+
 Status: **incomplete**. This inventory reconciles the original
 [58 findings and three implementation batches](code-quality-review-20260920.md)
 with the current source and the
