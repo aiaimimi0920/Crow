@@ -39,8 +39,10 @@ ImportError。另验证关闭等待仍在执行的详情、拒绝新写请求、
   旧混合 server/context 的动态导出 lint 债务未在本包扩展清理。
 - 有效行工具测试 19 passed；最终 ratchet 1362 个文件，无超过 500 有效行的文件。
   没有改动基线或排除规则。UTF-8 无 BOM 和差异检查通过。
-- 集中测试后仅做类型表达、等价 host 属性发布、格式及测试 `zip(strict=True)` 修正；
-  不把此前失败的运行与这次 209 项结果合并计数。
+- 集中测试后做了类型表达、等价 host 属性发布、格式及测试 `zip(strict=True)` 修正。
+  C3 的新进程复测发现其中 `typing.Self` 的运行时导入不兼容 Python 3.10；已改为
+  TYPE_CHECKING 内的 typing_extensions 导入，两个新进程再次通过。该修正随 C3 提交。
+  因此 209 项证据对应类型调整前的状态，不将 `587cd1f46` 单独当作完整运行候选。
 
 新增 API 探针加入 fast，`collection-runtime` 和组合入口静态检查接入 CI。
 本包没有完整 fast/security、PostgreSQL、桌面构建、真实 AI 或安装验收结果。

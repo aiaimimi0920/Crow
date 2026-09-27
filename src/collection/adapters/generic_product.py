@@ -157,13 +157,13 @@ class GenericProductAdapter:
         record["id"] = item_id
         record["item_id"] = item_id
         record["source_item_id"] = str(source_item_id)
-        record.setdefault(
-            "source_platform", existing.get("source_platform") or self.source_platform
+        record["source_platform"] = (
+            existing.get("source_platform") or self.source_platform
         )
-        source_url = self.source_url(record) or self.source_url(existing)
+        source_url = self.source_url(existing) or self.source_url(record)
         if source_url:
-            record.setdefault("url", source_url)
-            record.setdefault("source_url", source_url)
+            record["url"] = source_url
+            record["source_url"] = source_url
 
     def accepts_detail(self, record: Mapping[str, Any]) -> bool:
         return str(record.get("status") or "").strip().lower() not in {

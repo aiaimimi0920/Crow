@@ -44,7 +44,7 @@ def control_import_results(tmp_path_factory):
         return result
 
     # Every assertion still sees a fresh interpreter and private working directory.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         return dict(
             zip(
                 _CONTROL_IMPORT_MODULES,

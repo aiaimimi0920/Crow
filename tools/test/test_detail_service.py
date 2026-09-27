@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.collection.adapters import GenericProductAdapter, TaobaoJudicialAuctionAdapter
+from src.collection.detail_execution import DetailModels, DetailRuntime, DetailStorage
+from src.collection.detail_extractors import CallableDetailExtractor
 from src.collection.detail_service import DetailCollectionService
 
 
@@ -15,7 +17,10 @@ def _submit_detail_html(tmp_path: Path, *, status: str):
         "item": {
             "file_path": str(tmp_path / "seed.json"),
             "cached": True,
-            "data": {"id": item_id, "url": f"https://sf-item.taobao.com/sf_item/{item_id}.htm"},
+            "data": {
+                "id": item_id,
+                "url": f"https://sf-item.taobao.com/sf_item/{item_id}.htm",
+            },
         },
     }
 
@@ -31,10 +36,16 @@ def _submit_detail_html(tmp_path: Path, *, status: str):
         data["resync_reset"] = True
 
     def update_file_global(file_path, candidate_id, data):
-        state["updated"] = {"file_path": file_path, "id": candidate_id, "data": dict(data)}
+        state["updated"] = {
+            "file_path": file_path,
+            "id": candidate_id,
+            "data": dict(data),
+        }
 
     def persist_item_to_db(data, event_type, meta):
-        state["persisted"].append({"event_type": event_type, "meta": meta, "data": dict(data)})
+        state["persisted"].append(
+            {"event_type": event_type, "meta": meta, "data": dict(data)}
+        )
 
     def evict_runtime_item(candidate_id):
         state.setdefault("evicted", []).append(candidate_id)
@@ -66,7 +77,9 @@ def test_failed_timeout_detail_html_persists_status_without_ai_queue(tmp_path: P
     assert html_path.exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_timeout"
-    assert [event["event_type"] for event in state["persisted"]] == ["analyze_html_status"]
+    assert [event["event_type"] for event in state["persisted"]] == [
+        "analyze_html_status"
+    ]
 
 
 def test_failed_captcha_detail_html_persists_status_without_ai_queue(tmp_path: Path):
@@ -76,15 +89,21 @@ def test_failed_captcha_detail_html_persists_status_without_ai_queue(tmp_path: P
     assert html_path.exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_captcha"
-    assert [event["event_type"] for event in state["persisted"]] == ["analyze_html_status"]
+    assert [event["event_type"] for event in state["persisted"]] == [
+        "analyze_html_status"
+    ]
 
 
-def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp_path: Path):
+def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(
+    tmp_path: Path,
+):
     item_id = "747988656830"
     html_dir = tmp_path / "html"
     html_dir.mkdir()
     html_path = html_dir / f"item-{item_id}.html"
-    html_path.write_text("<html><body>loaded detail page</body></html>", encoding="utf-8")
+    html_path.write_text(
+        "<html><body>loaded detail page</body></html>", encoding="utf-8"
+    )
 
     seed_data = {
         "id": int(item_id),
@@ -101,7 +120,11 @@ def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp
         "pending_tasks": [item_id],
         "persisted": [],
         "updated": None,
-        "item": {"file_path": str(tmp_path / "seed.json"), "cached": True, "data": dict(seed_data)},
+        "item": {
+            "file_path": str(tmp_path / "seed.json"),
+            "cached": True,
+            "data": dict(seed_data),
+        },
     }
 
     service = DetailCollectionService(tmp_path, adapter=TaobaoJudicialAuctionAdapter())
@@ -109,14 +132,17 @@ def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp
     def get_working_item(candidate_id: str, include_processed: bool = False):
         return state["item"] if candidate_id == item_id else None
 
-    def get_data_path(_date):
-        return str(tmp_path / "archive.json")
-
     def update_item_in_json(file_path, candidate_id, data):
-        state["updated"] = {"file_path": file_path, "id": candidate_id, "data": dict(data)}
+        state["updated"] = {
+            "file_path": file_path,
+            "id": candidate_id,
+            "data": dict(data),
+        }
 
     def persist_item_to_db(data, event_type, meta):
-        state["persisted"].append({"event_type": event_type, "meta": meta, "data": dict(data)})
+        state["persisted"].append(
+            {"event_type": event_type, "meta": meta, "data": dict(data)}
+        )
 
     def extract_auction_data(_content, item_id=None):
         return """
@@ -146,21 +172,28 @@ def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp
 
     service.process_html_file(
         str(html_path),
-        get_working_item=get_working_item,
-        get_data_path=get_data_path,
-        update_item_in_json=update_item_in_json,
-        remove_item_from_json=lambda *_args: None,
-        persist_item_to_db=persist_item_to_db,
-        mark_item_deleted_in_db=lambda *_args: None,
-        evict_runtime_item=lambda *_args: None,
-        prefer_db_task_reads=lambda: False,
-        sync_avm_risk_aliases=sync_avm_risk_aliases,
-        extract_auction_data=extract_auction_data,
-        extract_avm_risk_features=extract_avm_risk_features,
-        log_prediction_event=lambda **_kwargs: None,
-        queue_pending=lambda _item_id: True,
-        set_seen=lambda *_args: None,
-        remove_pending=lambda candidate_id: state["pending_tasks"].remove(candidate_id),
+        storage=DetailStorage(
+            get_working_item=get_working_item,
+            update_item_in_json=update_item_in_json,
+            remove_item_from_json=lambda *_args: None,
+            persist_item_to_db=persist_item_to_db,
+            mark_item_deleted_in_db=lambda *_args: None,
+        ),
+        runtime=DetailRuntime(
+            evict_runtime_item=lambda *_args: None,
+            prefer_db_task_reads=lambda: False,
+            queue_pending=lambda _item_id: True,
+            set_seen=lambda *_args: None,
+            remove_pending=lambda candidate_id: state["pending_tasks"].remove(
+                candidate_id
+            ),
+        ),
+        models=DetailModels(
+            extractor=CallableDetailExtractor(extract_auction_data),
+            sync_risk=sync_avm_risk_aliases,
+            extract_risk=extract_avm_risk_features,
+            report=lambda **_kwargs: None,
+        ),
     )
 
     updated = state["updated"]["data"]
@@ -183,7 +216,12 @@ def test_process_html_file_preserves_seed_values_when_ai_returns_null_fields(tmp
 
 def test_generic_seed_preservation_entrypoint_uses_the_configured_adapter():
     record = {"source_item_id": "sku-1", "source_platform": "catalog_x", "price": None}
-    seed = {"source_item_id": "sku-1", "source_platform": "catalog_x", "price": 42, "name": "Seed"}
+    seed = {
+        "source_item_id": "sku-1",
+        "source_platform": "catalog_x",
+        "price": 42,
+        "name": "Seed",
+    }
 
     DetailCollectionService._preserve_seed_values(
         record,
@@ -200,7 +238,12 @@ def test_generic_seed_preservation_entrypoint_uses_the_configured_adapter():
 
 
 def test_legacy_seed_preservation_entrypoint_delegates_to_auction_adapter():
-    record = {"id": "legacy-1", "source_item_id": "legacy-1", "建筑面积": 80, "成交价格": None}
+    record = {
+        "id": "legacy-1",
+        "source_item_id": "legacy-1",
+        "建筑面积": 80,
+        "成交价格": None,
+    }
     seed = {
         "id": "legacy-1",
         "title": "Seed title",

@@ -4,9 +4,13 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
+from .collection.detail_execution import DetailModels, DetailRuntime, DetailStorage
+from .collection.detail_extractors import resolve_detail_extractor
+from .collection.detail_failures import DetailFailures
 from .collection_index_bootstrap import BootstrapGlob
 from .collection_runtime_index import CollectionRuntimeIndex
 from .runtime_state import RuntimeState
@@ -31,6 +35,7 @@ class FileClock(Protocol):
 
 class FileModel(Protocol):
     extract_auction_data: Callable[..., str]
+    extract_product_data: Callable[..., str]
     extract_avm_risk_features: Callable[[str, str | None], dict[str, object]]
     log_prediction_event: Callable[..., None]
 
@@ -51,7 +56,6 @@ class CollectionFileHost(Protocol):
     _collection_runtime_index: Callable[[], CollectionRuntimeIndex]
     _detail_collection_service: Callable[[], "DetailCollectionService"]
     _get_working_item: Callable[[str, bool], dict[str, object] | None]
-    get_data_path: Callable[[object], str]
     update_item_in_json: Callable[[str, str, dict[str, object]], None]
     remove_item_from_json: Callable[[str, str], None]
     persist_item_to_db: Callable[
@@ -76,6 +80,8 @@ class CollectionFileRuntime:
 
     def submit_task(self, file_path: str) -> None:
         host = self.host
+        if not DetailFailures(Path(host.DATA_DIR)).ready(file_path):
+            return
         processing = host.RUNTIME.processing
         if not processing.claim(file_path):
             return
@@ -89,23 +95,31 @@ class CollectionFileRuntime:
     def process_single_file(self, file_path: str) -> None:
         host = self.host
         collection = host._collection_runtime_index()
-        host._detail_collection_service().process_html_file(
+        service = host._detail_collection_service()
+        service.process_html_file(
             file_path,
-            get_working_item=host._get_working_item,
-            get_data_path=host.get_data_path,
-            update_item_in_json=host.update_item_in_json,
-            remove_item_from_json=host.remove_item_from_json,
-            persist_item_to_db=host.persist_item_to_db,
-            mark_item_deleted_in_db=host.mark_item_deleted_in_db,
-            evict_runtime_item=host._evict_runtime_item,
-            prefer_db_task_reads=host._prefer_db_task_reads,
-            sync_avm_risk_aliases=host.sync_avm_risk_aliases,
-            extract_auction_data=host.llm_helper.extract_auction_data,
-            extract_avm_risk_features=host.llm_helper.extract_avm_risk_features,
-            log_prediction_event=host.llm_helper.log_prediction_event,
-            queue_pending=collection.queue_pending,
-            set_seen=collection.set_seen,
-            remove_pending=collection.remove_pending,
+            storage=DetailStorage(
+                get_working_item=host._get_working_item,
+                update_item_in_json=host.update_item_in_json,
+                remove_item_from_json=host.remove_item_from_json,
+                persist_item_to_db=host.persist_item_to_db,
+                mark_item_deleted_in_db=host.mark_item_deleted_in_db,
+            ),
+            runtime=DetailRuntime(
+                evict_runtime_item=host._evict_runtime_item,
+                prefer_db_task_reads=host._prefer_db_task_reads,
+                queue_pending=collection.queue_pending,
+                set_seen=collection.set_seen,
+                remove_pending=collection.remove_pending,
+            ),
+            models=DetailModels(
+                extractor=resolve_detail_extractor(
+                    adapter=service.adapter, gateway=host.llm_helper
+                ),
+                extract_risk=host.llm_helper.extract_avm_risk_features,
+                sync_risk=host.sync_avm_risk_aliases,
+                report=host.llm_helper.log_prediction_event,
+            ),
         )
 
     def background_file_processor(self, stop_event: Event | None = None) -> None:

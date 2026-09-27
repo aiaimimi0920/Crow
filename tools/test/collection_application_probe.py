@@ -85,9 +85,15 @@ def run(root: Path, source: str) -> None:
             }
         )
 
+    def reject_source(*_args, **_kwargs):
+        raise AssertionError("wrong source extractor selected")
+
     app.host.llm_helper = SimpleNamespace(
-        extract_auction_data=extract,
-        extract_avm_risk_features=lambda *_args, **_kwargs: {},
+        extract_auction_data=extract if source == "taobao_sf" else reject_source,
+        extract_product_data=reject_source if source == "taobao_sf" else extract,
+        extract_avm_risk_features=(lambda *_args, **_kwargs: {})
+        if source == "taobao_sf"
+        else reject_source,
         log_prediction_event=lambda **_event: None,
         get_api_metrics=lambda: {"total_calls": len(calls)},
     )

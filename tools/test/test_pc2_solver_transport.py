@@ -3,35 +3,55 @@
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from tools import pc2_solver_transport as transport
 
-
-@pytest.mark.parametrize(
-    "module_name",
-    [
-        "tools.pc2_solver_config",
-        "tools.pc2_solver_transport",
-        "tools.pc2_solver_manual_handoff",
-        "tools.pc2_solver_auth",
-        "tools.pc2_solver_scope_policy",
-        "tools.pc2_solver_scope",
-        "tools.pc2_solver_state_store",
-        "tools.pc2_solver_retry_state",
-        "tools.pc2_solver_fallback",
-        "tools.pc2_solver_auth_pending",
-        "tools.pc2_solver_cdp",
-        "tools.pc2_solver_execution",
-        "tools.pc2_solver_loop_control",
-        "tools.pc2_solver_loop_probe",
-        "tools.pc2_solver_loop_failure",
-        "tools.pc2_solver_loop",
-    ],
+_IMPORT_MODULES = (
+    "tools.pc2_solver_config",
+    "tools.pc2_solver_transport",
+    "tools.pc2_solver_manual_handoff",
+    "tools.pc2_solver_auth",
+    "tools.pc2_solver_scope_policy",
+    "tools.pc2_solver_scope",
+    "tools.pc2_solver_state_store",
+    "tools.pc2_solver_retry_state",
+    "tools.pc2_solver_fallback",
+    "tools.pc2_solver_auth_pending",
+    "tools.pc2_solver_cdp",
+    "tools.pc2_solver_execution",
+    "tools.pc2_solver_loop_control",
+    "tools.pc2_solver_loop_probe",
+    "tools.pc2_solver_loop_failure",
+    "tools.pc2_solver_loop",
 )
-def test_transport_import_does_not_initialize_solver(module_name, tmp_path):
-    result = subprocess.run(
+
+
+@pytest.fixture(scope="module")
+def transport_import_results(tmp_path_factory):
+    root = tmp_path_factory.mktemp("pc2-import-probes")
+
+    def probe(module_name):
+        directory = root / module_name
+        directory.mkdir()
+        return _probe_transport_import(module_name, directory)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(zip(_IMPORT_MODULES, pool.map(probe, _IMPORT_MODULES), strict=True))
+
+
+@pytest.mark.parametrize("module_name", _IMPORT_MODULES)
+def test_transport_import_does_not_initialize_solver(
+    module_name, transport_import_results
+):
+    result = transport_import_results[module_name]
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _probe_transport_import(module_name, tmp_path):
+    return subprocess.run(
         [
             sys.executable,
             "-c",
@@ -56,7 +76,6 @@ def test_transport_import_does_not_initialize_solver(module_name, tmp_path):
         timeout=20,
         check=False,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_solver_heartbeat_is_written_atomically(monkeypatch, tmp_path):

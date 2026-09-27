@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import datetime
-import json
 import logging
 import tempfile
 import threading
-import time
 from copy import deepcopy
 from datetime import timezone as _timezone
 from pathlib import Path
@@ -13,10 +11,11 @@ from typing import Any, Callable, ContextManager, Dict
 
 from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
-from .contracts import CollectionAdapter, DetailExtractor
-from .detail_extractors import resolve_detail_extractor
+from .contracts import CollectionAdapter
+from .detail_execution import DetailModels, DetailRuntime, DetailStorage
+from .detail_failures import DetailFailures
+from .detail_location import DetailLocationInference
 from .detail_processor import DetailProcessor
-
 
 # The dispatch map is shared by HTTP worker threads.  Keep the cooldown check
 # and timestamp update atomic even when repository iteration performs I/O.
@@ -42,10 +41,14 @@ def _utc_now() -> datetime.datetime:
 
 
 def _as_utc(value: datetime.datetime) -> datetime.datetime:
-    return value.replace(tzinfo=_timezone.utc) if value.tzinfo is None else value.astimezone(_timezone.utc)
+    return (
+        value.replace(tzinfo=_timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(_timezone.utc)
+    )
 
 
-class DetailCollectionService:
+class DetailCollectionService(DetailLocationInference):
     """Thin orchestration wrapper for detail-stage automation entrypoints."""
 
     @staticmethod
@@ -74,7 +77,7 @@ class DetailCollectionService:
     ):
         self.data_root = Path(data_root)
         self.repository = repository
-        self.adapter = adapter or GenericProductAdapter()
+        self.adapter: CollectionAdapter = adapter or GenericProductAdapter()
         self._dispatch_lock = dispatch_lock or _DISPATCH_LOCK
 
     @property
@@ -91,12 +94,23 @@ class DetailCollectionService:
 
     @staticmethod
     def _expire_dispatches(
-        dispatched_tasks: Dict[str, datetime.datetime], now: datetime.datetime, cooldown_seconds: int,
+        dispatched_tasks: Dict[str, datetime.datetime],
+        now: datetime.datetime,
+        cooldown_seconds: int,
     ) -> None:
         # Only transient dispatch timestamps expire; archived records stay intact.
         expired = [
-            item_id for item_id, dispatched_at in dispatched_tasks.items()
-            if (now - (dispatched_at.replace(tzinfo=_timezone.utc) if dispatched_at.tzinfo is None else dispatched_at)).total_seconds() >= cooldown_seconds
+            item_id
+            for item_id, dispatched_at in dispatched_tasks.items()
+            if (
+                now
+                - (
+                    dispatched_at.replace(tzinfo=_timezone.utc)
+                    if dispatched_at.tzinfo is None
+                    else dispatched_at
+                )
+            ).total_seconds()
+            >= cooldown_seconds
         ]
         for item_id in expired:
             dispatched_tasks.pop(item_id, None)
@@ -121,10 +135,22 @@ class DetailCollectionService:
             for candidate in self.repository.iter_pending_task_items(limit=100):
                 tid = str(candidate["id"])
                 with lock:
-                    last_time = get_dispatched(tid) if get_dispatched is not None else dispatched_tasks.get(tid)
-                    if last_time and (now - _as_utc(last_time)).total_seconds() < cooldown_seconds:
+                    last_time = (
+                        get_dispatched(tid)
+                        if get_dispatched is not None
+                        else dispatched_tasks.get(tid)
+                    )
+                    if (
+                        last_time
+                        and (now - _as_utc(last_time)).total_seconds()
+                        < cooldown_seconds
+                    ):
                         continue
-                    timestamp = now.replace(tzinfo=None) if last_time and last_time.tzinfo is None else now
+                    timestamp = (
+                        now.replace(tzinfo=None)
+                        if last_time and last_time.tzinfo is None
+                        else now
+                    )
                     if mark_dispatched is not None:
                         mark_dispatched(tid, timestamp)
                     else:
@@ -153,7 +179,15 @@ class DetailCollectionService:
         candidate_entries: list[tuple[str, Dict[str, Any]]] = []
         if self.repository and getattr(self.repository, "enabled", False):
             candidate_entries = [
-                (str(item.get("id")), {"data": {"url": item.get("url"), "is_processed": item.get("is_processed", False)}})
+                (
+                    str(item.get("id")),
+                    {
+                        "data": {
+                            "url": item.get("url"),
+                            "is_processed": item.get("is_processed", False),
+                        }
+                    },
+                )
                 for item in self.repository.iter_pending_flat_items(limit=500)
             ]
         elif legacy_entries is not None:
@@ -170,14 +204,35 @@ class DetailCollectionService:
             txt_path = self.data_root / f"item-{item_id}.txt"
             p_html = self.data_root / "html" / f"{html_name}.processing"
             p_legacy = self.data_root / f"{html_name}.processing"
-            exists = any(path.exists() for path in (html_path, retry_path, legacy_html, txt_path, p_html, p_legacy))
+            exists = any(
+                path.exists()
+                for path in (
+                    html_path,
+                    retry_path,
+                    legacy_html,
+                    txt_path,
+                    p_html,
+                    p_legacy,
+                )
+            )
             if exists:
                 continue
             with lock:
-                last_time = get_dispatched(item_id) if get_dispatched is not None else dispatched_tasks.get(item_id)
-                if last_time and (now - _as_utc(last_time)).total_seconds() < cooldown_seconds:
+                last_time = (
+                    get_dispatched(item_id)
+                    if get_dispatched is not None
+                    else dispatched_tasks.get(item_id)
+                )
+                if (
+                    last_time
+                    and (now - _as_utc(last_time)).total_seconds() < cooldown_seconds
+                ):
                     continue
-                timestamp = now.replace(tzinfo=None) if last_time and last_time.tzinfo is None else now
+                timestamp = (
+                    now.replace(tzinfo=None)
+                    if last_time and last_time.tzinfo is None
+                    else now
+                )
                 if mark_dispatched is not None:
                     mark_dispatched(item_id, timestamp)
                 else:
@@ -208,25 +263,44 @@ class DetailCollectionService:
         if self.repository and getattr(self.repository, "enabled", False):
             counts = self.repository.counts_snapshot()
             total_count = counts["db_total_ids"]
-            pending_candidates = self.repository.iter_pending_task_items(limit=batch_size * 3)
+            pending_candidates = self.repository.iter_pending_task_items(
+                limit=batch_size * 3
+            )
             pending_count = counts["db_pending_ids"]
             done_count = max(0, total_count - pending_count)
             tasks = []
             for candidate in pending_candidates:
                 tid = str(candidate["id"])
                 with self._dispatch_lock:
-                    last_time = get_dispatched(tid) if get_dispatched is not None else dispatched_tasks.get(tid)
-                    if last_time and (now - _as_utc(last_time)).total_seconds() < cooldown_seconds:
+                    last_time = (
+                        get_dispatched(tid)
+                        if get_dispatched is not None
+                        else dispatched_tasks.get(tid)
+                    )
+                    if (
+                        last_time
+                        and (now - _as_utc(last_time)).total_seconds()
+                        < cooldown_seconds
+                    ):
                         continue
                     tasks.append({"id": tid, "url": candidate.get("url")})
-                    timestamp = now.replace(tzinfo=None) if last_time and last_time.tzinfo is None else now
+                    timestamp = (
+                        now.replace(tzinfo=None)
+                        if last_time and last_time.tzinfo is None
+                        else now
+                    )
                     if mark_dispatched is not None:
                         mark_dispatched(tid, timestamp)
                     else:
                         dispatched_tasks[tid] = timestamp
                     if len(tasks) >= batch_size:
                         break
-            return {"tasks": tasks, "total": total_count, "done": done_count, "pending": pending_count}
+            return {
+                "tasks": tasks,
+                "total": total_count,
+                "done": done_count,
+                "pending": pending_count,
+            }
         return {"tasks": [], "total": 0, "done": 0, "pending": 0}
 
     def submit_html(
@@ -292,7 +366,10 @@ class DetailCollectionService:
             if normalized_status.startswith("failed_") and prefer_db_task_reads():
                 evict_runtime_item(item_id)
 
-        staged_path.replace(html_path)
+        with self._dispatch_lock:
+            staged_path.replace(html_path)
+            DetailFailures(self.data_root).clear(item_id)
+            (self.retry_dir / f"item-{item_id}.html.retry").unlink(missing_ok=True)
         logger.info("Saved HTML to %s", html_path)
         if status and str(status).strip().lower().startswith("failed_"):
             return {"status": "queued"}
@@ -319,7 +396,7 @@ class DetailCollectionService:
         mark_processed: bool = False,
         force_status: str | None = None,
     ) -> Dict[str, Any]:
-        working_item = get_working_item(item_id, include_processed=True)
+        working_item = get_working_item(item_id, True)
         if not (item_id and working_item):
             return {"status": "id_not_found"}
 
@@ -351,105 +428,24 @@ class DetailCollectionService:
             evict_runtime_item(item_id)
         return {"status": "ok"}
 
-    def infer_location(
-        self,
-        *,
-        address: str,
-        title: str,
-        item_id: str | None,
-        chat_with_glm: Callable[[str], str],
-        log_prediction_event: Callable[..., None],
-    ) -> Dict[str, Any]:
-        prompt = self.adapter.location_prompt(address=address, title=title)
-        if prompt is None:
-            log_prediction_event(
-                task_type="infer_location",
-                item_id=item_id,
-                duration_ms=0,
-                recall_count=0,
-                final_confidence=None,
-                success=False,
-                failure_reason="location inference is not supported by this collection adapter",
-            )
-            return {}
-        infer_started_at = time.time()
-        try:
-            resp = chat_with_glm(prompt)
-            if "```json" in resp:
-                resp = resp.split("```json")[1].split("```")[0]
-            elif "```" in resp:
-                resp = resp.split("```")[1].split("```")[0]
-            result = json.loads(resp.strip())
-            log_prediction_event(
-                task_type="infer_location",
-                item_id=item_id,
-                duration_ms=(time.time() - infer_started_at) * 1000,
-                recall_count=None,
-                final_confidence=None,
-                success=True,
-                failure_reason=None,
-            )
-            return result
-        except Exception as e:
-            logger.exception("Error calling LLM for location inference")
-            log_prediction_event(
-                task_type="infer_location",
-                item_id=item_id,
-                duration_ms=(time.time() - infer_started_at) * 1000,
-                recall_count=0,
-                final_confidence=None,
-                success=False,
-                failure_reason=str(e),
-            )
-            return {}
-
     def process_html_file(
         self,
         file_path: str,
         *,
-        get_working_item: Callable[[str, bool], Dict[str, Any] | None],
-        get_data_path: Callable[[Any], str],
-        update_item_in_json: Callable[[str, str, Dict[str, Any]], None],
-        remove_item_from_json: Callable[[str, str], None],
-        persist_item_to_db: Callable[[Dict[str, Any], str, Dict[str, Any] | None], None],
-        mark_item_deleted_in_db: Callable[[str, str, Dict[str, Any] | None], None],
-        evict_runtime_item: Callable[[str], None],
-        prefer_db_task_reads: Callable[[], bool],
-        sync_avm_risk_aliases: Callable[[Dict[str, Any]], Dict[str, Any]],
-        extract_avm_risk_features: Callable[[str, str | None], Dict[str, Any]],
-        log_prediction_event: Callable[..., None],
-        queue_pending: Callable[[str], bool],
-        set_seen: Callable[[str, Dict[str, Any]], None],
-        remove_pending: Callable[[str], None],
-        detail_extractor: DetailExtractor | None = None,
-        extract_auction_data: Callable[..., str] | None = None,
+        storage: DetailStorage,
+        runtime: DetailRuntime,
+        models: DetailModels,
     ) -> None:
-        resolved_detail_extractor = resolve_detail_extractor(
-            detail_extractor=detail_extractor,
-            legacy_extract_auction_data=extract_auction_data,
-        )
         DetailProcessor(
             data_root=self.data_root,
-            failed_dir=self.failed_dir,
             retry_dir=self.retry_dir,
             adapter=self.adapter,
+            capture_lock=self._dispatch_lock,
         ).process(
             file_path,
-            get_working_item=get_working_item,
-            get_data_path=get_data_path,
-            update_item_in_json=update_item_in_json,
-            remove_item_from_json=remove_item_from_json,
-            persist_item_to_db=persist_item_to_db,
-            mark_item_deleted_in_db=mark_item_deleted_in_db,
-            evict_runtime_item=evict_runtime_item,
-            prefer_db_task_reads=prefer_db_task_reads,
-            sync_avm_risk_aliases=sync_avm_risk_aliases,
-            detail_extractor=resolved_detail_extractor,
-            extract_avm_risk_features=extract_avm_risk_features,
-            log_prediction_event=log_prediction_event,
-            queue_pending=queue_pending,
-            set_seen=set_seen,
-            remove_pending=remove_pending,
+            storage=storage,
+            runtime=runtime,
+            models=models,
         )
 
     def fetch_missing_archives(

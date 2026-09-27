@@ -9,6 +9,7 @@ import pytest
 from src import archive_json_io, server_data_runtime
 from src.collection import detail_processor
 from src.collection.adapters import GenericProductAdapter
+from src.collection.detail_execution import DetailModels, DetailRuntime, DetailStorage
 from src.collection.detail_extractors import CallableDetailExtractor
 from src.collection.detail_service import DetailCollectionService
 
@@ -68,31 +69,36 @@ def test_archive_failure_preserves_detail_input_and_completion_state(
     process = partial(
         service.process_html_file,
         str(html),
-        get_working_item=lambda *_args, **_kwargs: {
-            "file_path": str(archive),
-            "data": {"id": "target", "title": "confirmed"},
-        },
-        get_data_path=lambda _: str(archive),
-        update_item_in_json=server_data_runtime.update_item_in_json,
-        remove_item_from_json=server_data_runtime.remove_item_from_json,
-        persist_item_to_db=server_data_runtime.persist_item_to_db
-        if phase == "database"
-        else advance,
-        mark_item_deleted_in_db=server_data_runtime.mark_item_deleted_in_db
-        if phase == "database"
-        else advance,
-        evict_runtime_item=advance,
-        prefer_db_task_reads=lambda: False,
-        sync_avm_risk_aliases=lambda _: None,
-        extract_avm_risk_features=lambda *_args, **_kwargs: None,
-        log_prediction_event=lambda **event: predictions.append(event),
-        queue_pending=advance,
-        set_seen=advance,
-        remove_pending=advance,
-        detail_extractor=CallableDetailExtractor(
-            lambda *_args, **_kwargs: json.dumps(
-                {"accept": accepted, "title": "candidate"}
-            )
+        storage=DetailStorage(
+            get_working_item=lambda *_args: {
+                "file_path": str(archive),
+                "data": {"id": "target", "title": "confirmed"},
+            },
+            update_item_in_json=server_data_runtime.update_item_in_json,
+            remove_item_from_json=server_data_runtime.remove_item_from_json,
+            persist_item_to_db=server_data_runtime.persist_item_to_db
+            if phase == "database"
+            else advance,
+            mark_item_deleted_in_db=server_data_runtime.mark_item_deleted_in_db
+            if phase == "database"
+            else advance,
+        ),
+        runtime=DetailRuntime(
+            evict_runtime_item=advance,
+            prefer_db_task_reads=lambda: False,
+            queue_pending=advance,
+            set_seen=advance,
+            remove_pending=advance,
+        ),
+        models=DetailModels(
+            extractor=CallableDetailExtractor(
+                lambda *_args, **_kwargs: json.dumps(
+                    {"accept": accepted, "title": "candidate"}
+                )
+            ),
+            sync_risk=lambda _: None,
+            extract_risk=lambda *_args, **_kwargs: None,
+            report=lambda **event: predictions.append(event),
         ),
     )
     process()
@@ -105,12 +111,15 @@ def test_archive_failure_preserves_detail_input_and_completion_state(
     assert advanced == []
     assert len(predictions) == 2
     assert all(event["success"] is False for event in predictions)
+    stage = {"records": "json", "source": "archive", "database": "database"}[phase]
     assert all(
-        "archive publication failed" in event["failure_reason"] for event in predictions
+        event["failure_reason"] == f"COLLECTION_DETAIL_{stage.upper()}_FAILED"
+        for event in predictions
     )
-    assert marker.exists()
-    if previous_failure:
+    if phase == "source" and previous_failure:
         assert marker.read_text(encoding="utf-8") == "prior extraction failure"
+    elif phase != "source":
+        assert json.loads(marker.read_text(encoding="utf-8"))["stage"] == stage
 
     monkeypatch.setattr(archive_json_io.os, failure, publish)
     monkeypatch.setattr(archive_json_io, "write_records", write_records)

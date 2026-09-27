@@ -1,26 +1,25 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
+from tools.test.collection_probe_runner import SOURCES, run_source_probes
 
-@pytest.mark.parametrize("source", ["catalog_x", "taobao_sf"])
-def test_seed_detail_storage_without_postprocessing(
-    tmp_path: Path, source: str
-) -> None:
+
+@pytest.fixture(scope="module")
+def storage_results(tmp_path_factory):
     probe = Path(__file__).with_name("collection_record_isolation_probe.py")
-    result = subprocess.run(
-        [sys.executable, str(probe), str(tmp_path), source],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
+    return run_source_probes(
+        probe,
+        tmp_path_factory.mktemp("collection-repositories"),
         timeout=30,
-        check=False,
     )
+
+
+@pytest.mark.parametrize("source", SOURCES)
+def test_seed_detail_storage_without_postprocessing(storage_results, source: str):
+    result = storage_results[source]
     assert result.returncode == 0, result.stdout + result.stderr
     assert "collection status HTTP passed without postprocessing" in result.stdout
     assert (

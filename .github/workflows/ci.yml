@@ -122,6 +122,10 @@ jobs:
       - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/collection/detail_archive_fetch.py tools/fetch_missing_detail_archives.py
       - run: python scripts/run_quality_tests.py --suite collection-storage
       - run: python scripts/run_quality_tests.py --suite collection-runtime
+      - run: python scripts/run_quality_tests.py --suite collection-detail
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection/detail_execution.py src/collection/detail_failures.py src/collection/detail_processor.py src/collection/detail_extractors.py src/collection/detail_location.py src/collection/adapters/taobao_judicial_profile.py tools/test/test_detail_commit_recovery.py
+      - run: python -m ruff format --check src/collection/detail_execution.py src/collection/detail_failures.py src/collection/detail_processor.py src/collection/detail_extractors.py src/collection/detail_location.py src/collection/adapters/taobao_judicial_profile.py tools/test/test_detail_commit_recovery.py
+      - run: python -m mypy --python-version 3.10 --strict --explicit-package-bases --follow-imports skip src/collection/detail_execution.py src/collection/detail_failures.py
       - run: python -m ruff check src/collection_application.py src/collection_application_delegates.py src/collection_runtime_config.py src/collection_http_handler.py src/collection_server.py tools/run_isolated_collection_api.py tools/test/test_collection_application.py tools/test/collection_application_probe.py
       - run: python -m ruff format --check src/collection_application.py src/collection_application_delegates.py src/collection_runtime_config.py src/collection_http_handler.py src/collection_server.py tools/run_isolated_collection_api.py tools/test/test_collection_application.py tools/test/collection_application_probe.py
       - run: python -m mypy --explicit-package-bases --follow-imports silent src/collection_application.py src/collection_application_delegates.py src/collection_runtime_config.py src/collection_http_handler.py src/collection_server.py tools/run_isolated_collection_api.py

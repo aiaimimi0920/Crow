@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.collection.adapters import GenericProductAdapter, TaobaoJudicialAuctionAdapter
 from src.collection_file_runtime import CollectionFileRuntime
 from src.runtime_state import RuntimeState
 
@@ -36,7 +37,7 @@ def test_data_runtime_has_left_cloning_without_losing_public_exports():
 
 def test_saved_processing_method_uses_replaced_service_and_callbacks(host, monkeypatch):
     process = host.process_single_file
-    for _ in range(2):
+    for adapter in (GenericProductAdapter(), TaobaoJudicialAuctionAdapter()):
         collection = RuntimeState().collection
         calls = []
         monkeypatch.setattr(
@@ -46,9 +47,10 @@ def test_saved_processing_method_uses_replaced_service_and_callbacks(host, monke
             raising=False,
         )
         service = SimpleNamespace(
+            adapter=adapter,
             process_html_file=lambda *args, calls=calls, **kwargs: calls.append(
                 (args, kwargs)
-            )
+            ),
         )
         monkeypatch.setattr(
             host,
@@ -58,7 +60,6 @@ def test_saved_processing_method_uses_replaced_service_and_callbacks(host, monke
         )
         names = {
             "get_working_item": "_get_working_item",
-            "get_data_path": "get_data_path",
             "update_item_in_json": "update_item_in_json",
             "remove_item_from_json": "remove_item_from_json",
             "persist_item_to_db": "persist_item_to_db",
@@ -72,6 +73,7 @@ def test_saved_processing_method_uses_replaced_service_and_callbacks(host, monke
             monkeypatch.setattr(host, name, expected[key], raising=False)
         model = SimpleNamespace(
             extract_auction_data=lambda: None,
+            extract_product_data=lambda: None,
             extract_avm_risk_features=lambda: None,
             log_prediction_event=lambda: None,
         )
@@ -79,12 +81,21 @@ def test_saved_processing_method_uses_replaced_service_and_callbacks(host, monke
         process("evidence.html")
         args, callbacks = calls[0]
         assert args == ("evidence.html",)
-        assert all(callbacks[key] is callback for key, callback in expected.items())
-        assert callbacks["extract_auction_data"] is model.extract_auction_data
-        assert callbacks["extract_avm_risk_features"] is model.extract_avm_risk_features
-        assert callbacks["log_prediction_event"] is model.log_prediction_event
+        actual = {
+            **vars(callbacks["storage"]),
+            **vars(callbacks["runtime"]),
+            "sync_avm_risk_aliases": callbacks["models"].sync_risk,
+        }
+        assert all(actual[key] is callback for key, callback in expected.items())
+        assert callbacks["models"].extractor.callback is (
+            model.extract_auction_data
+            if isinstance(adapter, TaobaoJudicialAuctionAdapter)
+            else model.extract_product_data
+        )
+        assert callbacks["models"].extract_risk is model.extract_avm_risk_features
+        assert callbacks["models"].report is model.log_prediction_event
         for key in ("queue_pending", "set_seen", "remove_pending"):
-            assert callbacks[key].__self__ is collection
+            assert actual[key].__self__ is collection
 
 
 @pytest.mark.parametrize("mode", ["files", "empty", "failure"])

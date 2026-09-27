@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from src.collection.detail_extractors import CallableDetailExtractor, resolve_detail_extractor
+from src.collection.adapters import GenericProductAdapter, TaobaoJudicialAuctionAdapter
+from src.collection.detail_extractors import (
+    CallableDetailExtractor,
+    resolve_detail_extractor,
+)
+from src.collection.runtime_adapter import extract_detail_payload
 
 
 def test_callable_detail_extractor_forwards_item_id() -> None:
@@ -15,24 +22,41 @@ def test_callable_detail_extractor_forwards_item_id() -> None:
     assert calls == [("page", "sku-7")]
 
 
-def test_resolve_detail_extractor_wraps_legacy_callable() -> None:
+@pytest.mark.parametrize("auction", [False, True])
+@pytest.mark.parametrize("model", [None, "isolated-model"])
+def test_resolve_detail_extractor_uses_source_policy(auction, model) -> None:
+    calls = []
+
+    def extract(kind, content, **options):
+        calls.append((kind, content, options))
+        return "{}"
+
+    gateway = SimpleNamespace(
+        extract_auction_data=lambda content, **options: extract(
+            "auction", content, **options
+        ),
+        extract_product_data=lambda content, **options: extract(
+            "product", content, **options
+        ),
+    )
     extractor = resolve_detail_extractor(
-        detail_extractor=None,
-        legacy_extract_auction_data=lambda _content, item_id=None: f'{{"id":"{item_id}"}}',
+        adapter=TaobaoJudicialAuctionAdapter() if auction else GenericProductAdapter(),
+        gateway=gateway,
+        model=model,
     )
 
-    assert extractor.extract("page", item_id="legacy-7") == '{"id":"legacy-7"}'
+    assert extractor.extract("page", item_id="source-7") == "{}"
+    options = {"item_id": "source-7", **({"model": model} if model else {})}
+    assert calls == [("auction" if auction else "product", "page", options)]
 
 
-def test_resolve_detail_extractor_rejects_ambiguous_or_missing_inputs() -> None:
+def test_custom_detail_extractor_rejects_ambiguous_model_override() -> None:
     extractor = CallableDetailExtractor(lambda *_args, **_kwargs: "{}")
-    with pytest.raises(ValueError, match="not both"):
-        resolve_detail_extractor(
+    with pytest.raises(ValueError, match="do not support model override"):
+        extract_detail_payload(
+            "page",
+            item_id="source-7",
+            adapter=GenericProductAdapter(),
             detail_extractor=extractor,
-            legacy_extract_auction_data=lambda *_args, **_kwargs: "{}",
-        )
-    with pytest.raises(ValueError, match="requires"):
-        resolve_detail_extractor(
-            detail_extractor=None,
-            legacy_extract_auction_data=None,
+            model="ambiguous-model",
         )

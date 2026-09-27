@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from functools import partial
+from typing import Callable, Protocol
 
-from .contracts import DetailExtractor
+from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
+from .contracts import CollectionAdapter, DetailExtractor
 
 
 @dataclass(frozen=True)
@@ -16,15 +18,22 @@ class CallableDetailExtractor:
         return self.callback(content, item_id=item_id)
 
 
+class DetailGateway(Protocol):
+    extract_auction_data: Callable[..., str]
+    extract_product_data: Callable[..., str]
+
+
 def resolve_detail_extractor(
     *,
-    detail_extractor: DetailExtractor | None,
-    legacy_extract_auction_data: Callable[..., str] | None,
+    adapter: CollectionAdapter,
+    gateway: DetailGateway,
+    model: str | None = None,
 ) -> DetailExtractor:
-    if detail_extractor is not None and legacy_extract_auction_data is not None:
-        raise ValueError("provide detail_extractor or extract_auction_data, not both")
-    if detail_extractor is not None:
-        return detail_extractor
-    if legacy_extract_auction_data is None:
-        raise ValueError("detail extraction requires detail_extractor or extract_auction_data")
-    return CallableDetailExtractor(legacy_extract_auction_data)
+    callback = (
+        gateway.extract_auction_data
+        if isinstance(adapter, TaobaoJudicialAuctionAdapter)
+        else gateway.extract_product_data
+    )
+    return CallableDetailExtractor(
+        partial(callback, model=model) if model else callback
+    )

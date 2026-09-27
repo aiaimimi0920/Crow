@@ -1,6 +1,7 @@
 """Explicit small offline suites; do not classify every legacy test as quick."""
 
 UNIT_FILES = (
+    "test_detail_commit_recovery.py",
     "test_collection_application.py",
     "test_collection_record_independence.py",
     "test_detail_persistence_failure.py",
@@ -193,6 +194,18 @@ SECURITY_FILES = (
     "test_utc_datetime_migration.py",
 )
 SUITES = {
+    "collection-detail": (
+        "test_detail_commit_recovery.py",
+        "test_collection_application.py",
+        "test_detail_persistence_failure.py",
+        "test_collection_archive_failure.py",
+        "test_detail_service.py",
+        "test_detail_extractors.py",
+        "test_collection_file_runtime_native.py",
+        "test_collection_working_items_native.py",
+        "test_collection_adapters.py",
+        "test_generic_collection_runtime.py",
+    ),
     "collection-runtime": (
         "test_collection_application.py",
         "test_runtime_lifecycle.py",

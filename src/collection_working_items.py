@@ -62,8 +62,12 @@ class CollectionWorkingItems:
         if host.DB_REPOSITORY.enabled:
             try:
                 item = host.DB_REPOSITORY.get_flat_item(normalized_id)
-            except Exception:
-                logger.exception("Working item fetch failed item=%s", normalized_id)
+            except Exception as error:
+                logger.error(
+                    "Working item fetch failed item=%s error_type=%s",
+                    normalized_id,
+                    type(error).__name__,
+                )
                 return None
             if not item:
                 return None

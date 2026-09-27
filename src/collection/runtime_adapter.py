@@ -6,9 +6,11 @@ from urllib.parse import urlsplit
 from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
 from .contracts import CollectionAdapter, DetailExtractor
+from .detail_extractors import resolve_detail_extractor
 
-
-_TAOBAO_PLATFORMS = frozenset({"taobao", "taobao_judicial", "taobao_sf", "sf.taobao.com"})
+_TAOBAO_PLATFORMS = frozenset(
+    {"taobao", "taobao_judicial", "taobao_sf", "sf.taobao.com"}
+)
 
 
 def resolve_record_adapter(
@@ -64,15 +66,9 @@ def extract_detail_payload(
 
     from src import llm_helper
 
-    extractor = (
-        llm_helper.extract_auction_data
-        if isinstance(adapter, TaobaoJudicialAuctionAdapter)
-        else llm_helper.extract_product_data
-    )
-    return extractor(content, item_id=item_id, model=model) if model else extractor(
-        content,
-        item_id=item_id,
-    )
+    return resolve_detail_extractor(
+        adapter=adapter, gateway=llm_helper, model=model
+    ).extract(content, item_id=item_id)
 
 
 __all__ = ["extract_detail_payload", "resolve_record_adapter"]

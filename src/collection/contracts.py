@@ -13,12 +13,18 @@ NumberParser = Callable[[Any], Any]
 class CollectionAdapter(Protocol):
     """Domain rules consumed by the source-neutral collection orchestration."""
 
-    source_platform: str
-    collects_avm_risk: bool
-    bootstraps_legacy_search_tasks: bool
-    search_task_policy: SearchTaskPolicy
-    seed_scan_policy: SeedScanPolicy
-    analysis_profile: AnalysisProfile
+    @property
+    def source_platform(self) -> str: ...
+    @property
+    def collects_avm_risk(self) -> bool: ...
+    @property
+    def bootstraps_legacy_search_tasks(self) -> bool: ...
+    @property
+    def search_task_policy(self) -> SearchTaskPolicy: ...
+    @property
+    def seed_scan_policy(self) -> SeedScanPolicy: ...
+    @property
+    def analysis_profile(self) -> AnalysisProfile: ...
 
     def create_seed_list_parser(self, legacy_probe: Any) -> SeedListParser: ...
 
@@ -74,16 +80,26 @@ class DetailExtractor(Protocol):
 class AnalysisProfile(Protocol):
     """Field policy for evidence-based multi-model AI archiving."""
 
-    money_fields: frozenset[str]
-    area_fields: frozenset[str]
-    ratio_fields: frozenset[str]
-    count_fields: frozenset[str]
-    boolean_fields: frozenset[str]
-    datetime_fields: frozenset[str]
-    derived_fields: frozenset[str]
-    system_fields: frozenset[str]
-    high_risk_fields: frozenset[str]
-    field_keywords: Mapping[str, Sequence[str]]
+    @property
+    def money_fields(self) -> frozenset[str]: ...
+    @property
+    def area_fields(self) -> frozenset[str]: ...
+    @property
+    def ratio_fields(self) -> frozenset[str]: ...
+    @property
+    def count_fields(self) -> frozenset[str]: ...
+    @property
+    def boolean_fields(self) -> frozenset[str]: ...
+    @property
+    def datetime_fields(self) -> frozenset[str]: ...
+    @property
+    def derived_fields(self) -> frozenset[str]: ...
+    @property
+    def system_fields(self) -> frozenset[str]: ...
+    @property
+    def high_risk_fields(self) -> frozenset[str]: ...
+    @property
+    def field_keywords(self) -> Mapping[str, Sequence[str]]: ...
 
     def adjudication_prompt(
         self,

@@ -44,11 +44,12 @@ class CollectionDatabaseWrites:
             self.repository().upsert_flat_item(
                 item, event_type=event_type, event_payload=event_payload
             )
-        except Exception:
-            logger.exception(
-                "Database upsert failed item=%s",
+        except Exception as error:
+            logger.error(
+                "Database upsert failed item=%s error_type=%s",
                 item.get("id")
                 or cast(Mapping[str, object], item.get("source", {})).get("item_id"),
+                type(error).__name__,
             )
             raise
 
@@ -62,8 +63,12 @@ class CollectionDatabaseWrites:
             self.repository().mark_deleted(
                 str(item_id), reason=reason, event_payload=payload
             )
-        except Exception:
-            logger.exception("Database mark_deleted failed item=%s", item_id)
+        except Exception as error:
+            logger.error(
+                "Database mark_deleted failed item=%s error_type=%s",
+                item_id,
+                type(error).__name__,
+            )
             raise
 
 

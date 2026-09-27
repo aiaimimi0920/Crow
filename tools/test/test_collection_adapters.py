@@ -21,6 +21,7 @@ from src.collection import (
     create_collection_adapter,
     derive_stage_state,
 )
+from src.collection.detail_execution import DetailModels, DetailRuntime, DetailStorage
 
 
 def test_generic_adapter_collects_arbitrary_product_seed(tmp_path: Path) -> None:
@@ -133,8 +134,13 @@ def test_server_collection_factories_keep_explicit_legacy_default(monkeypatch) -
     monkeypatch.delenv("CROW_COLLECTION_SOURCE_PLATFORM", raising=False)
     server = importlib.import_module("src.server")
 
-    assert type(server._seed_collection_service().adapter) is TaobaoJudicialAuctionAdapter
-    assert type(server._detail_collection_service().adapter) is TaobaoJudicialAuctionAdapter
+    assert (
+        type(server._seed_collection_service().adapter) is TaobaoJudicialAuctionAdapter
+    )
+    assert (
+        type(server._detail_collection_service().adapter)
+        is TaobaoJudicialAuctionAdapter
+    )
 
 
 def test_server_collection_factories_honor_generic_runtime_config(monkeypatch) -> None:
@@ -166,9 +172,9 @@ def test_seed_stub_uses_the_configured_adapter() -> None:
     )
 
     assert record["source_item_id"] == "sku-8"
-    assert record["item_id"] == GenericProductAdapter(source_platform="catalog_x").item_id(
-        {"sku": "sku-8"}
-    )
+    assert record["item_id"] == GenericProductAdapter(
+        source_platform="catalog_x"
+    ).item_id({"sku": "sku-8"})
     assert record["source_platform"] == "catalog_x"
     assert record["source_title"] == "Portable seed"
     assert "auction_date" not in record
@@ -195,25 +201,32 @@ def test_generic_adapter_processes_alphanumeric_detail_id(tmp_path: Path) -> Non
         adapter=GenericProductAdapter(source_platform="catalog_x"),
     ).process_html_file(
         str(html_path),
-        get_working_item=lambda *_args, **_kwargs: {
-            "file_path": str(tmp_path / "products.json"),
-            "data": seed,
-        },
-        get_data_path=lambda _partition: str(tmp_path / "products.json"),
-        update_item_in_json=lambda _path, _item_id, record: updated.append(dict(record)),
-        remove_item_from_json=lambda *_args: None,
-        persist_item_to_db=lambda *_args: None,
-        mark_item_deleted_in_db=lambda *_args: None,
-        evict_runtime_item=lambda *_args: None,
-        prefer_db_task_reads=lambda: False,
-        sync_avm_risk_aliases=reject_avm_callback,
-        extract_avm_risk_features=reject_avm_callback,
-        log_prediction_event=lambda **_kwargs: None,
-        queue_pending=lambda _item_id: True,
-        set_seen=lambda *_args: None,
-        remove_pending=lambda _item_id: None,
-        detail_extractor=CallableDetailExtractor(
-            lambda *_args, **_kwargs: json.dumps({"name": "Updated", "price": 99})
+        storage=DetailStorage(
+            get_working_item=lambda *_args: {
+                "file_path": str(tmp_path / "products.json"),
+                "data": seed,
+            },
+            update_item_in_json=lambda _path, _item_id, record: updated.append(
+                dict(record)
+            ),
+            remove_item_from_json=lambda *_args: None,
+            persist_item_to_db=lambda *_args: None,
+            mark_item_deleted_in_db=lambda *_args: None,
+        ),
+        runtime=DetailRuntime(
+            evict_runtime_item=lambda *_args: None,
+            prefer_db_task_reads=lambda: False,
+            queue_pending=lambda _item_id: True,
+            set_seen=lambda *_args: None,
+            remove_pending=lambda _item_id: None,
+        ),
+        models=DetailModels(
+            extractor=CallableDetailExtractor(
+                lambda *_args, **_kwargs: json.dumps({"name": "Updated", "price": 99})
+            ),
+            sync_risk=reject_avm_callback,
+            extract_risk=reject_avm_callback,
+            report=lambda **_kwargs: None,
         ),
     )
 
@@ -274,7 +287,9 @@ def test_generic_stage_state_does_not_require_auction_or_property_fields() -> No
     assert state["analysis_model_version"] == "generic_product_v1"
 
 
-def test_stage_state_preserves_taobao_readiness_for_legacy_and_explicit_sources() -> None:
+def test_stage_state_preserves_taobao_readiness_for_legacy_and_explicit_sources() -> (
+    None
+):
     for source_platform in (None, "taobao_sf", "https://sf.taobao.com/"):
         record = {
             "source_item_id": "legacy-7",
