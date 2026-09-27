@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.runtime_state import RuntimeState
+from tools.test.auth_crash_probe_runner import run_crash_probes
 
 
 def complete(server, entrypoint):
@@ -115,22 +115,11 @@ def startup(monkeypatch, tmp_path):
     ],
 )
 def test_legacy_process_exit_restores_manual_challenge_and_retry(
-    startup, tmp_path, entrypoint, phase, prior_restart
+    startup, monkeypatch, crash_results, entrypoint, phase, prior_restart
 ):
     server, started = startup
-    child = subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).resolve()),
-            entrypoint,
-            phase,
-            str(prior_restart),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+    child, tmp_path = crash_results[(entrypoint, phase, str(prior_restart))]
+    monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     assert child.returncode == 73, child.stdout + child.stderr
 
     server.initialize_runtime()
@@ -345,6 +334,23 @@ def test_legacy_retirement_error_keeps_recovery_evidence(startup, monkeypatch):
     server.initialize_runtime()
     assert server.RUNTIME.recovery.snapshot().challenge_id == "legacy-id"
     assert server._solver_manual_flag_is_manual_only() is True
+
+
+@pytest.fixture(scope="module")
+def crash_results(tmp_path_factory):
+    cases = [
+        (entrypoint, phase, str(restart))
+        for entrypoint in ("finalize", "cooldown", "direct", "anonymous")
+        for phase, restart in (
+            ("after_flag", False),
+            ("after_cleanup", False),
+            ("after_receipt", False),
+            ("after_flag", True),
+        )
+    ]
+    return run_crash_probes(
+        Path(__file__).resolve(), cases, tmp_path_factory.mktemp("legacy-crashes")
+    )
 
 
 if __name__ == "__main__":

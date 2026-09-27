@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.runtime_state import RuntimeState
+from tools.test.auth_crash_probe_runner import run_crash_probes
 
 
 def complete(server, entrypoint, challenge_id, request):
@@ -127,16 +127,11 @@ def startup(monkeypatch, tmp_path):
 @pytest.mark.parametrize("scope", ["seed", "detail"])
 @pytest.mark.parametrize("phase", ["after_flag", "after_cleanup", "after_receipt"])
 def test_mixed_crash_restores_both_owners_before_workers(
-    startup, tmp_path, monkeypatch, entrypoint, scope, phase
+    startup, crash_results, monkeypatch, entrypoint, scope, phase
 ):
     server, started = startup
-    child = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve()), entrypoint, scope, phase],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+    child, tmp_path = crash_results[(entrypoint, scope, phase)]
+    monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     assert child.returncode == 73, child.stdout + child.stderr
     expected = json.loads((tmp_path / "expected.json").read_text(encoding="utf-8"))
     for _ in range(2):
@@ -214,6 +209,19 @@ def test_startup_restores_only_matching_valid_manual_metadata(startup, flag_kind
     assert server._collection_effectively_paused() is True
     assert started == [server.manual_solver_retry_thread]
     assert flag_path.read_bytes() == before
+
+
+@pytest.fixture(scope="module")
+def crash_results(tmp_path_factory):
+    cases = [
+        (entrypoint, scope, phase)
+        for entrypoint in ("finalize", "cooldown", "direct")
+        for scope in ("seed", "detail")
+        for phase in ("after_flag", "after_cleanup", "after_receipt")
+    ]
+    return run_crash_probes(
+        Path(__file__).resolve(), cases, tmp_path_factory.mktemp("mixed-crashes")
+    )
 
 
 if __name__ == "__main__":

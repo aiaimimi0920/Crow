@@ -2,7 +2,6 @@
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.runtime_state import RuntimeState
+from tools.test.auth_crash_probe_runner import run_crash_probes
 
 
 def complete(server, entrypoint, challenge_id, request):
@@ -112,16 +112,11 @@ def startup(monkeypatch, tmp_path):
 @pytest.mark.parametrize("scope", ["seed", "detail"])
 @pytest.mark.parametrize("phase", ["after_cleanup", "after_receipt"])
 def test_process_exit_restores_challenge_and_allows_same_request_retry(
-    startup, tmp_path, entrypoint, scope, phase
+    startup, monkeypatch, crash_results, entrypoint, scope, phase
 ):
     server, started = startup
-    child = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve()), entrypoint, scope, phase],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+    child, tmp_path = crash_results[(entrypoint, scope, phase)]
+    monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
     assert child.returncode == 73, child.stdout + child.stderr
     expected = json.loads((tmp_path / "expected.json").read_text(encoding="utf-8"))
 
@@ -312,6 +307,19 @@ def test_failed_intent_retirement_keeps_challenge(startup, tmp_path, monkeypatch
     assert "intent retirement locked" in server._clear_solver_challenge_state("seed")
     assert server._solver_scope_state_path("seed").read_bytes() == original
     assert server._solver_scope_runtime_status("seed")["challenge_id"] == challenge_id
+
+
+@pytest.fixture(scope="module")
+def crash_results(tmp_path_factory):
+    cases = [
+        (entrypoint, scope, phase)
+        for entrypoint in ("finalize", "cooldown", "direct", "anonymous")
+        for scope in ("seed", "detail")
+        for phase in ("after_cleanup", "after_receipt")
+    ]
+    return run_crash_probes(
+        Path(__file__).resolve(), cases, tmp_path_factory.mktemp("scoped-crashes")
+    )
 
 
 if __name__ == "__main__":
