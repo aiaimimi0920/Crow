@@ -142,6 +142,10 @@ else
     tools/browserless_seed_probe.py
     tools/taobao_login_health.py
   )
+  # Include transitive runtime owners, not only the historical server facade.
+  while IFS= read -r source_file; do
+    digest_files+=("$source_file")
+  done < <(find src -type f -name '*.py' -print | LC_ALL=C sort)
 fi
 source_digest="$(sha256sum "${digest_files[@]}" | sha256sum | awk '{print $1}')"
 

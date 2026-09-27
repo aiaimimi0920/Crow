@@ -194,6 +194,36 @@ SECURITY_FILES = (
     "test_utc_datetime_migration.py",
 )
 SUITES = {
+    "auth-crash": (
+        "test_auth_cleanup_crash_recovery.py",
+        "test_auth_legacy_crash_recovery.py",
+        "test_auth_mixed_crash_recovery.py",
+    ),
+    "collection-delivery": (
+        "test_evaluation_handlers.py",
+        "test_pipeline_submission_handlers.py",
+        "test_task_read_handlers.py",
+        "test_collection_application.py",
+        "test_detail_location_jobs.py",
+        "test_operator_entrypoints.py",
+        "test_docker_entrypoint.py",
+        "test_run_isolated_collection_api.py",
+        "test_operator_entrypoint_main_batch.py",
+    ),
+    "collection-maintenance": (
+        "test_collection_job_stop_boundaries.py",
+        "test_collection_maintenance_recovery.py",
+        "test_collection_application.py",
+        "test_backfill_archived_details.py",
+        "test_prepare_recent_detail_replay.py",
+        "test_fetch_missing_detail_archives.py",
+        "test_collection_job_shutdown.py",
+        "test_collection_jobs.py",
+        "test_collection_job_lifecycle.py",
+        "test_collection_job_cancel_http.py",
+        "test_detail_fetch_entrypoints.py",
+        "test_detail_service.py",
+    ),
     "collection-detail": (
         "test_detail_commit_recovery.py",
         "test_collection_application.py",

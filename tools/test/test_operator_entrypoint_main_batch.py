@@ -1,4 +1,19 @@
-from tools.test.operator_entrypoint_smoke_context import *  # noqa: F401,F403
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from tools.test.operator_entrypoint_smoke_context import (
+    _assert_stub_invocation,
+    _copy_repo_batch_to_fake_repo,
+    _run_batch,
+    _write_fake_python_cmd,
+    _write_fake_python_cmd_with_exit,
+    _write_real_python_target,
+)
+
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="Requires Windows cmd.exe")
 
 
 def test_main_batch_respects_predefined_python_cmd(tmp_path: Path):
@@ -14,7 +29,9 @@ def test_main_batch_respects_predefined_python_cmd(tmp_path: Path):
     result = _run_batch(fake_repo / "auto" / "main.bat", env)
 
     assert result.returncode == 0
-    _assert_stub_invocation(log_path, "src/server.py", expected_cwd=fake_repo)
+    _assert_stub_invocation(
+        log_path, "tools/run_collection_api.py", expected_cwd=fake_repo
+    )
 
 
 def test_data_fixer_batch_respects_predefined_python_cmd(tmp_path: Path):
@@ -46,7 +63,9 @@ def test_main_batch_returns_python_exit_code(tmp_path: Path):
     result = _run_batch(fake_repo / "auto" / "main.bat", env)
 
     assert result.returncode == 23
-    _assert_stub_invocation(log_path, "src/server.py", expected_cwd=fake_repo)
+    _assert_stub_invocation(
+        log_path, "tools/run_collection_api.py", expected_cwd=fake_repo
+    )
 
 
 def test_data_fixer_batch_returns_python_exit_code(tmp_path: Path):
@@ -78,7 +97,9 @@ def test_main_batch_resumes_parent_after_cmd_python_wrapper(tmp_path: Path):
     result = _run_batch(fake_repo / "auto" / "main.bat", env)
 
     assert result.returncode == 25
-    _assert_stub_invocation(log_path, "src/server.py", expected_cwd=fake_repo)
+    _assert_stub_invocation(
+        log_path, "tools/run_collection_api.py", expected_cwd=fake_repo
+    )
     assert "[INFO] main.bat finished with exit code 25" in result.stdout
 
 
@@ -122,12 +143,14 @@ def test_main_batch_smoke_runs_against_actual_repo_with_stub_python(tmp_path: Pa
     assert result.returncode == 0
     _assert_stub_invocation(
         log_path,
-        "src/server.py",
+        "tools/run_collection_api.py",
         expected_cwd=repo_root,
     )
 
 
-def test_data_fixer_batch_smoke_runs_against_actual_repo_with_stub_python(tmp_path: Path):
+def test_data_fixer_batch_smoke_runs_against_actual_repo_with_stub_python(
+    tmp_path: Path,
+):
     repo_root = Path(__file__).resolve().parents[2]
     log_path = tmp_path / "actual-data-fixer-log.txt"
     fake_python = _write_fake_python_cmd(tmp_path, log_path)

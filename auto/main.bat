@@ -37,7 +37,7 @@ if defined PYTHON_CMD (
 echo [INFO] Database dual-write target: %FAPAI_DB_URL%
 
 REM Execute
-call "%PYTHON_CMD%" src/server.py
+call "%PYTHON_CMD%" tools/run_collection_api.py
 set "FAPAI_MAIN_EXIT_CODE=%ERRORLEVEL%"
 echo [INFO] main.bat finished with exit code %FAPAI_MAIN_EXIT_CODE%
 popd >nul

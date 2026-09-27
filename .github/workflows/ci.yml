@@ -123,6 +123,10 @@ jobs:
       - run: python scripts/run_quality_tests.py --suite collection-storage
       - run: python scripts/run_quality_tests.py --suite collection-runtime
       - run: python scripts/run_quality_tests.py --suite collection-detail
+      - run: python scripts/run_quality_tests.py --suite collection-maintenance
+      - run: python scripts/run_quality_tests.py --suite collection-delivery
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection/archive_records.py src/collection/detail_archive_fetch.py src/collection/detail_backfill.py src/collection/detail_replay.py src/collection/detail_maintenance.py tools/test/test_collection_maintenance_recovery.py tools/test/test_collection_job_shutdown.py
+      - run: python -m ruff format --check src/collection/archive_records.py src/collection/detail_archive_fetch.py src/collection/detail_backfill.py src/collection/detail_replay.py src/collection/detail_maintenance.py tools/test/test_collection_maintenance_recovery.py tools/test/test_collection_job_shutdown.py
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection/detail_execution.py src/collection/detail_failures.py src/collection/detail_processor.py src/collection/detail_extractors.py src/collection/detail_location.py src/collection/adapters/taobao_judicial_profile.py tools/test/test_detail_commit_recovery.py
       - run: python -m ruff format --check src/collection/detail_execution.py src/collection/detail_failures.py src/collection/detail_processor.py src/collection/detail_extractors.py src/collection/detail_location.py src/collection/adapters/taobao_judicial_profile.py tools/test/test_detail_commit_recovery.py
       - run: python -m mypy --python-version 3.10 --strict --explicit-package-bases --follow-imports skip src/collection/detail_execution.py src/collection/detail_failures.py
@@ -205,6 +209,12 @@ jobs:
       - run: rustup show active-toolchain
       - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: python -m pip install pytest==8.4.2
+      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py
+        working-directory: .
   desktop-smoke:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
