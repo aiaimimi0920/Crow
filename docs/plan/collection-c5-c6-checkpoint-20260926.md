@@ -113,3 +113,18 @@ canonical containers, inspect Compose labels for retained backups, back up
 replaced artifacts, activate only the verified candidate, and verify installed
 hashes plus collection behavior. Do not service-wide recreate backup-labelled
 containers or restart the human-authentication browser.
+
+## Access verification update: 2026-09-27
+
+The user supplied the local credential-vault location. NAS SSH password login
+as `mjc` and PC2 SSH Ed25519 login as `mjc` have now been verified with existing
+known-host checks. PC2 disables SSH password authentication and root login;
+the earlier `Admin` connection was the wrong entrypoint. Credentials remain in
+the local vault, not in this product repository. See
+[current connection instructions](../../../aikey/部署/主机连接.md).
+
+The newly organized CA/certificate archive also verifies the active NAS HTTPS
+certificate. The existing desktop CA path was preserved. This resolves the
+unknown-SSH-access blocker; remote release/configuration inspection, the model
+selection blocker and deployment/runtime acceptance still remain. No deployment
+or service restart occurred during this credential and file-organization task.
