@@ -54,7 +54,7 @@ if (-not $TokenPath) {
 }
 
 $arguments = @(
-    "-NoProfile", "-ExecutionPolicy", "Bypass",
+    "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
     "-File", "`"$watcher`"",
     "-ApiBase", "`"$ApiBase`"",
     "-DataRoot", "`"$DataRoot`"",

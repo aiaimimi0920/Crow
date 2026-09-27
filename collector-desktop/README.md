@@ -148,6 +148,14 @@ SHA-256，保存后核验目标、工作目录和图标。当前安装的快捷�
 
 运行配置优先级为显式环境变量、当前安装 bundle 的配置文件、项目本地默认值。配置不向父目录或其他安装目录搜索。首次安装或更换认证路径时由 `scripts/write-collector-desktop-runtime-config.ps1` 生成配置；EXE-only 更新会保留该文件。完整部署会将旧配置纳入安装备份。
 
+状态、地区和商品列表由 WebView2 直接发起 HTTPS 请求，使用 Windows 的证书信任存储。
+`FAPAI_API_CA_FILE` 供 Python helper 校验证书使用，不会自动让 WebView2 信任该 CA。
+部署使用私有 CA 的 API 时，先核对配置中的 CA 来源和指纹，并用该 CA 验证实际 API；
+随后将已确认的 CA 导入运行 Crow 的用户的 `Cert:\CurrentUser\Root`，重启 Crow。
+当前部署脚本不自动导入根证书。不要关闭 TLS 校验或改回远程明文 HTTP。
+部署验收必须在安装版窗口中确认状态、地区和商品列表加载成功，并点击“刷新数据”复核；
+仅检查 API 返回 200、EXE 哈希、进程或快捷方式不足以证明桌面连接正常。
+
 认证启动脚本使用 `FAPAI_DESKTOP_PYTHON_PATH` 指定的绝对解释器路径，不依赖桌面进程的 `PATH`；仅未配置解释器的旧安装或开发环境允许从 `PATH` 查找。模块工作目录和 `PYTHONPATH` 固定为当前 bundle。启动失败会在该 bundle 的 `FPFData/desktop-auth/last-launch-failure.json` 留下最近一次失败的时间、操作、分类和退出码，不保存原始错误输出、URL、Cookie 或凭据；历史失败记录不代表当前认证状态。
 
 完整安装必须包含 `browserless_seed_probe` 和 `taobao_login_health` 的全部拆分模块，以及 `start-taobao-cdp-browser` 的两个 PowerShell 子模块，不能只复制入口文件。`tools/test/test_desktop_auth_bundle.py` 按部署脚本的实际清单构造独立安装目录，验证真实认证模块在隔离解释器及非仓库工作目录下可加载；测试不启动浏览器或提交线上认证任务。

@@ -6,8 +6,12 @@ import json
 
 import pytest
 
-from tools import pc2_auth_recovery
-from tools import pc2_local_solver
+from tools import (
+    pc2_auth_recovery,
+    pc2_solver_loop,
+    pc2_solver_loop_control,
+    pc2_solver_loop_probe,
+)
 
 
 def _snapshot(tmp_path):
@@ -72,14 +76,18 @@ def test_load_recovery_token_rejects_invalid_format(tmp_path, raw_token) -> None
 def test_load_cookie_snapshot_verifies_digest_and_filters_non_taobao_domains(tmp_path):
     path, digest = _snapshot(tmp_path)
 
-    cookies, metadata = pc2_auth_recovery.load_cookie_snapshot(path, expected_sha256=digest)
+    cookies, metadata = pc2_auth_recovery.load_cookie_snapshot(
+        path, expected_sha256=digest
+    )
 
     assert len(cookies) == 1
     assert cookies[0]["name"] == "session-cookie"
     assert metadata == {"sha256": digest, "cookie_count": 1}
 
 
-def test_ensure_cookie_snapshot_downloads_missing_snapshot_from_nas_atomically(tmp_path):
+def test_ensure_cookie_snapshot_downloads_missing_snapshot_from_nas_atomically(
+    tmp_path,
+):
     source, digest = _snapshot(tmp_path)
     raw = source.read_bytes()
     source.unlink()
@@ -115,7 +123,9 @@ def test_ensure_cookie_snapshot_downloads_missing_snapshot_from_nas_atomically(t
     ]
 
 
-def test_import_cookie_snapshot_uses_browser_storage_and_verifies_identities(tmp_path, monkeypatch):
+def test_import_cookie_snapshot_uses_browser_storage_and_verifies_identities(
+    tmp_path, monkeypatch
+):
     path, digest = _snapshot(tmp_path)
     sent = []
 
@@ -134,7 +144,11 @@ def test_import_cookie_snapshot_uses_browser_storage_and_verifies_identities(tmp
                         "id": request["id"],
                         "result": {
                             "cookies": [
-                                {"name": "session-cookie", "domain": ".taobao.com", "path": "/"}
+                                {
+                                    "name": "session-cookie",
+                                    "domain": ".taobao.com",
+                                    "path": "/",
+                                }
                             ]
                         },
                     }
@@ -147,11 +161,15 @@ def test_import_cookie_snapshot_uses_browser_storage_and_verifies_identities(tmp
     monkeypatch.setattr(
         pc2_auth_recovery,
         "fetch_json",
-        lambda *_args, **_kwargs: {"webSocketDebuggerUrl": "ws://browser/devtools/browser/1"},
+        lambda *_args, **_kwargs: {
+            "webSocketDebuggerUrl": "ws://browser/devtools/browser/1"
+        },
     )
     import websocket
 
-    monkeypatch.setattr(websocket, "create_connection", lambda *_args, **_kwargs: FakeWebSocket())
+    monkeypatch.setattr(
+        websocket, "create_connection", lambda *_args, **_kwargs: FakeWebSocket()
+    )
 
     result = pc2_auth_recovery.import_cookie_snapshot_to_cdp(
         path,
@@ -159,7 +177,10 @@ def test_import_cookie_snapshot_uses_browser_storage_and_verifies_identities(tmp
         expected_sha256=digest,
     )
 
-    assert [request["method"] for request in sent] == ["Storage.setCookies", "Storage.getCookies"]
+    assert [request["method"] for request in sent] == [
+        "Storage.setCookies",
+        "Storage.getCookies",
+    ]
     assert result["imported_count"] == 1
     assert result["verified_count"] == 1
 
@@ -171,8 +192,18 @@ def test_import_cookie_snapshot_requires_session_identities_not_rotating_analyti
     path.write_text(
         json.dumps(
             [
-                {"name": "cookie2", "value": "auth", "domain": ".taobao.com", "path": "/"},
-                {"name": "analytics", "value": "rotates", "domain": ".taobao.com", "path": "/"},
+                {
+                    "name": "cookie2",
+                    "value": "auth",
+                    "domain": ".taobao.com",
+                    "path": "/",
+                },
+                {
+                    "name": "analytics",
+                    "value": "rotates",
+                    "domain": ".taobao.com",
+                    "path": "/",
+                },
             ]
         ),
         encoding="utf-8",
@@ -202,11 +233,15 @@ def test_import_cookie_snapshot_requires_session_identities_not_rotating_analyti
     monkeypatch.setattr(
         pc2_auth_recovery,
         "fetch_json",
-        lambda *_args, **_kwargs: {"webSocketDebuggerUrl": "ws://browser/devtools/browser/1"},
+        lambda *_args, **_kwargs: {
+            "webSocketDebuggerUrl": "ws://browser/devtools/browser/1"
+        },
     )
     import websocket
 
-    monkeypatch.setattr(websocket, "create_connection", lambda *_args, **_kwargs: FakeWebSocket())
+    monkeypatch.setattr(
+        websocket, "create_connection", lambda *_args, **_kwargs: FakeWebSocket()
+    )
 
     result = pc2_auth_recovery.import_cookie_snapshot_to_cdp(
         path, "http://browser:9224", expected_sha256=digest
@@ -249,8 +284,15 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
     monkeypatch.setattr(
         pc2_auth_recovery,
         "import_cookie_snapshot_to_cdp",
-        lambda *_args, **kwargs: imports.append(kwargs["expected_sha256"])
-        or {"sha256": digest, "cookie_count": 1, "imported_count": 1, "verified_count": 1},
+        lambda *_args, **kwargs: (
+            imports.append(kwargs["expected_sha256"])
+            or {
+                "sha256": digest,
+                "cookie_count": 1,
+                "imported_count": 1,
+                "verified_count": 1,
+            }
+        ),
     )
 
     first = pc2_auth_recovery.process_nas_auth_recovery_once(
@@ -279,7 +321,9 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
     assert second["action"] == "recovery_confirmed"
     assert marker.exists() is False
     assert imports == [digest, digest]
-    assert all("secret-cookie-value" not in json.dumps(payload) for _, payload, _ in posted)
+    assert all(
+        "secret-cookie-value" not in json.dumps(payload) for _, payload, _ in posted
+    )
     assert [url.rsplit("/", 1)[-1] for url, _, _ in posted] == [
         "heartbeat",
         "claim",
@@ -291,10 +335,14 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
 
 def test_local_solver_exits_pid1_after_recovery_requests_restart(monkeypatch):
     heartbeats = []
-    monkeypatch.setattr(pc2_local_solver, "check_cdp_healthy", lambda _endpoint: True)
-    monkeypatch.setattr(pc2_local_solver, "nas_auth_recovery_client_enabled", lambda: True)
     monkeypatch.setattr(
-        pc2_local_solver,
+        pc2_solver_loop_probe, "check_cdp_healthy", lambda _endpoint: True
+    )
+    monkeypatch.setattr(
+        pc2_solver_loop_control, "nas_auth_recovery_client_enabled", lambda: True
+    )
+    monkeypatch.setattr(
+        pc2_solver_loop_control,
         "process_nas_auth_recovery_once",
         lambda *_args, **_kwargs: {
             "action": "restart_requested",
@@ -302,14 +350,15 @@ def test_local_solver_exits_pid1_after_recovery_requests_restart(monkeypatch):
             "cookie_count": 1,
         },
     )
-    monkeypatch.setattr(
-        pc2_local_solver,
-        "write_solver_heartbeat",
-        lambda phase, **details: heartbeats.append((phase, details)),
-    )
+    for module in (pc2_solver_loop, pc2_solver_loop_control, pc2_solver_loop_probe):
+        monkeypatch.setattr(
+            module,
+            "write_solver_heartbeat",
+            lambda phase, **details: heartbeats.append((phase, details)),
+        )
 
     with pytest.raises(SystemExit) as exc_info:
-        pc2_local_solver.local_solver_loop(
+        pc2_solver_loop.local_solver_loop(
             api_base_url="http://nas:8001/api",
             cdp_endpoint="http://browser:9223",
             poll_seconds=1,
