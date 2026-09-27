@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable, Dict, Iterable, Optional
 
-from src.avm.collection_template import build_collection_record
-
 from .canonical_record import merge_canonical_payload_into_flat
 from .models import (
     PropertyAudit,
@@ -16,30 +14,47 @@ from .repository_context import _coerce_naive_utc
 
 
 class RepositoryFlatPayloadMixin:
-    def upsert_flat_item(self, item: Dict[str, Any], event_type: str, event_payload: Optional[Dict[str, Any]] = None) -> None:
+    def upsert_flat_item(
+        self,
+        item: Dict[str, Any],
+        event_type: str,
+        event_payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if not self.enabled:
             return
         self.initialize()
-        record = build_collection_record(item)
-        self.upsert_collection_record(record, event_type=event_type, event_payload=event_payload, aux_data=item)
+        record = self._build_collection_record(item)
+        self.upsert_collection_record(
+            record, event_type=event_type, event_payload=event_payload, aux_data=item
+        )
 
     def upsert_flat_items(
         self,
         items: Iterable[Dict[str, Any]],
         event_type: str,
-        event_payload_factory: Optional[Callable[[Dict[str, Any], int], Optional[Dict[str, Any]]]] = None,
+        event_payload_factory: Optional[
+            Callable[[Dict[str, Any], int], Optional[Dict[str, Any]]]
+        ] = None,
     ) -> int:
         if not self.enabled:
             return 0
         self.initialize()
-        record_pairs = [(build_collection_record(item), item) for item in items if isinstance(item, dict)]
+        record_pairs = [
+            (self._build_collection_record(item), item)
+            for item in items
+            if isinstance(item, dict)
+        ]
         records = [record for record, _item in record_pairs]
         if not records:
             return 0
 
         with self.session_factory.begin() as session:
             for index, (record, original_item) in enumerate(record_pairs):
-                payload = event_payload_factory(record, index) if event_payload_factory else None
+                payload = (
+                    event_payload_factory(record, index)
+                    if event_payload_factory
+                    else None
+                )
                 self._upsert_collection_record_session(
                     session,
                     record,
@@ -78,13 +93,27 @@ class RepositoryFlatPayloadMixin:
             "auction_start_time": self._fmt_dt(listing.auction_start_time),
             "开拍时间": self._fmt_dt(listing.auction_start_time),
             "auction_round": listing.auction_round,
-            "transaction_price": float(listing.transaction_price) if listing.transaction_price is not None else None,
-            "成交价格": float(listing.transaction_price) if listing.transaction_price is not None else None,
-            "starting_price": float(listing.starting_price) if listing.starting_price is not None else None,
-            "起拍价格": float(listing.starting_price) if listing.starting_price is not None else None,
-            "actual_paid_price": float(listing.actual_paid_price) if listing.actual_paid_price is not None else None,
-            "evaluation_price": float(listing.evaluation_price) if listing.evaluation_price is not None else None,
-            "市场评估价": float(listing.evaluation_price) if listing.evaluation_price is not None else None,
+            "transaction_price": float(listing.transaction_price)
+            if listing.transaction_price is not None
+            else None,
+            "成交价格": float(listing.transaction_price)
+            if listing.transaction_price is not None
+            else None,
+            "starting_price": float(listing.starting_price)
+            if listing.starting_price is not None
+            else None,
+            "起拍价格": float(listing.starting_price)
+            if listing.starting_price is not None
+            else None,
+            "actual_paid_price": float(listing.actual_paid_price)
+            if listing.actual_paid_price is not None
+            else None,
+            "evaluation_price": float(listing.evaluation_price)
+            if listing.evaluation_price is not None
+            else None,
+            "市场评估价": float(listing.evaluation_price)
+            if listing.evaluation_price is not None
+            else None,
             "deposit": float(listing.deposit) if listing.deposit is not None else None,
             "保证金": float(listing.deposit) if listing.deposit is not None else None,
             "apply_count": listing.apply_count,
@@ -115,14 +144,30 @@ class RepositoryFlatPayloadMixin:
             "经度": listing.longitude,
             "coordinate_source": listing.coordinate_source,
             "housing_type": listing.housing_type,
-            "area_sqm": float(listing.area_sqm) if listing.area_sqm is not None else None,
-            "建筑面积": float(listing.area_sqm) if listing.area_sqm is not None else None,
-            "gross_area_sqm": float(listing.gross_area_sqm) if listing.gross_area_sqm is not None else None,
-            "产权建筑面积": float(listing.gross_area_sqm) if listing.gross_area_sqm is not None else None,
-            "interior_area_sqm": float(listing.interior_area_sqm) if listing.interior_area_sqm is not None else None,
-            "land_area_sqm": float(listing.land_area_sqm) if listing.land_area_sqm is not None else None,
-            "ownership_share_ratio": float(listing.ownership_share_ratio) if listing.ownership_share_ratio is not None else None,
-            "产权份额比例": float(listing.ownership_share_ratio) if listing.ownership_share_ratio is not None else None,
+            "area_sqm": float(listing.area_sqm)
+            if listing.area_sqm is not None
+            else None,
+            "建筑面积": float(listing.area_sqm)
+            if listing.area_sqm is not None
+            else None,
+            "gross_area_sqm": float(listing.gross_area_sqm)
+            if listing.gross_area_sqm is not None
+            else None,
+            "产权建筑面积": float(listing.gross_area_sqm)
+            if listing.gross_area_sqm is not None
+            else None,
+            "interior_area_sqm": float(listing.interior_area_sqm)
+            if listing.interior_area_sqm is not None
+            else None,
+            "land_area_sqm": float(listing.land_area_sqm)
+            if listing.land_area_sqm is not None
+            else None,
+            "ownership_share_ratio": float(listing.ownership_share_ratio)
+            if listing.ownership_share_ratio is not None
+            else None,
+            "产权份额比例": float(listing.ownership_share_ratio)
+            if listing.ownership_share_ratio is not None
+            else None,
             "layout": listing.layout,
             "build_year": listing.build_year,
             "total_floors": listing.total_floors,
@@ -145,7 +190,9 @@ class RepositoryFlatPayloadMixin:
             "is_fractional_share": risk.is_fractional_share if risk else None,
             "tax_is_company_owned": risk.tax_is_company_owned if risk else None,
             "is_haunted": risk.is_haunted if risk else None,
-            "has_lease_before_mortgage": risk.has_lease_before_mortgage if risk else None,
+            "has_lease_before_mortgage": risk.has_lease_before_mortgage
+            if risk
+            else None,
         }
         legal_payload = {
             "court_name": legal.court_name if legal else None,
@@ -153,9 +200,15 @@ class RepositoryFlatPayloadMixin:
             "case_number": legal.case_number if legal else None,
             "案号": legal.case_number if legal else None,
             "appraisal_agency_name": legal.appraisal_agency_name if legal else None,
-            "appraisal_benchmark_date": self._fmt_dt(legal.appraisal_benchmark_date) if legal else None,
-            "appraisal_report_urls": legal.appraisal_report_urls if legal and legal.appraisal_report_urls else [],
-            "announcement_attachment_urls": legal.announcement_attachment_urls if legal and legal.announcement_attachment_urls else [],
+            "appraisal_benchmark_date": self._fmt_dt(legal.appraisal_benchmark_date)
+            if legal
+            else None,
+            "appraisal_report_urls": legal.appraisal_report_urls
+            if legal and legal.appraisal_report_urls
+            else [],
+            "announcement_attachment_urls": legal.announcement_attachment_urls
+            if legal and legal.announcement_attachment_urls
+            else [],
         }
         audit_payload = {
             "detail_archive_path": audit.detail_archive_path if audit else None,
@@ -167,39 +220,67 @@ class RepositoryFlatPayloadMixin:
             "component_payload_path": audit.component_payload_path if audit else None,
             "notice_text_path": audit.notice_text_path if audit else None,
             "desc_text_path": audit.desc_text_path if audit else None,
-            "attachment_manifest_path": audit.attachment_manifest_path if audit else None,
+            "attachment_manifest_path": audit.attachment_manifest_path
+            if audit
+            else None,
             "image_manifest_path": audit.image_manifest_path if audit else None,
-            "extraction_confidence": float(audit.extraction_confidence) if audit and audit.extraction_confidence is not None else None,
+            "extraction_confidence": float(audit.extraction_confidence)
+            if audit and audit.extraction_confidence is not None
+            else None,
             "evidence_span": audit.evidence_span if audit else None,
             "evidence_source": audit.evidence_source if audit else None,
             "extraction_version": audit.extraction_version if audit else None,
             "community_name_source": audit.community_name_source if audit else None,
-            "community_name_confidence": float(audit.community_name_confidence) if audit and audit.community_name_confidence is not None else None,
+            "community_name_confidence": float(audit.community_name_confidence)
+            if audit and audit.community_name_confidence is not None
+            else None,
             "community_stable_key": audit.community_stable_key if audit else None,
             "community_raw_name": audit.community_raw_name if audit else None,
             "beike_community_id": audit.beike_community_id if audit else None,
             "is_processed": audit.is_processed if audit else None,
             "detail_captured": audit.detail_captured if audit else None,
             "detail_fetch_status": audit.detail_fetch_status if audit else None,
-            "detail_fetch_attempted_at": self._fmt_dt(audit.detail_fetch_attempted_at) if audit else None,
-            "detail_fetch_attempt_count": audit.detail_fetch_attempt_count if audit else None,
+            "detail_fetch_attempted_at": self._fmt_dt(audit.detail_fetch_attempted_at)
+            if audit
+            else None,
+            "detail_fetch_attempt_count": audit.detail_fetch_attempt_count
+            if audit
+            else None,
             "detail_fetch_last_url": audit.detail_fetch_last_url if audit else None,
             "seed_status": audit.seed_status if audit else None,
-            "seed_first_seen_at": self._fmt_dt(audit.seed_first_seen_at) if audit else None,
-            "seed_last_seen_at": self._fmt_dt(audit.seed_last_seen_at) if audit else None,
+            "seed_first_seen_at": self._fmt_dt(audit.seed_first_seen_at)
+            if audit
+            else None,
+            "seed_last_seen_at": self._fmt_dt(audit.seed_last_seen_at)
+            if audit
+            else None,
             "seed_source_page_url": audit.seed_source_page_url if audit else None,
             "detail_status": audit.detail_status if audit else None,
             "detail_last_error": audit.detail_last_error if audit else None,
             "detail_retry_count": audit.detail_retry_count if audit else None,
-            "detail_lease_until": self._fmt_dt(audit.detail_lease_until) if audit else None,
+            "detail_lease_until": self._fmt_dt(audit.detail_lease_until)
+            if audit
+            else None,
             "analysis_status": audit.analysis_status if audit else None,
             "analysis_ready": audit.analysis_ready if audit else None,
             "analysis_missing_fields": audit.analysis_missing_fields if audit else None,
-            "analysis_last_scored_at": self._fmt_dt(audit.analysis_last_scored_at) if audit else None,
+            "analysis_last_scored_at": self._fmt_dt(audit.analysis_last_scored_at)
+            if audit
+            else None,
             "analysis_model_version": audit.analysis_model_version if audit else None,
         }
 
-        payload.update({key: value for key, value in {**risk_payload, **legal_payload, **audit_payload}.items() if value not in (None, "", [])})
+        payload.update(
+            {
+                key: value
+                for key, value in {
+                    **risk_payload,
+                    **legal_payload,
+                    **audit_payload,
+                }.items()
+                if value not in (None, "", [])
+            }
+        )
         payload["avm_risk_features"] = {
             **risk_payload,
             "housing_type": listing.housing_type,
@@ -211,7 +292,9 @@ class RepositoryFlatPayloadMixin:
             "orientation": listing.orientation,
             "has_keys": listing.has_keys,
             "special_school_tag": listing.special_school_tag,
-            "evaluation_price": float(listing.evaluation_price) if listing.evaluation_price is not None else None,
+            "evaluation_price": float(listing.evaluation_price)
+            if listing.evaluation_price is not None
+            else None,
             "layout": listing.layout,
             "includes_parking": listing.includes_parking,
             "extraction_confidence": audit_payload["extraction_confidence"],
@@ -240,10 +323,18 @@ class RepositoryFlatPayloadMixin:
             "district": listing.district,
             "community_name": listing.community_name,
             "business_area": listing.business_area,
-            "area_sqm": float(listing.area_sqm) if listing.area_sqm is not None else None,
-            "starting_price": float(listing.starting_price) if listing.starting_price is not None else None,
-            "transaction_price": float(listing.transaction_price) if listing.transaction_price is not None else None,
-            "actual_paid_price": float(listing.actual_paid_price) if listing.actual_paid_price is not None else None,
+            "area_sqm": float(listing.area_sqm)
+            if listing.area_sqm is not None
+            else None,
+            "starting_price": float(listing.starting_price)
+            if listing.starting_price is not None
+            else None,
+            "transaction_price": float(listing.transaction_price)
+            if listing.transaction_price is not None
+            else None,
+            "actual_paid_price": float(listing.actual_paid_price)
+            if listing.actual_paid_price is not None
+            else None,
             "latitude": listing.latitude,
             "longitude": listing.longitude,
             "status": listing.status,
@@ -265,14 +356,20 @@ class RepositoryFlatPayloadMixin:
             "has_keys": listing.has_keys,
             "property_fee_owed": risk.property_fee_owed if risk else None,
             "special_school_tag": listing.special_school_tag,
-            "evaluation_price": float(listing.evaluation_price) if listing.evaluation_price is not None else None,
+            "evaluation_price": float(listing.evaluation_price)
+            if listing.evaluation_price is not None
+            else None,
             "layout": listing.layout,
             "is_restricted_purchase": risk.is_restricted_purchase if risk else None,
             "includes_parking": listing.includes_parking,
             "is_fractional_share": risk.is_fractional_share if risk else None,
             "tax_is_company_owned": risk.tax_is_company_owned if risk else None,
-            "has_lease_before_mortgage": risk.has_lease_before_mortgage if risk else None,
-            "extraction_confidence": float(audit.extraction_confidence) if audit and audit.extraction_confidence is not None else None,
+            "has_lease_before_mortgage": risk.has_lease_before_mortgage
+            if risk
+            else None,
+            "extraction_confidence": float(audit.extraction_confidence)
+            if audit and audit.extraction_confidence is not None
+            else None,
             "evidence_source": audit.evidence_source if audit else None,
             "extraction_version": audit.extraction_version if audit else None,
             "analysis_ready": audit.analysis_ready if audit else None,

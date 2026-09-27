@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import select
 
-from src.collection.seed_scan_policy import DEFAULT_SEED_SCAN_POLICY, SeedScanPolicy
+from src.collection.seed_scan_policy import SeedScanPolicy
 
 from .models import FapaiSeedScanJob, FapaiSeedScanProgress
 from .repository_context import _cooldown_active, _lease_reclaimable, _utc_now
@@ -26,12 +26,14 @@ class RepositorySeedScanPagesMixin:
         if not self.enabled:
             return None
         self.initialize()
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         now = _utc_now()
         lease_until = now + timedelta(seconds=max(lease_seconds, 1))
         cooldown_threshold = max(int(failure_cooldown_threshold or 0), 0)
         cooldown_seconds = max(int(failure_cooldown_seconds or 0), 0)
-        failure_cooldown_cutoff = now - timedelta(seconds=cooldown_seconds) if cooldown_seconds > 0 else None
+        failure_cooldown_cutoff = (
+            now - timedelta(seconds=cooldown_seconds) if cooldown_seconds > 0 else None
+        )
 
         def failure_in_cooldown(row: FapaiSeedScanProgress) -> bool:
             if cooldown_threshold <= 0 or failure_cooldown_cutoff is None:
@@ -40,13 +42,17 @@ class RepositorySeedScanPagesMixin:
                 return False
             if int(row.retry_count or 0) < cooldown_threshold:
                 return False
-            return _cooldown_active(row.updated_at, now=now, cutoff=failure_cooldown_cutoff)
+            return _cooldown_active(
+                row.updated_at, now=now, cutoff=failure_cooldown_cutoff
+            )
 
         with self.session_factory.begin() as session:
             blocked_job_keys: set[str] = set()
             locked_job_keys: set[str] = set()
             ordered = seed_scan_candidates(
-                session, active_policy, parallel_sorts=parallel_sorts,
+                session,
+                active_policy,
+                parallel_sorts=parallel_sorts,
                 blocked_job_keys=blocked_job_keys,
             )
             for row, job in ordered:
@@ -60,7 +66,9 @@ class RepositorySeedScanPagesMixin:
                         .with_for_update(skip_locked=True)
                         .execution_options(populate_existing=True)
                     ).first()
-                    if job is None or not active_policy.owns_job(job.job_key, job.metadata_json):
+                    if job is None or not active_policy.owns_job(
+                        job.job_key, job.metadata_json
+                    ):
                         blocked_job_keys.add(row.job_key)
                         continue
                     locked_job_keys.add(row.job_key)
@@ -86,7 +94,9 @@ class RepositorySeedScanPagesMixin:
                         continue
                     blocked_job_keys.add(row.job_key)
                     continue
-                if row.max_page is not None and int(row.next_page or 1) > int(row.max_page):
+                if row.max_page is not None and int(row.next_page or 1) > int(
+                    row.max_page
+                ):
                     row.status = "exhausted"
                     row.leased_by = None
                     row.lease_until = None
@@ -101,9 +111,14 @@ class RepositorySeedScanPagesMixin:
                         .where(
                             FapaiSeedScanProgress.job_key == row.job_key,
                             FapaiSeedScanProgress.sort_order < row.sort_order,
-                            FapaiSeedScanProgress.status.in_(("pending", "in_progress")),
+                            FapaiSeedScanProgress.status.in_(
+                                ("pending", "in_progress")
+                            ),
                         )
-                        .order_by(FapaiSeedScanProgress.sort_order, FapaiSeedScanProgress.progress_key)
+                        .order_by(
+                            FapaiSeedScanProgress.sort_order,
+                            FapaiSeedScanProgress.progress_key,
+                        )
                         .with_for_update()
                         .execution_options(populate_existing=True, yield_per=128)
                     )
@@ -143,7 +158,7 @@ class RepositorySeedScanPagesMixin:
         if not self.enabled:
             return
         self.initialize()
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         now = _utc_now()
         with self.session_factory.begin() as session:
             row = session.get(FapaiSeedScanProgress, progress_key)
@@ -158,7 +173,9 @@ class RepositorySeedScanPagesMixin:
                 or not active_policy.owns_job(job.job_key, job.metadata_json)
                 or row.leased_by != normalized_worker
             ):
-                raise ValueError(f"seed scan lease is not owned by worker: {progress_key}")
+                raise ValueError(
+                    f"seed scan lease is not owned by worker: {progress_key}"
+                )
             row.last_success_page = max(int(page or 1), int(row.last_success_page or 0))
             row.last_item_count = int(item_count or 0)
             row.last_fetch_url = source_url
@@ -191,7 +208,7 @@ class RepositorySeedScanPagesMixin:
         if not self.enabled:
             return
         self.initialize()
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         now = _utc_now()
         with self.session_factory.begin() as session:
             row = session.get(FapaiSeedScanProgress, progress_key)
@@ -206,7 +223,9 @@ class RepositorySeedScanPagesMixin:
                 or not active_policy.owns_job(job.job_key, job.metadata_json)
                 or row.leased_by != normalized_worker
             ):
-                raise ValueError(f"seed scan lease is not owned by worker: {progress_key}")
+                raise ValueError(
+                    f"seed scan lease is not owned by worker: {progress_key}"
+                )
             previous_error = str(row.last_error or "").strip()
             row.last_error = str(error)
             if previous_error:

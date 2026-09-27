@@ -5,11 +5,7 @@ from typing import Any, Dict, Optional, Sequence
 
 from sqlalchemy import case, func, literal, or_, select
 
-from src.collection.search_task_policy import (
-    DEFAULT_SEARCH_TASK_POLICY,
-    SearchTaskPolicy,
-    TaobaoJudicialSearchTaskPolicy,
-)
+from src.collection.search_task_policy import SearchTaskPolicy
 
 from .models import PropertySearchTask
 from .repository_context import _lease_reclaimable, _parse_dt, _utc_now
@@ -19,15 +15,6 @@ class RepositorySearchMixin:
     @staticmethod
     def _search_task_key(location_code: str, category: str, sort_param: str) -> str:
         return f"{location_code}:{category}:{sort_param}"
-
-    @staticmethod
-    def _build_search_task_url(location_code: str, category: str, sort_param: str, page: int) -> str:
-        return TaobaoJudicialSearchTaskPolicy.build_url(
-            location_code,
-            category,
-            sort_param,
-            page,
-        )
 
     def bootstrap_search_task(
         self,
@@ -40,13 +27,15 @@ class RepositorySearchMixin:
         if not self.enabled:
             return False
         self.initialize()
-        active_policy = policy or DEFAULT_SEARCH_TASK_POLICY
+        active_policy = policy or self.adapter.search_task_policy
         seed = active_policy.normalize_bootstrap(task)
         if seed is None:
             return False
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(PropertySearchTask, seed.task_key) or PropertySearchTask(task_key=seed.task_key)
+            row = session.get(PropertySearchTask, seed.task_key) or PropertySearchTask(
+                task_key=seed.task_key
+            )
             row.location_code = seed.location_code
             row.category = seed.category
             row.sort_param = seed.sort_param
@@ -74,24 +63,33 @@ class RepositorySearchMixin:
         if not self.enabled:
             return None
         self.initialize()
-        active_policy = policy or DEFAULT_SEARCH_TASK_POLICY
+        active_policy = policy or self.adapter.search_task_policy
         now = _utc_now()
         priority_index = {code: idx for idx, code in enumerate(priority_codes or [])}
-        sort_index = {code: idx for idx, code in enumerate(sort_order or ("2", "1", "0", "3", "4", "5"))}
+        sort_index = {
+            code: idx
+            for idx, code in enumerate(sort_order or ("2", "1", "0", "3", "4", "5"))
+        }
         with self.session_factory.begin() as session:
             # Stream candidate keys without locking unrelated work. Each actual
             # claim below locks and refreshes only its selected row.
             pending_order = case((PropertySearchTask.status == "pending", 0), else_=1)
             location_order = (
                 case(
-                    *[(PropertySearchTask.location_code == code, index) for code, index in priority_index.items()],
+                    *[
+                        (PropertySearchTask.location_code == code, index)
+                        for code, index in priority_index.items()
+                    ],
                     else_=10**9,
                 )
                 if priority_index
                 else literal(10**9)
             )
             sort_order_expr = case(
-                *[(PropertySearchTask.sort_param == code, index) for code, index in sort_index.items()],
+                *[
+                    (PropertySearchTask.sort_param == code, index)
+                    for code, index in sort_index.items()
+                ],
                 else_=10**9,
             )
             available = or_(
@@ -102,7 +100,9 @@ class RepositorySearchMixin:
             )
             candidates = session.scalars(
                 select(PropertySearchTask.task_key)
-                .where(PropertySearchTask.status.in_(("pending", "in_progress")), available)
+                .where(
+                    PropertySearchTask.status.in_(("pending", "in_progress")), available
+                )
                 .order_by(
                     pending_order,
                     location_order,
@@ -161,8 +161,10 @@ class RepositorySearchMixin:
         if not self.enabled:
             return
         self.initialize()
-        active_policy = policy or DEFAULT_SEARCH_TASK_POLICY
-        resolved_key = active_policy.resolve_progress_task_key(task_key=task_key, url=url)
+        active_policy = policy or self.adapter.search_task_policy
+        resolved_key = active_policy.resolve_progress_task_key(
+            task_key=task_key, url=url
+        )
         if not resolved_key:
             if active_policy.requires_lease_owner:
                 raise ValueError("source-scoped search progress requires task_key")
@@ -182,10 +184,17 @@ class RepositorySearchMixin:
                 row.next_page = seed.page
 
             normalized_session = str(session_id or "").strip()
-            if active_policy.requires_lease_owner and row.leased_by != normalized_session:
-                raise ValueError(f"search task lease is not owned by session: {resolved_key}")
+            if (
+                active_policy.requires_lease_owner
+                and row.leased_by != normalized_session
+            ):
+                raise ValueError(
+                    f"search task lease is not owned by session: {resolved_key}"
+                )
             if normalized_session and row.leased_by not in (None, normalized_session):
-                raise ValueError(f"search task lease is owned by another session: {resolved_key}")
+                raise ValueError(
+                    f"search task lease is owned by another session: {resolved_key}"
+                )
 
             decision = active_policy.progress_decision(
                 sort_param=str(row.sort_param or ""),
@@ -210,8 +219,12 @@ class RepositorySearchMixin:
             session.add(row)
             if decision.sibling_status in {"pending", "pruned"}:
                 for sibling_sort in active_policy.sibling_sort_params:
-                    sibling_key = self._search_task_key(row.location_code, row.category or "", sibling_sort)
-                    sibling = session.get(PropertySearchTask, sibling_key) or PropertySearchTask(task_key=sibling_key)
+                    sibling_key = self._search_task_key(
+                        row.location_code, row.category or "", sibling_sort
+                    )
+                    sibling = session.get(
+                        PropertySearchTask, sibling_key
+                    ) or PropertySearchTask(task_key=sibling_key)
                     sibling.location_code = row.location_code
                     sibling.category = row.category
                     sibling.sort_param = sibling_sort
@@ -240,7 +253,9 @@ class RepositorySearchMixin:
             return counts
         self.initialize()
         with self.session_factory() as session:
-            stmt = select(PropertySearchTask.status, func.count(PropertySearchTask.task_key)).group_by(PropertySearchTask.status)
+            stmt = select(
+                PropertySearchTask.status, func.count(PropertySearchTask.task_key)
+            ).group_by(PropertySearchTask.status)
             for status, count_value in session.execute(stmt):
                 key = f"search_{status}"
                 if key in counts:
@@ -252,9 +267,17 @@ class RepositorySearchMixin:
             return 0
         self.initialize()
         with self.session_factory() as session:
-            return int(session.scalar(select(func.count()).select_from(PropertySearchTask)) or 0)
+            return int(
+                session.scalar(select(func.count()).select_from(PropertySearchTask))
+                or 0
+            )
 
-    def ensure_seed_search_tasks(self, location_codes: Sequence[str], categories: Sequence[str], sort_param: str = "2") -> int:
+    def ensure_seed_search_tasks(
+        self,
+        location_codes: Sequence[str],
+        categories: Sequence[str],
+        sort_param: str = "2",
+    ) -> int:
         """Bootstrap legacy Taobao search rows; generic sources use bootstrap_search_task."""
         if not self.enabled:
             return 0
@@ -265,7 +288,9 @@ class RepositorySearchMixin:
                 if not location_code:
                     continue
                 for category in categories:
-                    task_key = self._search_task_key(str(location_code), str(category), str(sort_param))
+                    task_key = self._search_task_key(
+                        str(location_code), str(category), str(sort_param)
+                    )
                     row = session.get(PropertySearchTask, task_key)
                     if row is not None:
                         continue
@@ -278,7 +303,9 @@ class RepositorySearchMixin:
                         status="pending",
                         zero_bid_terminated=False,
                         retry_count=0,
-                        source_url=self._build_search_task_url(str(location_code), str(category), str(sort_param), 1),
+                        source_url=self._build_search_task_url(
+                            str(location_code), str(category), str(sort_param), 1
+                        ),
                     )
                     session.add(row)
                     inserted += 1
@@ -297,16 +324,30 @@ class RepositorySearchMixin:
                 if not location_code or not category or not sort_param:
                     continue
                 task_key = self._search_task_key(location_code, category, sort_param)
-                row = session.get(PropertySearchTask, task_key) or PropertySearchTask(task_key=task_key)
+                row = session.get(PropertySearchTask, task_key) or PropertySearchTask(
+                    task_key=task_key
+                )
                 pages = snapshot.get("pages") or []
-                page_floor = max([int(p) for p in pages if isinstance(p, int) or str(p).isdigit()] or [0])
+                page_floor = max(
+                    [int(p) for p in pages if isinstance(p, int) or str(p).isdigit()]
+                    or [0]
+                )
                 dispatched_page = int(snapshot.get("dispatched_page") or 0)
-                next_page = max(page_floor, dispatched_page, 0) + 1 if not snapshot.get("is_done") else max(page_floor, dispatched_page, 1)
+                next_page = (
+                    max(page_floor, dispatched_page, 0) + 1
+                    if not snapshot.get("is_done")
+                    else max(page_floor, dispatched_page, 1)
+                )
                 last_update = _parse_dt(snapshot.get("last_update_time"))
                 need_try = bool(snapshot.get("need_try", True))
                 is_done = bool(snapshot.get("is_done", False))
                 max_page = snapshot.get("max_page")
-                max_page_int = int(max_page) if max_page not in (None, "") and str(max_page).lstrip("-").isdigit() else None
+                max_page_int = (
+                    int(max_page)
+                    if max_page not in (None, "")
+                    and str(max_page).lstrip("-").isdigit()
+                    else None
+                )
 
                 status = "pending"
                 zero_bid_terminated = False
@@ -314,7 +355,11 @@ class RepositorySearchMixin:
                     status = "pruned"
                 elif is_done:
                     status = "done"
-                    if sort_param == "2" and max_page_int is not None and 0 < max_page_int < 83:
+                    if (
+                        sort_param == "2"
+                        and max_page_int is not None
+                        and 0 < max_page_int < 83
+                    ):
                         zero_bid_terminated = True
                 elif snapshot.get("now_session_id"):
                     status = "in_progress"
@@ -325,10 +370,18 @@ class RepositorySearchMixin:
                 row.next_page = max(next_page, 1)
                 row.max_page = max_page_int
                 row.status = status
-                row.leased_by = str(snapshot.get("now_session_id") or "").strip() or None
-                row.lease_until = last_update + timedelta(seconds=90) if row.leased_by and last_update else None
+                row.leased_by = (
+                    str(snapshot.get("now_session_id") or "").strip() or None
+                )
+                row.lease_until = (
+                    last_update + timedelta(seconds=90)
+                    if row.leased_by and last_update
+                    else None
+                )
                 row.zero_bid_terminated = zero_bid_terminated
-                row.source_url = self._build_search_task_url(location_code, category, sort_param, row.next_page)
+                row.source_url = self._build_search_task_url(
+                    location_code, category, sort_param, row.next_page
+                )
                 row.last_seen_at = last_update
                 row.retry_count = int(row.retry_count or 0)
                 session.add(row)

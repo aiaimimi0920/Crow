@@ -65,14 +65,18 @@ class GenericSeedScanPolicy:
         if not platform:
             raise ValueError("generic seed source platform is required")
         if len(platform) > 32:
-            raise ValueError("generic seed source platform must be at most 32 characters")
+            raise ValueError(
+                "generic seed source platform must be at most 32 characters"
+            )
         object.__setattr__(self, "source_platform", platform)
 
     @property
     def job_key_prefix(self) -> str:
         platform = _text(self.source_platform) or "generic"
         slug = re.sub(r"[^a-z0-9]+", "-", platform.lower()).strip("-") or "source"
-        namespace = f"{slug[:24]}-{hashlib.sha256(platform.encode('utf-8')).hexdigest()[:8]}"
+        namespace = (
+            f"{slug[:24]}-{hashlib.sha256(platform.encode('utf-8')).hexdigest()[:8]}"
+        )
         return f"source:{namespace}:"
 
     def normalize_job_key(self, job_key: str) -> str:
@@ -80,7 +84,9 @@ class GenericSeedScanPolicy:
         internal_pattern = rf"{re.escape(self.job_key_prefix)}[0-9a-f]{{40}}"
         if re.fullmatch(internal_pattern, supplied):
             return supplied
-        digest = hashlib.sha256((supplied or "default").encode("utf-8")).hexdigest()[:40]
+        digest = hashlib.sha256((supplied or "default").encode("utf-8")).hexdigest()[
+            :40
+        ]
         return f"{self.job_key_prefix}{digest}"
 
     def normalize_job(self, job: Mapping[str, Any]) -> SeedScanJob:
@@ -108,7 +114,8 @@ class GenericSeedScanPolicy:
         values = metadata or {}
         return (
             job_key.startswith(self.job_key_prefix)
-            and _text(values.get("source_platform")) == (_text(self.source_platform) or "generic")
+            and _text(values.get("source_platform"))
+            == (_text(self.source_platform) or "generic")
             and _text(values.get("seed_scan_policy")) == "generic"
         )
 
@@ -204,11 +211,16 @@ class TaobaoJudicialSeedScanPolicy:
         values = metadata or {}
         policy_name = _text(values.get("seed_scan_policy"))
         platform = _text(values.get("source_platform"))
-        return not job_key.startswith("source:") and policy_name in {"", "taobao"} and platform in {
-            "",
-            "taobao",
-            "taobao_sf",
-        }
+        return (
+            not job_key.startswith("source:")
+            and policy_name in {"", "taobao"}
+            and platform
+            in {
+                "",
+                "taobao",
+                "taobao_sf",
+            }
+        )
 
     def build_page_url(
         self,
@@ -245,7 +257,13 @@ class TaobaoJudicialSeedScanPolicy:
                 while "//" in path:
                     path = path.replace("//", "/")
                 return urlunsplit(
-                    (parsed.scheme or "https", parsed.netloc, path, parsed.query, parsed.fragment)
+                    (
+                        parsed.scheme or "https",
+                        parsed.netloc,
+                        path,
+                        parsed.query,
+                        parsed.fragment,
+                    )
                 )
             return url
         return f"https://sf-item.taobao.com/sf_item/{item_id}.htm"
@@ -258,3 +276,44 @@ class TaobaoJudicialSeedScanPolicy:
 
 
 DEFAULT_SEED_SCAN_POLICY = TaobaoJudicialSeedScanPolicy()
+
+
+def resolve_seed_item_policy(
+    *,
+    source_platform: object = None,
+    explicit_url: object = None,
+    policy: SeedScanPolicy | None = None,
+    fallback: SeedScanPolicy,
+) -> SeedScanPolicy:
+    """Select source URL rules for persisted rows without guessing a foreign source."""
+    if policy is not None:
+        return policy
+    platform = (
+        ""
+        if source_platform is None or isinstance(source_platform, bool)
+        else str(source_platform).strip()
+    )
+    if platform:
+        if platform.lower() in {
+            "taobao",
+            "taobao_judicial",
+            "taobao_sf",
+            "sf.taobao.com",
+        }:
+            return TaobaoJudicialSeedScanPolicy()
+        return GenericSeedScanPolicy(source_platform=platform)
+    url = (
+        ""
+        if explicit_url is None or isinstance(explicit_url, bool)
+        else str(explicit_url).strip()
+    )
+    if url:
+        candidate = f"https:{url}" if url.startswith("//") else url
+        try:
+            hostname = (urlsplit(candidate).hostname or "").lower()
+        except ValueError:
+            hostname = ""
+        if hostname == "taobao.com" or hostname.endswith(".taobao.com"):
+            return TaobaoJudicialSeedScanPolicy()
+        return GenericSeedScanPolicy()
+    return fallback

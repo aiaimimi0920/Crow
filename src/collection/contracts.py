@@ -6,7 +6,6 @@ from .search_task_policy import SearchTaskPolicy
 from .seed_list_parser import SeedListParser
 from .seed_scan_policy import SeedScanPolicy
 
-
 Record = dict[str, Any]
 NumberParser = Callable[[Any], Any]
 
@@ -33,9 +32,13 @@ class CollectionAdapter(Protocol):
         safe_int: NumberParser,
     ) -> Record: ...
 
-    def accepts_seed(self, item: Mapping[str, Any], record: Mapping[str, Any]) -> bool: ...
+    def accepts_seed(
+        self, item: Mapping[str, Any], record: Mapping[str, Any]
+    ) -> bool: ...
 
     def sync_record(self, record: MutableMapping[str, Any]) -> None: ...
+
+    def build_storage_record(self, record: Record) -> Record: ...
 
     def partition_key(self, record: Mapping[str, Any]) -> str: ...
 

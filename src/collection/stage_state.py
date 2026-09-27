@@ -3,15 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional
 
-from .readiness import (
-    GENERIC_PRODUCT_MODEL_VERSION,
-    default_analysis_missing_fields,
-    uses_generic_product_analysis,
-)
-
-
 DETAIL_BLOCKED_STATES = {"login_redirect", "anti_bot_gate", "empty_html"}
-DETAIL_FAILED_STATES = {"failed", "fetch_failed", "timeout", "http_error", "parse_error"}
+DETAIL_FAILED_STATES = {
+    "failed",
+    "fetch_failed",
+    "timeout",
+    "http_error",
+    "parse_error",
+}
 
 
 def _present(value: Any) -> bool:
@@ -27,24 +26,13 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _model_version() -> str:
-    try:
-        from src.avm.service import MODEL_VERSION
-
-        return MODEL_VERSION
-    except Exception:
-        return "avm_multidim_v1"
-
-
-def derive_stage_state(
+def derive_collection_state(
     record: Dict[str, Any],
     raw_item: Optional[Dict[str, Any]] = None,
     *,
     event_type: Optional[str] = None,
     existing: Optional[Dict[str, Any]] = None,
     now: Optional[datetime] = None,
-    analysis_requirements: Callable[[Mapping[str, Any], str | None], list[str]] | None = None,
-    analysis_model_version: str | None = None,
 ) -> Dict[str, Any]:
     raw_item = raw_item or {}
     existing = existing or {}
@@ -56,8 +44,14 @@ def derive_stage_state(
     risk_flags = record.get("risk_flags", {}) or {}
     audit = record.get("audit", {}) or {}
 
-    has_source_url = _present(source.get("source_url") or record.get("source_url") or record.get("url"))
-    has_seed_payload = has_source_url or _present(raw_item.get("url")) or _present(raw_item.get("source_url"))
+    has_source_url = _present(
+        source.get("source_url") or record.get("source_url") or record.get("url")
+    )
+    has_seed_payload = (
+        has_source_url
+        or _present(raw_item.get("url"))
+        or _present(raw_item.get("source_url"))
+    )
     seed_status = "stored" if has_seed_payload else existing.get("seed_status")
     seed_first_seen_at = existing.get("seed_first_seen_at")
     seed_last_seen_at = existing.get("seed_last_seen_at")
@@ -73,8 +67,12 @@ def derive_stage_state(
         or existing.get("seed_source_page_url")
     )
 
-    detail_fetch_status = str(raw_item.get("detail_fetch_status") or existing.get("detail_fetch_status") or "").strip()
-    replay_requested = _present(raw_item.get("detail_replay_requested_at")) or _present(raw_item.get("detail_replay_reason"))
+    detail_fetch_status = str(
+        raw_item.get("detail_fetch_status") or existing.get("detail_fetch_status") or ""
+    ).strip()
+    replay_requested = _present(raw_item.get("detail_replay_requested_at")) or _present(
+        raw_item.get("detail_replay_reason")
+    )
     has_detail_archive = any(
         _present(source.get("detail_archive_path"))
         or _present(record.get("detail_archive_path"))
@@ -129,30 +127,21 @@ def derive_stage_state(
         detail_last_error = None
 
     detail_retry_count = _coerce_int(
-        raw_item.get("detail_retry_count", raw_item.get("detail_fetch_attempt_count", existing.get("detail_retry_count", 0))),
+        raw_item.get(
+            "detail_retry_count",
+            raw_item.get(
+                "detail_fetch_attempt_count", existing.get("detail_retry_count", 0)
+            ),
+        ),
         0,
     )
-    if detail_fetch_status in DETAIL_BLOCKED_STATES | DETAIL_FAILED_STATES and detail_retry_count <= 0:
+    if (
+        detail_fetch_status in DETAIL_BLOCKED_STATES | DETAIL_FAILED_STATES
+        and detail_retry_count <= 0
+    ):
         detail_retry_count = 1
 
     detail_lease_until = existing.get("detail_lease_until")
-
-    requirements = analysis_requirements or default_analysis_missing_fields
-    missing_fields = requirements(record, detail_status)
-    analysis_ready = len(missing_fields) == 0
-    analysis_status = "ready" if analysis_ready else "not_ready"
-    if event_type == "mark_deleted":
-        analysis_status = "invalid"
-        analysis_ready = False
-
-    analysis_last_scored_at = existing.get("analysis_last_scored_at")
-    resolved_model_version = analysis_model_version or existing.get("analysis_model_version")
-    if analysis_ready:
-        resolved_model_version = (
-            GENERIC_PRODUCT_MODEL_VERSION
-            if analysis_model_version is None and uses_generic_product_analysis(record)
-            else analysis_model_version or _model_version()
-        )
 
     return {
         "seed_status": seed_status,
@@ -163,9 +152,34 @@ def derive_stage_state(
         "detail_last_error": detail_last_error,
         "detail_retry_count": detail_retry_count,
         "detail_lease_until": detail_lease_until,
-        "analysis_status": analysis_status,
-        "analysis_ready": analysis_ready,
-        "analysis_missing_fields": missing_fields,
-        "analysis_last_scored_at": analysis_last_scored_at,
-        "analysis_model_version": resolved_model_version,
+    }
+
+
+def derive_stage_state(
+    record: Dict[str, Any],
+    raw_item: Optional[Dict[str, Any]] = None,
+    *,
+    event_type: Optional[str] = None,
+    existing: Optional[Dict[str, Any]] = None,
+    now: Optional[datetime] = None,
+    analysis_requirements: Callable[[Mapping[str, Any], str | None], list[str]]
+    | None = None,
+    analysis_model_version: str | None = None,
+) -> Dict[str, Any]:
+    """Legacy projection for existing analysis consumers, outside native writes."""
+    from src.avm.stage_projection import derive_analysis_state
+
+    stage = derive_collection_state(
+        record, raw_item, event_type=event_type, existing=existing, now=now
+    )
+    return {
+        **stage,
+        **derive_analysis_state(
+            record,
+            stage["detail_status"],
+            event_type=event_type,
+            existing=existing,
+            analysis_requirements=analysis_requirements,
+            analysis_model_version=analysis_model_version,
+        ),
     }

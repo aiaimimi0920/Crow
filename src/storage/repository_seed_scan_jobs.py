@@ -3,25 +3,18 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from typing import Any, Dict, Sequence
-from urllib.parse import urlsplit
 
 from sqlalchemy import not_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.collection.seed_scan_policy import (
-    DEFAULT_SEED_SCAN_POLICY,
-    GenericSeedScanPolicy,
-    SeedScanPolicy,
-    TaobaoJudicialSeedScanPolicy,
-)
+from src.collection.seed_scan_policy import SeedScanPolicy, resolve_seed_item_policy
 
 from .models import FapaiSeedScanJob, FapaiSeedScanProgress
 from .repository_context import _normalized_seed_text, _utc_now
 from .seed_scan_job_status import apply_job_status, refresh_job_statuses
 
 SEED_SCAN_MAINTENANCE_BATCH_SIZE = 128
-_TAOBAO_SOURCE_PLATFORMS = frozenset({"taobao", "taobao_judicial", "taobao_sf", "sf.taobao.com"})
 
 
 class RepositorySeedScanJobsMixin:
@@ -30,9 +23,15 @@ class RepositorySeedScanJobsMixin:
         explicit = _normalized_seed_text(job.get("job_key"))
         if explicit:
             return explicit
-        location_code = _normalized_seed_text(job.get("location_code")) or "unknown-location"
+        location_code = (
+            _normalized_seed_text(job.get("location_code")) or "unknown-location"
+        )
         category = _normalized_seed_text(job.get("category")) or "unknown-category"
-        district = _normalized_seed_text(job.get("district")) or _normalized_seed_text(job.get("city")) or "scope"
+        district = (
+            _normalized_seed_text(job.get("district"))
+            or _normalized_seed_text(job.get("city"))
+            or "scope"
+        )
         return f"{location_code}:{category}:{district}"
 
     @staticmethod
@@ -55,49 +54,35 @@ class RepositorySeedScanJobsMixin:
         raw = f"{item_id}|{job_key}|{sort_key}|{page}|{rank}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    @staticmethod
     def _seed_item_url(
+        self,
         item_id: str,
         explicit_url: Any = None,
         policy: SeedScanPolicy | None = None,
     ) -> str:
-        return (policy or DEFAULT_SEED_SCAN_POLICY).item_url(item_id, explicit_url)
+        return (policy or self.adapter.seed_scan_policy).item_url(item_id, explicit_url)
 
-    @staticmethod
     def _seed_item_policy(
+        self,
         *,
         source_platform: Any = None,
         explicit_url: Any = None,
         policy: SeedScanPolicy | None = None,
     ) -> SeedScanPolicy:
-        """Resolve detail URL semantics without fabricating Taobao URLs for generic rows."""
-        if policy is not None:
-            return policy
-        platform = _normalized_seed_text(source_platform)
-        if platform:
-            if platform.lower() in _TAOBAO_SOURCE_PLATFORMS:
-                return TaobaoJudicialSeedScanPolicy()
-            return GenericSeedScanPolicy(source_platform=platform)
-        url = _normalized_seed_text(explicit_url)
-        if url:
-            candidate = f"https:{url}" if url.startswith("//") else url
-            try:
-                hostname = (urlsplit(candidate).hostname or "").lower()
-            except ValueError:
-                hostname = ""
-            if hostname == "taobao.com" or hostname.endswith(".taobao.com"):
-                return TaobaoJudicialSeedScanPolicy()
-            return GenericSeedScanPolicy()
-        # Rows created before source_platform existed retain the legacy fallback.
-        return DEFAULT_SEED_SCAN_POLICY
+        return resolve_seed_item_policy(
+            source_platform=source_platform,
+            explicit_url=explicit_url,
+            policy=policy,
+            fallback=self.adapter.seed_scan_policy,
+        )
 
-    @staticmethod
     def _seed_scan_progress_payload(
+        self,
         row: FapaiSeedScanProgress,
         job: FapaiSeedScanJob,
         policy: SeedScanPolicy | None = None,
     ) -> Dict[str, Any]:
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         page = int(row.next_page or 1)
         url = active_policy.build_page_url(
             source_url_template=job.source_url_template,
@@ -125,21 +110,21 @@ class RepositorySeedScanJobsMixin:
             "url": url,
         }
 
-    @staticmethod
     def _seed_category_order(
+        self,
         category: str | None,
         policy: SeedScanPolicy | None = None,
     ) -> tuple[int, str]:
-        return (policy or DEFAULT_SEED_SCAN_POLICY).category_order(category)
+        return (policy or self.adapter.seed_scan_policy).category_order(category)
 
-    @staticmethod
     def _seed_scan_scope_order_key(
+        self,
         job: FapaiSeedScanJob | None,
         policy: SeedScanPolicy | None = None,
     ) -> tuple[Any, ...]:
         if job is None:
             return ("", "", "", "", 10_000, "", "")
-        category_rank, category = RepositorySeedScanJobsMixin._seed_category_order(job.category, policy)
+        category_rank, category = self._seed_category_order(job.category, policy)
         return (
             _normalized_seed_text(job.province),
             _normalized_seed_text(job.city),
@@ -174,11 +159,11 @@ class RepositorySeedScanJobsMixin:
         max_page: int | None = None,
         policy: SeedScanPolicy | None = None,
     ) -> Dict[str, Any]:
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         if not self.enabled:
             job_key = (
                 active_policy.normalize_job(job).job_key
-                if policy is not None
+                if policy is not None or active_policy.requires_lease_owner
                 else self._seed_scan_job_key(job)
             )
             return {"job_key": job_key, "created": False, "progress_created": 0}
@@ -224,7 +209,11 @@ class RepositorySeedScanJobsMixin:
             session.add(row)
 
             for index, sort_spec in enumerate(sort_specs):
-                sort_key = _normalized_seed_text(sort_spec.get("sort_key")) or _normalized_seed_text(sort_spec.get("st_param")) or f"sort_{index}"
+                sort_key = (
+                    _normalized_seed_text(sort_spec.get("sort_key"))
+                    or _normalized_seed_text(sort_spec.get("st_param"))
+                    or f"sort_{index}"
+                )
                 st_param = _normalized_seed_text(sort_spec.get("st_param")) or sort_key
                 progress_key = self._seed_scan_progress_key(job_key, sort_key)
                 progress = session.get(FapaiSeedScanProgress, progress_key)
@@ -254,9 +243,15 @@ class RepositorySeedScanJobsMixin:
                             )
                         if progress is None:
                             raise
-                progress.sort_name = _normalized_seed_text(sort_spec.get("sort_name")) or sort_key
+                progress.sort_name = (
+                    _normalized_seed_text(sort_spec.get("sort_name")) or sort_key
+                )
                 progress.st_param = st_param
-                progress.sort_order = int(sort_spec.get("sort_order") if sort_spec.get("sort_order") is not None else index)
+                progress.sort_order = int(
+                    sort_spec.get("sort_order")
+                    if sort_spec.get("sort_order") is not None
+                    else index
+                )
                 progress.max_page = int(max_page) if max_page else None
                 if progress.status in (None, "", "archived"):
                     progress.status = "pending"
@@ -264,7 +259,11 @@ class RepositorySeedScanJobsMixin:
                 session.add(progress)
 
             self._refresh_seed_scan_job_status(session, job_key, now)
-        return {"job_key": job_key, "created": created, "progress_created": progress_created}
+        return {
+            "job_key": job_key,
+            "created": created,
+            "progress_created": progress_created,
+        }
 
     def archive_seed_scan_jobs_except(
         self,
@@ -272,7 +271,7 @@ class RepositorySeedScanJobsMixin:
         *,
         policy: SeedScanPolicy | None = None,
     ) -> Dict[str, int]:
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         normalized_keys = sorted(
             {
                 active_policy.normalize_job_key(key)

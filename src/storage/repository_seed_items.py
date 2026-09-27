@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from src.collection.seed_list_parser import normalize_source_item_id
-from src.collection.seed_scan_policy import DEFAULT_SEED_SCAN_POLICY, SeedScanPolicy
+from src.collection.seed_scan_policy import SeedScanPolicy
 
 from .models import (
     FapaiSeedItem,
@@ -34,35 +34,44 @@ class RepositorySeedItemsMixin:
         worker_id: str | None = None,
     ) -> Dict[str, int]:
         if not self.enabled:
-            return {"seen": 0, "new_items": 0, "existing_items": 0, "new_occurrences": 0}
+            return {
+                "seen": 0,
+                "new_items": 0,
+                "existing_items": 0,
+                "new_occurrences": 0,
+            }
         self.initialize()
         now = _utc_now()
         seen = 0
         new_items = 0
         existing_items = 0
         new_occurrences = 0
-        active_policy = policy or DEFAULT_SEED_SCAN_POLICY
+        active_policy = policy or self.adapter.seed_scan_policy
         source_platform = _normalized_seed_text(active_policy.source_platform)
         if not source_platform:
             raise ValueError("seed source platform is required")
         if len(source_platform) > 32:
             raise ValueError("seed source platform must be at most 32 characters")
         with self.session_factory.begin() as session:
-            if policy is not None:
+            if policy is not None or active_policy.requires_lease_owner:
                 job = session.get(FapaiSeedScanJob, job_key)
                 progress = session.get(FapaiSeedScanProgress, progress_key)
                 if (
                     job is None
                     or progress is None
                     or progress.job_key != job_key
-                    or not policy.owns_job(job.job_key, job.metadata_json)
+                    or not active_policy.owns_job(job.job_key, job.metadata_json)
                 ):
-                    raise ValueError(f"seed scan write does not belong to policy: {progress_key}")
-                if policy.requires_lease_owner and (
+                    raise ValueError(
+                        f"seed scan write does not belong to policy: {progress_key}"
+                    )
+                if active_policy.requires_lease_owner and (
                     progress.status != "in_progress"
                     or progress.leased_by != str(worker_id or "").strip()
                 ):
-                    raise ValueError(f"seed scan lease is not owned by worker: {progress_key}")
+                    raise ValueError(
+                        f"seed scan lease is not owned by worker: {progress_key}"
+                    )
             dialect_name = session.get_bind().dialect.name
             if dialect_name == "postgresql":
                 from sqlalchemy.dialects.postgresql import insert as dialect_insert
@@ -84,8 +93,12 @@ class RepositorySeedItemsMixin:
                     item.get("url") or item.get("source_url") or item.get("itemUrl"),
                     active_policy,
                 )
-                title = _normalized_seed_text(item.get("title") or item.get("source_title"))
-                item_payload = {key: value for key, value in item.items() if not key.startswith("_")}
+                title = _normalized_seed_text(
+                    item.get("title") or item.get("source_title")
+                )
+                item_payload = {
+                    key: value for key, value in item.items() if not key.startswith("_")
+                }
                 if raw_source_item_id != source_item_id:
                     item_payload.setdefault("raw_source_item_id", raw_source_item_id)
                 item_payload["source_item_id"] = source_item_id
@@ -95,10 +108,12 @@ class RepositorySeedItemsMixin:
                 seed_item = session.get(FapaiSeedItem, item_id, with_for_update=True)
                 if seed_item is None and item_id != source_item_id:
                     seed_item = session.scalars(
-                        select(FapaiSeedItem).where(
+                        select(FapaiSeedItem)
+                        .where(
                             FapaiSeedItem.source_item_id == source_item_id,
                             FapaiSeedItem.source_platform == source_platform,
-                        ).with_for_update()
+                        )
+                        .with_for_update()
                     ).first()
                     if seed_item is not None:
                         item_id = seed_item.item_id
@@ -118,19 +133,30 @@ class RepositorySeedItemsMixin:
                         "detail_attempt_count": 0,
                     }
                     if dialect_name == "postgresql":
-                        insert_stmt = dialect_insert(FapaiSeedItem).values(**insert_values)
-                        insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=[FapaiSeedItem.item_id])
+                        insert_stmt = dialect_insert(FapaiSeedItem).values(
+                            **insert_values
+                        )
+                        insert_stmt = insert_stmt.on_conflict_do_nothing(
+                            index_elements=[FapaiSeedItem.item_id]
+                        )
                         insert_stmt = insert_stmt.returning(FapaiSeedItem.item_id)
                     elif dialect_name == "sqlite":
-                        insert_stmt = dialect_insert(FapaiSeedItem).values(**insert_values)
-                        insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=[FapaiSeedItem.item_id])
+                        insert_stmt = dialect_insert(FapaiSeedItem).values(
+                            **insert_values
+                        )
+                        insert_stmt = insert_stmt.on_conflict_do_nothing(
+                            index_elements=[FapaiSeedItem.item_id]
+                        )
                     else:
                         insert_stmt = None
                     if insert_stmt is not None:
                         result = session.execute(insert_stmt)
                         # Psycopg may expose rowcount=-1 for INSERT; returned IDs prove insertion.
-                        inserted = (result.scalar_one_or_none() is not None if dialect_name == "postgresql"
-                                    else int(result.rowcount or 0) > 0)
+                        inserted = (
+                            result.scalar_one_or_none() is not None
+                            if dialect_name == "postgresql"
+                            else int(result.rowcount or 0) > 0
+                        )
                         if inserted:
                             new_items += 1
                         else:
@@ -138,22 +164,26 @@ class RepositorySeedItemsMixin:
                     else:
                         try:
                             with session.begin_nested():
-                                session.add(
-                                    FapaiSeedItem(**insert_values)
-                                )
+                                session.add(FapaiSeedItem(**insert_values))
                                 session.flush()
                             new_items += 1
                         except IntegrityError:
                             existing_items += 1
-                    seed_item = session.get(FapaiSeedItem, item_id, with_for_update=True)
+                    seed_item = session.get(
+                        FapaiSeedItem, item_id, with_for_update=True
+                    )
                     if seed_item is None:
                         continue
                 else:
                     existing_items += 1
                 if seed_item.source_platform not in (None, "", source_platform):
-                    raise ValueError(f"seed item identity belongs to another source: {item_id}")
+                    raise ValueError(
+                        f"seed item identity belongs to another source: {item_id}"
+                    )
                 if seed_item.source_item_id not in (None, "", source_item_id):
-                    raise ValueError(f"seed item identity belongs to another source item: {item_id}")
+                    raise ValueError(
+                        f"seed item identity belongs to another source item: {item_id}"
+                    )
                 if not seed_item.source_platform:
                     seed_item.source_platform = source_platform
                 if not seed_item.source_item_id:
@@ -163,7 +193,10 @@ class RepositorySeedItemsMixin:
                 if not seed_item.title and title:
                     seed_item.title = title
                 seed_item.last_seen_at = now
-                seed_item.source_payload = {**(seed_item.source_payload or {}), **item_payload}
+                seed_item.source_payload = {
+                    **(seed_item.source_payload or {}),
+                    **item_payload,
+                }
                 if seed_item.status in (None, "", "blocked"):
                     seed_item.status = "pending_detail"
                 session.add(seed_item)
@@ -191,7 +224,9 @@ class RepositorySeedItemsMixin:
                     "seen_at": now,
                 }
                 if dialect_name == "postgresql":
-                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(**occurrence_values)
+                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(
+                        **occurrence_values
+                    )
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
                         index_elements=[FapaiSeedOccurrence.occurrence_key]
                     ).returning(FapaiSeedOccurrence.id)
@@ -199,7 +234,9 @@ class RepositorySeedItemsMixin:
                     if occurrence_result.scalar_one_or_none() is not None:
                         new_occurrences += 1
                 elif dialect_name == "sqlite":
-                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(**occurrence_values)
+                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(
+                        **occurrence_values
+                    )
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
                         index_elements=[FapaiSeedOccurrence.occurrence_key]
                     )
@@ -208,7 +245,9 @@ class RepositorySeedItemsMixin:
                         new_occurrences += 1
                 else:
                     occurrence = session.scalars(
-                        select(FapaiSeedOccurrence).where(FapaiSeedOccurrence.occurrence_key == occurrence_key)
+                        select(FapaiSeedOccurrence).where(
+                            FapaiSeedOccurrence.occurrence_key == occurrence_key
+                        )
                     ).first()
                     if occurrence is None:
                         occurrence = FapaiSeedOccurrence(**occurrence_values)

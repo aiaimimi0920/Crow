@@ -12,14 +12,10 @@ from typing import Any, Callable, Dict, Iterable, Iterator, Optional, Sequence
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
-from sqlalchemy import and_, case, create_engine, func, not_, select, text
-from sqlalchemy import or_
+from sqlalchemy import and_, case, create_engine, func, not_, or_, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
-
-from src.avm.collection_template import build_collection_record
-from src.collection.stage_state import derive_stage_state
 
 from .canonical_record import (
     CANONICAL_RECORD_SCHEMA_VERSION,
@@ -43,7 +39,6 @@ from .models import (
     PropertyRiskFlags,
     PropertySearchTask,
 )
-
 
 RepositoryClock = Callable[[], datetime]
 _INJECTED_REPOSITORY_CLOCK: ContextVar[RepositoryClock | None] = ContextVar(
@@ -110,10 +105,15 @@ def _lease_reclaimable(
 ) -> bool:
     # The persisted expiry belongs to the holder; a contender cannot shorten it.
     normalized_lease_until = _coerce_naive_utc(lease_until)
-    return normalized_lease_until is None or normalized_lease_until <= _coerce_naive_utc(now)
+    return (
+        normalized_lease_until is None
+        or normalized_lease_until <= _coerce_naive_utc(now)
+    )
 
 
-def _cooldown_active(updated_at: Optional[datetime], *, now: datetime, cutoff: Optional[datetime]) -> bool:
+def _cooldown_active(
+    updated_at: Optional[datetime], *, now: datetime, cutoff: Optional[datetime]
+) -> bool:
     if cutoff is None:
         return False
     normalized_updated_at = _coerce_naive_utc(updated_at)
@@ -125,7 +125,12 @@ def _cooldown_active(updated_at: Optional[datetime], *, now: datetime, cutoff: O
 
 
 def _manual_review_payload_fingerprint(payload: Any) -> str:
-    normalized = json.dumps(payload if payload is not None else {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    normalized = json.dumps(
+        payload if payload is not None else {},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -252,7 +257,11 @@ def _taobao_location_override_path() -> Path:
     configured = str(os.getenv("FAPAI_TAOBAO_LOCATIONS_FILE") or "").strip()
     if configured:
         return Path(configured)
-    return Path(__file__).resolve().parents[2] / "datas" / "taobao_sf_location_overrides.json"
+    return (
+        Path(__file__).resolve().parents[2]
+        / "datas"
+        / "taobao_sf_location_overrides.json"
+    )
 
 
 def _load_taobao_region_override_filter() -> tuple[set[str], set[str]]:
@@ -273,10 +282,11 @@ def _load_taobao_region_override_filter() -> tuple[set[str], set[str]]:
         if isinstance(item, dict)
     }
     replace_admin_provinces = {
-        str(item or "").strip()
-        for item in raw_replace_admin_provinces
+        str(item or "").strip() for item in raw_replace_admin_provinces
     }
-    return {code for code in override_codes if code}, {province for province in replace_admin_provinces if province}
+    return {code for code in override_codes if code}, {
+        province for province in replace_admin_provinces if province
+    }
 
 
 @dataclass
@@ -293,7 +303,6 @@ def _env_flag(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
-
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

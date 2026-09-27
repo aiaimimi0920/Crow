@@ -3,26 +3,55 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Mapping, MutableMapping, Sequence
 
-from src.avm.collection_template import sync_collection_record
-
 from ..contracts import NumberParser, Record
+from ..record_schema import sync_collection_record
 from ..search_task_policy import SearchTaskPolicy, TaobaoJudicialSearchTaskPolicy
 from ..seed_list_parser import SeedListParser, TaobaoSeedListParser
 from ..seed_scan_policy import SeedScanPolicy, TaobaoJudicialSeedScanPolicy
 from .generic_product import GenericProductAdapter
 
-
 _SEED_FIELDS_TO_PRESERVE = (
-    "title", "source_title", "url", "source_url", "source_item_id", "auction_date", "交易时间",
-    "currentPrice", "initialPrice", "transaction_price", "starting_price", "成交价格", "起拍价格",
-    "applyCount", "竞拍人数", "apply_count", "bidCount", "bid_count", "出价次数",
-    "bidderCount", "bidder_count", "出价人数", "deposit", "保证金",
-    "地点", "full_address", "完整地址", "城市", "区",
-    "latitude", "longitude", "纬度", "经度", "coordinate_source", "auction_round", "housing_type",
-    "status", "是否成交",
+    "title",
+    "source_title",
+    "url",
+    "source_url",
+    "source_item_id",
+    "auction_date",
+    "交易时间",
+    "currentPrice",
+    "initialPrice",
+    "transaction_price",
+    "starting_price",
+    "成交价格",
+    "起拍价格",
+    "applyCount",
+    "竞拍人数",
+    "apply_count",
+    "bidCount",
+    "bid_count",
+    "出价次数",
+    "bidderCount",
+    "bidder_count",
+    "出价人数",
+    "deposit",
+    "保证金",
+    "地点",
+    "full_address",
+    "完整地址",
+    "城市",
+    "区",
+    "latitude",
+    "longitude",
+    "纬度",
+    "经度",
+    "coordinate_source",
+    "auction_round",
+    "housing_type",
+    "status",
+    "是否成交",
 )
 
 
@@ -60,8 +89,12 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
         parse_number: NumberParser,
         safe_int: NumberParser,
     ) -> Record:
-        deal_price = parse_number(item.get("currentPrice")) or parse_number(item.get("成交价格"))
-        starting_price = parse_number(item.get("initialPrice")) or parse_number(item.get("起拍价格"))
+        deal_price = parse_number(item.get("currentPrice")) or parse_number(
+            item.get("成交价格")
+        )
+        starting_price = parse_number(item.get("initialPrice")) or parse_number(
+            item.get("起拍价格")
+        )
         apply_count = safe_int(item.get("applyCount")) or safe_int(item.get("竞拍人数"))
         bid_count = safe_int(item.get("bidCount")) or safe_int(item.get("出价次数"))
         bidder_count = (
@@ -74,10 +107,27 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
         auction_start_time = str(
             item.get("auction_start_time", "") or item.get("startTime", "") or ""
         ).strip()
-        full_address = item.get("full_address") or item.get("完整地址") or item.get("location") or item.get("地点")
-        watch_count = safe_int(item.get("watchCount")) or safe_int(item.get("watch_count")) or safe_int(item.get("围观人数"))
-        reminder_count = safe_int(item.get("remindCount")) or safe_int(item.get("reminder_count")) or safe_int(item.get("提醒人数"))
-        view_count = safe_int(item.get("viewCount")) or safe_int(item.get("view_count")) or safe_int(item.get("浏览次数"))
+        full_address = (
+            item.get("full_address")
+            or item.get("完整地址")
+            or item.get("location")
+            or item.get("地点")
+        )
+        watch_count = (
+            safe_int(item.get("watchCount"))
+            or safe_int(item.get("watch_count"))
+            or safe_int(item.get("围观人数"))
+        )
+        reminder_count = (
+            safe_int(item.get("remindCount"))
+            or safe_int(item.get("reminder_count"))
+            or safe_int(item.get("提醒人数"))
+        )
+        view_count = (
+            safe_int(item.get("viewCount"))
+            or safe_int(item.get("view_count"))
+            or safe_int(item.get("浏览次数"))
+        )
 
         stub = {
             "id": self.item_id(item),
@@ -124,10 +174,18 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
             "浏览次数": view_count,
             "deposit": deposit,
             "保证金": deposit,
-            "latitude": parse_number(item.get("latitude")) if item.get("latitude") is not None else None,
-            "longitude": parse_number(item.get("longitude")) if item.get("longitude") is not None else None,
-            "纬度": parse_number(item.get("latitude")) if item.get("latitude") is not None else None,
-            "经度": parse_number(item.get("longitude")) if item.get("longitude") is not None else None,
+            "latitude": parse_number(item.get("latitude"))
+            if item.get("latitude") is not None
+            else None,
+            "longitude": parse_number(item.get("longitude"))
+            if item.get("longitude") is not None
+            else None,
+            "纬度": parse_number(item.get("latitude"))
+            if item.get("latitude") is not None
+            else None,
+            "经度": parse_number(item.get("longitude"))
+            if item.get("longitude") is not None
+            else None,
             "coordinate_source": item.get("coordinate_source"),
             "auction_round": safe_int(item.get("auction_round")),
             "housing_type": item.get("housing_type"),
@@ -207,7 +265,8 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
         return (
             status in {"done", "成交", "ended", "finished", "结束"}
             or record.get("是否成交") is True
-            or str(record.get("outcome", "")).lower() in {"成交", "success", "successful"}
+            or str(record.get("outcome", "")).lower()
+            in {"成交", "success", "successful"}
         )
 
     def retry_reason(self, record: Mapping[str, Any]) -> str | None:
@@ -257,36 +316,101 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
 @dataclass(frozen=True)
 class TaobaoJudicialAnalysisProfile:
     money_fields = frozenset(
-        {"市场评估价", "起拍价格", "成交价格", "保证金", "evaluation_price", "starting_price", "transaction_price", "deposit"}
+        {
+            "市场评估价",
+            "起拍价格",
+            "成交价格",
+            "保证金",
+            "evaluation_price",
+            "starting_price",
+            "transaction_price",
+            "deposit",
+        }
     )
     area_fields = frozenset(
-        {"建筑面积", "产权建筑面积", "area_sqm", "gross_area_sqm", "interior_area_sqm", "land_area_sqm"}
+        {
+            "建筑面积",
+            "产权建筑面积",
+            "area_sqm",
+            "gross_area_sqm",
+            "interior_area_sqm",
+            "land_area_sqm",
+        }
     )
     ratio_fields = frozenset({"产权份额比例", "ownership_share_ratio"})
     count_fields = frozenset(
         {
-            "竞拍人数", "出价次数", "出价人数", "围观人数", "提醒人数", "浏览次数",
-            "apply_count", "bid_count", "bidder_count", "watch_count", "reminder_count", "view_count",
-            "build_year", "total_floors",
+            "竞拍人数",
+            "出价次数",
+            "出价人数",
+            "围观人数",
+            "提醒人数",
+            "浏览次数",
+            "apply_count",
+            "bid_count",
+            "bidder_count",
+            "watch_count",
+            "reminder_count",
+            "view_count",
+            "build_year",
+            "total_floors",
         }
     )
     boolean_fields = frozenset(
         {
-            "是否成交", "is_occupied", "has_long_lease", "clear_delivery", "property_fee_owed",
-            "is_restricted_purchase", "is_fractional_share", "tax_is_company_owned",
-            "has_lease_before_mortgage", "has_elevator", "includes_parking", "has_keys",
-            "is_haunted", "special_school_tag",
+            "是否成交",
+            "is_occupied",
+            "has_long_lease",
+            "clear_delivery",
+            "property_fee_owed",
+            "is_restricted_purchase",
+            "is_fractional_share",
+            "tax_is_company_owned",
+            "has_lease_before_mortgage",
+            "has_elevator",
+            "includes_parking",
+            "has_keys",
+            "is_haunted",
+            "special_school_tag",
         }
     )
-    datetime_fields = frozenset({"开拍时间", "交易时间", "auction_date", "auction_start_time"})
+    datetime_fields = frozenset(
+        {"开拍时间", "交易时间", "auction_date", "auction_start_time"}
+    )
     derived_fields = frozenset({"单价", "unit_price"})
     system_fields = frozenset(
         {
-            "id", "item_id", "唯一id", "source_item_id", "source_platform", "原始网站", "source_url", "url", "标题", "title",
-            "source_title", "is_processed", "detail_captured", "status", "auction_date", "currentPrice",
-            "initialPrice", "applyCount", "bidCount", "bidderCount", "deposit", "latitude", "longitude",
-            "纬度", "经度", "coordinate_source", "extraction_confidence", "evidence_span",
-            "evidence_source", "extraction_version", "avm_risk_features",
+            "id",
+            "item_id",
+            "唯一id",
+            "source_item_id",
+            "source_platform",
+            "原始网站",
+            "source_url",
+            "url",
+            "标题",
+            "title",
+            "source_title",
+            "is_processed",
+            "detail_captured",
+            "status",
+            "auction_date",
+            "currentPrice",
+            "initialPrice",
+            "applyCount",
+            "bidCount",
+            "bidderCount",
+            "deposit",
+            "latitude",
+            "longitude",
+            "纬度",
+            "经度",
+            "coordinate_source",
+            "extraction_confidence",
+            "evidence_span",
+            "evidence_source",
+            "extraction_version",
+            "avm_risk_features",
         }
     )
     high_risk_fields = frozenset(
@@ -295,9 +419,18 @@ class TaobaoJudicialAnalysisProfile:
         | set(ratio_fields)
         | set(datetime_fields)
         | {
-            "是否成交", "法院名称", "案号", "is_occupied", "has_long_lease", "clear_delivery",
-            "tax_burden", "property_fee_owed", "is_restricted_purchase", "is_fractional_share",
-            "tax_is_company_owned", "has_lease_before_mortgage",
+            "是否成交",
+            "法院名称",
+            "案号",
+            "is_occupied",
+            "has_long_lease",
+            "clear_delivery",
+            "tax_burden",
+            "property_fee_owed",
+            "is_restricted_purchase",
+            "is_fractional_share",
+            "tax_is_company_owned",
+            "has_lease_before_mortgage",
         }
     )
     field_keywords = {
@@ -378,7 +511,9 @@ class TaobaoJudicialAnalysisProfile:
         area = _decimal(field_values.get("建筑面积"))
         if transaction_price is not None and area is not None and area > 0:
             field_values["单价"] = float(
-                (transaction_price / area).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                (transaction_price / area).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
             )
         else:
             field_values["单价"] = 0

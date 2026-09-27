@@ -7,7 +7,11 @@ from typing import Any, Mapping, MutableMapping, Sequence
 
 from ..contracts import NumberParser, Record
 from ..search_task_policy import GenericSearchTaskPolicy, SearchTaskPolicy
-from ..seed_list_parser import GenericJsonSeedListParser, SeedListParser, normalize_source_item_id
+from ..seed_list_parser import (
+    GenericJsonSeedListParser,
+    SeedListParser,
+    normalize_source_item_id,
+)
 from ..seed_scan_policy import GenericSeedScanPolicy, SeedScanPolicy
 
 
@@ -48,7 +52,9 @@ class GenericProductAdapter:
         return GenericJsonSeedListParser()
 
     def item_id(self, item: Mapping[str, Any]) -> str:
-        raw_source_item_id = _first_non_empty(item, "source_item_id", "id", "item_id", "sku")
+        raw_source_item_id = _first_non_empty(
+            item, "source_item_id", "id", "item_id", "sku"
+        )
         if raw_source_item_id is None:
             raise ValueError("collection item is missing source_item_id/id/item_id/sku")
         source_item_id = normalize_source_item_id(str(raw_source_item_id))
@@ -62,15 +68,21 @@ class GenericProductAdapter:
         safe_int: NumberParser,
     ) -> Record:
         del parse_number, safe_int
-        record = {str(key): value for key, value in item.items() if value not in (None, "")}
-        raw_source_item_id = _first_non_empty(item, "source_item_id", "id", "item_id", "sku")
+        record = {
+            str(key): value for key, value in item.items() if value not in (None, "")
+        }
+        raw_source_item_id = _first_non_empty(
+            item, "source_item_id", "id", "item_id", "sku"
+        )
         if raw_source_item_id is None:
             raise ValueError("collection item is missing source_item_id/id/item_id/sku")
         source_item_id = normalize_source_item_id(str(raw_source_item_id))
         item_id = self.item_id(item)
         declared_platform = str(item.get("source_platform") or "").strip()
         if declared_platform and declared_platform != self.source_platform:
-            raise ValueError("collection item source_platform does not match its adapter")
+            raise ValueError(
+                "collection item source_platform does not match its adapter"
+            )
         title = _first_non_empty(item, "source_title", "title", "name")
         source_url = _first_non_empty(item, "source_url", "url", "detail_url")
         record.update(
@@ -98,6 +110,13 @@ class GenericProductAdapter:
 
     def sync_record(self, record: MutableMapping[str, Any]) -> None:
         del record
+
+    def build_storage_record(self, record: Record) -> Record:
+        from ..record_schema import build_collection_record
+
+        return build_collection_record(
+            record, default_source_platform=self.source_platform
+        )
 
     def partition_key(self, record: Mapping[str, Any]) -> str:
         raw = _first_non_empty(record, "collected_at", "published_at", "updated_at")
@@ -138,7 +157,9 @@ class GenericProductAdapter:
         record["id"] = item_id
         record["item_id"] = item_id
         record["source_item_id"] = str(source_item_id)
-        record.setdefault("source_platform", existing.get("source_platform") or self.source_platform)
+        record.setdefault(
+            "source_platform", existing.get("source_platform") or self.source_platform
+        )
         source_url = self.source_url(record) or self.source_url(existing)
         if source_url:
             record.setdefault("url", source_url)
@@ -161,7 +182,9 @@ class GenericProductAdapter:
         record["is_processed"] = True
 
     def archive_date(self, record: Mapping[str, Any]) -> Any:
-        return _first_non_empty(record, "collected_at", "published_at", "updated_at") or datetime.datetime.now(datetime.timezone.utc)
+        return _first_non_empty(
+            record, "collected_at", "published_at", "updated_at"
+        ) or datetime.datetime.now(datetime.timezone.utc)
 
     def source_url(self, record: Mapping[str, Any]) -> str | None:
         value = _first_non_empty(record, "source_url", "url", "detail_url")

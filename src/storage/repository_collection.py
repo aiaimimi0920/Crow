@@ -4,8 +4,6 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from src.collection.stage_state import derive_stage_state
-
 from .canonical_record import CANONICAL_RECORD_SCHEMA_VERSION, build_canonical_payload
 from .models import (
     PropertyAudit,
@@ -39,7 +37,9 @@ class RepositoryCollectionMixin:
         }
 
     @staticmethod
-    def _changed_stage_events(existing_stage: Dict[str, Any], stage_state: Dict[str, Any]) -> list[tuple[str, Dict[str, Any]]]:
+    def _changed_stage_events(
+        existing_stage: Dict[str, Any], stage_state: Dict[str, Any]
+    ) -> list[tuple[str, Dict[str, Any]]]:
         events: list[tuple[str, Dict[str, Any]]] = []
 
         def _append(event_type: str, field: str) -> None:
@@ -61,7 +61,10 @@ class RepositoryCollectionMixin:
         _append("seed_stage_transition", "seed_status")
         _append("detail_stage_transition", "detail_status")
         _append("analysis_stage_transition", "analysis_status")
-        if existing_stage.get("analysis_ready") != stage_state.get("analysis_ready") and stage_state.get("analysis_ready") is not None:
+        if (
+            existing_stage.get("analysis_ready") != stage_state.get("analysis_ready")
+            and stage_state.get("analysis_ready") is not None
+        ):
             events.append(
                 (
                     "analysis_ready_transition",
@@ -69,7 +72,8 @@ class RepositoryCollectionMixin:
                         "field": "analysis_ready",
                         "previous": existing_stage.get("analysis_ready"),
                         "current": stage_state.get("analysis_ready"),
-                        "missing_fields": stage_state.get("analysis_missing_fields") or [],
+                        "missing_fields": stage_state.get("analysis_missing_fields")
+                        or [],
                     },
                 )
             )
@@ -173,21 +177,33 @@ class RepositoryCollectionMixin:
         listing.last_synced_at = now
         session.add(listing)
 
-        risk_row = session.get(PropertyRiskFlags, item_id) or PropertyRiskFlags(item_id=item_id)
+        risk_row = session.get(PropertyRiskFlags, item_id) or PropertyRiskFlags(
+            item_id=item_id
+        )
         for key, value in risk_flags.items():
             setattr(risk_row, key, value)
         session.add(risk_row)
 
-        legal_row = session.get(PropertyLegalContext, item_id) or PropertyLegalContext(item_id=item_id)
+        legal_row = session.get(PropertyLegalContext, item_id) or PropertyLegalContext(
+            item_id=item_id
+        )
         legal_row.court_name = legal_context.get("court_name")
         legal_row.case_number = legal_context.get("case_number")
         legal_row.appraisal_agency_name = legal_context.get("appraisal_agency_name")
-        legal_row.appraisal_benchmark_date = _parse_dt(legal_context.get("appraisal_benchmark_date"))
-        legal_row.appraisal_report_urls = legal_context.get("appraisal_report_urls") or []
-        legal_row.announcement_attachment_urls = legal_context.get("announcement_attachment_urls") or []
+        legal_row.appraisal_benchmark_date = _parse_dt(
+            legal_context.get("appraisal_benchmark_date")
+        )
+        legal_row.appraisal_report_urls = (
+            legal_context.get("appraisal_report_urls") or []
+        )
+        legal_row.announcement_attachment_urls = (
+            legal_context.get("announcement_attachment_urls") or []
+        )
         session.add(legal_row)
 
-        audit_row = session.get(PropertyAudit, item_id) or PropertyAudit(item_id=item_id)
+        audit_row = session.get(PropertyAudit, item_id) or PropertyAudit(
+            item_id=item_id
+        )
         existing_stage = self._audit_stage_snapshot(audit_row)
         audit_row.detail_archive_path = source.get("detail_archive_path")
         source_json_path = None
@@ -210,7 +226,9 @@ class RepositoryCollectionMixin:
         audit_row.image_manifest_path = archive.get("image_manifest_path")
         audit_row.extraction_confidence = audit.get("extraction_confidence")
         evidence_span = audit.get("evidence_span")
-        audit_row.evidence_span = evidence_span if isinstance(evidence_span, str) else str(evidence_span)
+        audit_row.evidence_span = (
+            evidence_span if isinstance(evidence_span, str) else str(evidence_span)
+        )
         audit_row.evidence_source = audit.get("evidence_source")
         audit_row.extraction_version = audit.get("extraction_version")
         audit_row.community_name_source = audit.get("community_name_source")
@@ -222,10 +240,14 @@ class RepositoryCollectionMixin:
         audit_row.detail_captured = audit.get("detail_captured")
         raw_item = aux_data or {}
         audit_row.detail_fetch_status = raw_item.get("detail_fetch_status")
-        audit_row.detail_fetch_attempted_at = _parse_dt(raw_item.get("detail_fetch_attempted_at"))
-        audit_row.detail_fetch_attempt_count = raw_item.get("detail_fetch_attempt_count")
+        audit_row.detail_fetch_attempted_at = _parse_dt(
+            raw_item.get("detail_fetch_attempted_at")
+        )
+        audit_row.detail_fetch_attempt_count = raw_item.get(
+            "detail_fetch_attempt_count"
+        )
         audit_row.detail_fetch_last_url = raw_item.get("detail_fetch_last_url")
-        stage_state = derive_stage_state(
+        stage_state = self._derive_stage_state(
             record,
             raw_item,
             event_type=event_type,
@@ -240,14 +262,21 @@ class RepositoryCollectionMixin:
         audit_row.detail_last_error = stage_state.get("detail_last_error")
         audit_row.detail_retry_count = stage_state.get("detail_retry_count")
         audit_row.detail_lease_until = _parse_dt(stage_state.get("detail_lease_until"))
-        audit_row.analysis_status = stage_state.get("analysis_status")
-        audit_row.analysis_ready = stage_state.get("analysis_ready")
-        audit_row.analysis_missing_fields = stage_state.get("analysis_missing_fields") or []
-        audit_row.analysis_last_scored_at = _parse_dt(stage_state.get("analysis_last_scored_at"))
-        audit_row.analysis_model_version = stage_state.get("analysis_model_version")
+        if "analysis_status" in stage_state:
+            audit_row.analysis_status = stage_state.get("analysis_status")
+            audit_row.analysis_ready = stage_state.get("analysis_ready")
+            audit_row.analysis_missing_fields = (
+                stage_state.get("analysis_missing_fields") or []
+            )
+            audit_row.analysis_last_scored_at = _parse_dt(
+                stage_state.get("analysis_last_scored_at")
+            )
+            audit_row.analysis_model_version = stage_state.get("analysis_model_version")
         session.add(audit_row)
 
-        for transition_type, transition_payload in self._changed_stage_events(existing_stage, stage_state):
+        for transition_type, transition_payload in self._changed_stage_events(
+            existing_stage, stage_state
+        ):
             session.add(
                 PropertyIngestEvent(
                     item_id=item_id,
@@ -269,7 +298,9 @@ class RepositoryCollectionMixin:
         session.flush()
         self._apply_postgis_point(session, item_id, listing.latitude, listing.longitude)
 
-    def mark_deleted(self, item_id: str, reason: str, event_payload: Optional[Dict[str, Any]] = None) -> None:
+    def mark_deleted(
+        self, item_id: str, reason: str, event_payload: Optional[Dict[str, Any]] = None
+    ) -> None:
         if not self.enabled:
             return
         self.initialize()
