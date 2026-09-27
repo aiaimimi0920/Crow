@@ -48,6 +48,10 @@ def _function_sources() -> dict[str, str]:
                         functions[child.name] = _source_segment(lines, child)
     # Registered handlers may be native closures outside the legacy server files.
     for name in set(server_module.ROUTES.values()) | {
+        "do_HEAD",
+        "do_OPTIONS",
+        "do_GET",
+        "do_POST",
         "_get_api_not_found",
         "_server_get_fallback",
         "_server_post_fallback",
@@ -469,7 +473,7 @@ def test_server_bare_404s_are_only_non_api_fallbacks():
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "startswith"
         and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "request_path"
+        and node.func.value.id in {"path", "request_path"}
         and node.args
         and isinstance(node.args[0], ast.Constant)
         and node.args[0].value == "/api/"

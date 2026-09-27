@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
+from threading import Event
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from .collection_index_bootstrap import BootstrapGlob
@@ -107,10 +108,17 @@ class CollectionFileRuntime:
             remove_pending=collection.remove_pending,
         )
 
-    def background_file_processor(self) -> None:
+    def background_file_processor(self, stop_event: Event | None = None) -> None:
         host = self.host
         logger.info("Background AI processor started using global executor")
-        while True:
+
+        def wait(seconds: float) -> None:
+            if stop_event is None:
+                host.time.sleep(seconds)
+            else:
+                stop_event.wait(seconds)
+
+        while stop_event is None or not stop_event.is_set():
             try:
                 files = host.glob.glob(host.os.path.join(host.DATA_DIR, "item-*.txt"))
                 files += host.glob.glob(
@@ -118,10 +126,12 @@ class CollectionFileRuntime:
                 )
                 files += host.glob.glob(host.os.path.join(host.DATA_DIR, "item-*.html"))
                 if not files:
-                    host.time.sleep(1)
+                    wait(1)
                     continue
                 submitted_count = 0
                 for path in files:
+                    if stop_event is not None and stop_event.is_set():
+                        return
                     if path in host.RUNTIME.processing:
                         continue
                     host.submit_task(path)
@@ -130,7 +140,7 @@ class CollectionFileRuntime:
                     logger.info(
                         "Background scanner submitted tasks=%s", submitted_count
                     )
-                host.time.sleep(1)
+                wait(1)
             except Exception:
                 logger.exception("Background scanner loop failed")
-                host.time.sleep(5)
+                wait(5)

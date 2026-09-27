@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Event
 from typing import ClassVar, Protocol
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,9 @@ class SolverRetryLoop:
 
     __all__: ClassVar[list[str]] = ["manual_solver_retry_thread"]
 
-    def manual_solver_retry_thread(self) -> None:
+    def manual_solver_retry_thread(self, stop_event: Event | None = None) -> None:
         host = self.host
-        while True:
+        while stop_event is None or not stop_event.is_set():
             try:
                 result = host._trigger_manual_solver_retry_if_due()
                 if result.get("queued"):
@@ -39,4 +40,8 @@ class SolverRetryLoop:
                     )
             except Exception:
                 logger.exception("Manual-required solver retry monitor failed")
-            host.time.sleep(host._manual_solver_retry_poll_seconds())
+            interval = host._manual_solver_retry_poll_seconds()
+            if stop_event is None:
+                host.time.sleep(interval)
+            elif stop_event.wait(interval):
+                return

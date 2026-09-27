@@ -89,15 +89,25 @@ class PropertyRepository(CollectionRepository):
         return (policy or DEFAULT_SEED_SCAN_POLICY).item_url(item_id, explicit_url)
 
 
-def create_repository_from_env() -> PropertyRepository:
-    settings = DatabaseSettings(
+def database_settings_from_env() -> DatabaseSettings:
+    return DatabaseSettings(
         url=os.environ.get("FAPAI_DB_URL", "").strip(),
         echo=_env_flag("FAPAI_DB_ECHO", False),
         enable_postgis=_env_flag("FAPAI_DB_ENABLE_POSTGIS", False),
         auto_create=_env_flag("FAPAI_DB_AUTO_CREATE", False),
         enabled=_env_flag("FAPAI_DB_ENABLED", True),
     )
-    return PropertyRepository(settings=settings)
+
+
+def create_repository_from_env() -> PropertyRepository:
+    return PropertyRepository(settings=database_settings_from_env())
+
+
+def create_collection_repository_from_env(
+    *,
+    adapter: CollectionAdapter,
+) -> CollectionRepository:
+    return CollectionRepository(database_settings_from_env(), adapter=adapter)
 
 
 __all__ = [
@@ -105,4 +115,5 @@ __all__ = [
     "DatabaseSettings",
     "PropertyRepository",
     "create_repository_from_env",
+    "create_collection_repository_from_env",
 ]

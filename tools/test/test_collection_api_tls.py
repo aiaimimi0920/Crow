@@ -118,8 +118,12 @@ def test_partial_tls_configuration_fails_closed(cert, key):
 
 
 def test_invalid_material_fails_before_runtime_initialization(tmp_path, monkeypatch):
+    from src import collection_application
+
     monkeypatch.setattr(
-        server, "initialize_runtime", lambda **_: pytest.fail("runtime initialized")
+        collection_application,
+        "create_application",
+        lambda **_: pytest.fail("runtime initialized"),
     )
     cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
     cert.write_text("invalid certificate", encoding="utf-8")

@@ -46,7 +46,11 @@ def control_import_results(tmp_path_factory):
     # Every assertion still sees a fresh interpreter and private working directory.
     with ThreadPoolExecutor(max_workers=4) as pool:
         return dict(
-            zip(_CONTROL_IMPORT_MODULES, pool.map(probe, _CONTROL_IMPORT_MODULES))
+            zip(
+                _CONTROL_IMPORT_MODULES,
+                pool.map(probe, _CONTROL_IMPORT_MODULES),
+                strict=True,
+            )
         )
 
 
@@ -126,7 +130,9 @@ def bootstrap_path_results(tmp_path_factory):
         return result, tmp_path, state_path, token_path
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        return dict(zip(_BOOTSTRAP_CASES, pool.map(probe, _BOOTSTRAP_CASES)))
+        return dict(
+            zip(_BOOTSTRAP_CASES, pool.map(probe, _BOOTSTRAP_CASES), strict=True)
+        )
 
 
 @pytest.mark.parametrize("configured_root", [False, True])
@@ -400,7 +406,10 @@ def test_overview_delegates_after_runtime_and_diagnostic_reads(
     runtime = RuntimeState()
     runtime.control.set_pause(True, reason)
     monkeypatch.setattr(server, "RUNTIME", runtime)
-    monkeypatch.setattr(server, "AVM_SERVICE", SimpleNamespace(data_dir=tmp_path))
+    monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        server, "AVM_SERVICE", SimpleNamespace(data_dir=tmp_path / "unused-analysis")
+    )
     status = {"collection_stage": {"seed_queue": {"seed_occurrence_total": 7}}}
     monkeypatch.setattr(
         server, "_collection_api_lightweight_status_payload", lambda: status

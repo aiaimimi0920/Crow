@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import time
+from threading import Event
 
 logger = logging.getLogger(__name__)
 
 
-def auto_tuner_thread() -> None:
+def auto_tuner_thread(stop_event: Event | None = None) -> None:
     """
     Background thread for automatic concurrency tuning.
     Runs every 5 minutes, analyzes error rates, and adjusts ModelSelector limits.
@@ -29,8 +30,11 @@ def auto_tuner_thread() -> None:
 
     logger.info("[AUTO-TUNER] Started (5-minute intervals)")
 
-    while True:
-        time.sleep(TUNING_INTERVAL)
+    while stop_event is None or not stop_event.is_set():
+        if stop_event is None:
+            time.sleep(TUNING_INTERVAL)
+        elif stop_event.wait(TUNING_INTERVAL):
+            return
 
         if is_stable:
             # Already stable, just monitor

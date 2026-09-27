@@ -3,7 +3,6 @@
 from types import ModuleType
 from typing import cast
 
-from .analysis_read_handlers import AnalysisReadHost, bind_analysis_reads
 from .auth_command_handlers import AuthCommandHost, bind_auth_commands
 from .auth_completion_binding import AuthCompletionHost, bind_auth_completion
 from .auth_cookie_binding import AuthCookieHost, bind_auth_cookie
@@ -38,17 +37,8 @@ from .collection_status_handler import CollectionStatusHost, bind_collection_sta
 from .collection_working_items import CollectionWorkingItems, WorkingItemHost
 from .detail_dispatch_handlers import DetailDispatchHost, bind_detail_dispatch
 from .detail_ingest_handlers import DetailIngestHost, bind_detail_ingest
-from .evaluation_handlers import EvaluationHost, bind_evaluations
 from .location_catalog_handler import LocationCatalogHost, bind_location_catalog
-from .manual_review_read_handlers import ReviewReadHost, bind_review_reads
-from .manual_review_write_contracts import ReviewWriteHost
-from .manual_review_write_handlers import bind_review_writes
 from .observer_command_handlers import ObserverCommandHost, bind_observer_commands
-from .pipeline_submission_handlers import PipelineHost, bind_pipeline_submissions
-from .report_job_handlers import ReportHost, bind_report_jobs
-from .screen_alert_store import ScreenAlertHost, ScreenAlertStore
-from .screen_handlers import ScreenHost, bind_screen
-from .screen_result_summary import ScreenResultSummary, ScreenSummaryHost
 from .seed_task_handlers import SeedTaskHost, bind_seed_tasks
 from .server_handler_compatibility import (
     HandlerCompatibilityHost,
@@ -65,7 +55,7 @@ from .task_read_handlers import TaskReadHost, bind_task_reads
 from .upload_handler import UploadHost, bind_uploads
 
 
-def bind_native_server_owners(host: ModuleType) -> tuple[object, ...]:
+def bind_collection_server_owners(host: ModuleType) -> tuple[object, ...]:
     return (
         *bind_auth_recovery(cast(AuthRecoveryHost, host)),
         *bind_auth_cookie(cast(AuthCookieHost, host)),
@@ -85,12 +75,10 @@ def bind_native_server_owners(host: ModuleType) -> tuple[object, ...]:
         AuctionPricePolicy(cast(AuctionPriceHost, host)),
         AuctionRecordPatch(cast(AuctionPatchHost, host)),
         AuctionRiskPolicy(cast(AuctionRiskHost, host)),
-        ScreenResultSummary(cast(ScreenSummaryHost, host)),
-        ScreenAlertStore(cast(ScreenAlertHost, host)),
     )
 
 
-def bind_native_handler_owners(host: ModuleType) -> tuple[object, ...]:
+def bind_collection_handler_owners(host: ModuleType) -> tuple[object, ...]:
     return (
         SolverExecutionGuard(cast(SolverExecutionHost, host)),
         bind_solver_run(cast(SolverRunHost, host)),
@@ -103,16 +91,43 @@ def bind_native_handler_owners(host: ModuleType) -> tuple[object, ...]:
         bind_task_reads(cast(TaskReadHost, host)),
         bind_collection_reads(cast(CollectionReadHost, host)),
         bind_recovery_reads(cast(RecoveryReadHost, host)),
-        bind_review_reads(cast(ReviewReadHost, host)),
-        bind_analysis_reads(cast(AnalysisReadHost, host)),
-        bind_report_jobs(cast(ReportHost, host)),
         bind_collection_status(cast(CollectionStatusHost, host)),
         bind_captcha_reports(cast(CaptchaReportHost, host)),
         bind_uploads(cast(UploadHost, host)),
         bind_detail_ingest(cast(DetailIngestHost, host)),
+        bind_location_catalog(cast(LocationCatalogHost, host)),
+    )
+
+
+def bind_native_server_owners(host: ModuleType) -> tuple[object, ...]:
+    """Legacy analysis callers opt into their additional owners explicitly."""
+    from .screen_alert_store import ScreenAlertHost, ScreenAlertStore
+    from .screen_result_summary import ScreenResultSummary, ScreenSummaryHost
+
+    return (
+        *bind_collection_server_owners(host),
+        ScreenResultSummary(cast(ScreenSummaryHost, host)),
+        ScreenAlertStore(cast(ScreenAlertHost, host)),
+    )
+
+
+def bind_native_handler_owners(host: ModuleType) -> tuple[object, ...]:
+    from .analysis_read_handlers import AnalysisReadHost, bind_analysis_reads
+    from .evaluation_handlers import EvaluationHost, bind_evaluations
+    from .manual_review_read_handlers import ReviewReadHost, bind_review_reads
+    from .manual_review_write_contracts import ReviewWriteHost
+    from .manual_review_write_handlers import bind_review_writes
+    from .pipeline_submission_handlers import PipelineHost, bind_pipeline_submissions
+    from .report_job_handlers import ReportHost, bind_report_jobs
+    from .screen_handlers import ScreenHost, bind_screen
+
+    return (
+        *bind_collection_handler_owners(host),
+        bind_review_reads(cast(ReviewReadHost, host)),
+        bind_analysis_reads(cast(AnalysisReadHost, host)),
+        bind_report_jobs(cast(ReportHost, host)),
         bind_screen(cast(ScreenHost, host)),
         bind_pipeline_submissions(cast(PipelineHost, host)),
         bind_evaluations(cast(EvaluationHost, host)),
         bind_review_writes(cast(ReviewWriteHost, host)),
-        bind_location_catalog(cast(LocationCatalogHost, host)),
     )

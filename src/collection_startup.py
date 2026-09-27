@@ -71,7 +71,7 @@ class CollectionStartup:
 
     __all__: ClassVar[list[str]] = ["initialize_runtime"]
 
-    def initialize_runtime(self) -> None:
+    def initialize_runtime(self, *, start_workers: bool = True) -> None:
         from .auth_cleanup_journal import recover_pending_cleanups
         from .auth_cleanup_recovery import restore_legacy_cleanup
 
@@ -119,22 +119,23 @@ class CollectionStartup:
             except Exception:
                 logger.exception("Database initialization failed")
 
-            host.threading.Thread(
-                target=host.manual_solver_retry_thread, daemon=True
-            ).start()
-            logger.info(
-                "[SOLVER] Manual-required auto retry monitor started "
-                "(interval: %ss, poll: %ss).",
-                host._manual_solver_retry_interval_seconds(),
-                host._manual_solver_retry_poll_seconds(),
-            )
+            if start_workers:
+                host.threading.Thread(
+                    target=host.manual_solver_retry_thread, daemon=True
+                ).start()
+                logger.info(
+                    "[SOLVER] Manual-required auto retry monitor started "
+                    "(interval: %ss, poll: %ss).",
+                    host._manual_solver_retry_interval_seconds(),
+                    host._manual_solver_retry_poll_seconds(),
+                )
             try:
                 host._sample_nas_auth_recovery()
             except Exception:
                 logger.exception(
                     "Initial authentication recovery progress sample failed"
                 )
-            if host.NAS_AUTH_RECOVERY.enabled:
+            if start_workers and host.NAS_AUTH_RECOVERY.enabled:
                 host.threading.Thread(
                     target=host.nas_auth_recovery_watchdog_thread, daemon=True
                 ).start()

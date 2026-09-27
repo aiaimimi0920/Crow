@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from threading import Thread
+from threading import Event, Thread
 from typing import TYPE_CHECKING, ClassVar
 
 from .auth_cookie_snapshot_retry import Finalizer, StateWriter, run_snapshot_retry
@@ -27,6 +27,7 @@ class AuthCookieSnapshotJobs:
     clock: Callable[[], float]
     sleep: Callable[[float], None]
     thread_factory: Callable[..., Thread]
+    stop_event: Event | None = None
 
     __all__: ClassVar[tuple[str, ...]] = (
         "_run_auth_cookie_snapshot_retry",
@@ -55,6 +56,7 @@ class AuthCookieSnapshotJobs:
             finalize_auth=finalize_auth,
             expected_challenge_id=expected_challenge_id,
             completion_request=completion_request,
+            stop_event=self.stop_event,
         )
 
     def _schedule_auth_cookie_snapshot_refresh(
@@ -78,4 +80,5 @@ class AuthCookieSnapshotJobs:
             finalize_auth=finalize_auth,
             expected_challenge_id=expected_challenge_id,
             completion_request=completion_request,
+            stop_event=self.stop_event,
         )

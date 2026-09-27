@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from threading import Thread
+from threading import Event, Thread
 from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
@@ -35,8 +35,11 @@ def schedule_refresh(
     finalize_auth: bool = False,
     expected_challenge_id: str | None = None,
     completion_request: dict[str, object] | None = None,
+    stop_event: Event | None = None,
 ) -> dict[str, object]:
     with state.lock:
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Collection application is closing")
         current = cast(dict[str, object], state.snapshot())
         if state.active_thread() is not None:
             current["retry_queued"] = True

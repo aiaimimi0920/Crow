@@ -1,6 +1,7 @@
 """Cookie snapshot retry policy with explicit effects and time dependencies."""
 
 from collections.abc import Callable
+from threading import Event
 from typing import Protocol
 
 
@@ -32,10 +33,30 @@ def run_snapshot_retry(
     finalize_auth: bool = False,
     expected_challenge_id: str | None = None,
     completion_request: dict[str, object] | None = None,
+    stop_event: Event | None = None,
 ) -> None:
     last_result: dict[str, object] = {"refreshed": False, "reason": "not_started"}
 
+    def stopped(attempts: int) -> bool:
+        if stop_event is None or not stop_event.is_set():
+            return False
+        set_state(
+            status="failed",
+            completion_id=completion_id,
+            attempts=attempts,
+            max_attempts=max_attempts,
+            refreshed=last_result.get("refreshed") is True,
+            auth_state_confirmed=False,
+            retry_queued=False,
+            next_retry_at_epoch=None,
+            last_finished_at_epoch=clock(),
+            result={"reason": "application_stopping"},
+        )
+        return True
+
     for attempt in range(1, max_attempts + 1):
+        if stopped(attempt - 1):
+            return
         set_state(
             status="running",
             completion_id=completion_id,
@@ -59,6 +80,8 @@ def run_snapshot_retry(
         except Exception as error:  # noqa: BLE001 - preserve retry diagnostics for refresh failures.
             last_result = {"refreshed": False, "error": repr(error)}
 
+        if stopped(attempt):
+            return
         if last_result.get("refreshed") is True:
             auth_finalization = None
             if finalize_auth:
@@ -126,7 +149,10 @@ def run_snapshot_retry(
                 result=last_result,
             )
             if delay > 0:
-                sleep(delay)
+                if stop_event is None:
+                    sleep(delay)
+                else:
+                    stop_event.wait(delay)
 
     set_state(
         status="failed",

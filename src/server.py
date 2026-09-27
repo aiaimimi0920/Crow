@@ -9,6 +9,7 @@ import threading
 from src.auth_cookie_snapshot_jobs import AuthCookieSnapshotJobs
 from src.auth_recovery_progress import captured_detail_count, pending_detail_count
 from src.collection_index_loader import load_collection_index
+from src.collection_http_handler import CollectionRequestHandler
 from src.server_collection_status import CollectionStatusReaders
 from src.server_module_exports import ModuleExports
 from src.server_native_bindings import (
@@ -325,129 +326,8 @@ ROUTES = _route_definitions.build_routes(
 )
 
 
-class DataHandler(http.server.SimpleHTTPRequestHandler):
-    timeout = 30
-
-    def do_HEAD(self):
-        self.send_response(404)
-        self.end_headers()
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        _apply_cors_headers(self)
-        self.send_header("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
-        self.send_header(
-            "Access-Control-Allow-Headers",
-            "Content-Type, X-FAPAI-Control-Token, X-Fapai-Recovery-Token, X-FAPAI-Collection-Token",
-        )
-        self.end_headers()
-
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        request_path = parsed.path
-        query = parse_qs(parsed.query)
-        if request_path in _route_definitions.RETIRED_GET_ROUTES:
-            self.send_error_json(
-                status=405,
-                code="API_METHOD_NOT_ALLOWED",
-                message="This operation requires an authenticated POST",
-                details={
-                    "method": "POST",
-                    "path": _route_definitions.RETIRED_GET_ROUTES[request_path],
-                },
-            )
-            return
-        handler = ROUTES.get(("GET", request_path))
-        if handler is not None:
-            return getattr(self, handler)(parsed, request_path, query)
-        if request_path.startswith("/collection/") or request_path.startswith(
-            "/assets/"
-        ):
-            return self._get_collection_asset(parsed, request_path, query)
-        if request_path.startswith("/api/collection/items/"):
-            return self._get_collection_item(parsed, request_path, query)
-        if request_path.startswith("/api/"):
-            return self._get_api_not_found(parsed, request_path, query)
-        return self._server_get_fallback(parsed, request_path, query)
-
-    def do_POST(self):
-        request_path = urlparse(self.path).path
-        handler = ROUTES.get(("POST", request_path))
-        if handler is not None:
-            if not self._authorize_write(handler, request_path):
-                return
-            return getattr(self, handler)()
-        return self._server_post_fallback()
-
-    def _authorize_write(self, handler, request_path):
-        access = _route_access.required_access("POST", handler)
-        if access == "worker":
-            return _require_collection_worker(self)
-        if access == "node":
-            return _require_node_auth(self)
-        if access == "recovery":
-            authorized, _error = _nas_auth_recovery_authorized(self.headers)
-            if not authorized:
-                code = (
-                    "AUTH_RECOVERY_FORBIDDEN"
-                    if request_path == "/api/collection/auth/recovery/request"
-                    else "COLLECTION_AUTH_RECOVERY_FORBIDDEN"
-                )
-                _send_guard_error(
-                    self,
-                    {
-                        "status": 403,
-                        "code": code,
-                        "message": "Authentication recovery authorization rejected",
-                        "details": {},
-                    },
-                )
-            return authorized
-        if access in {"engine", "settings"}:
-            role = (
-                _settings_schema.ROLES.get(request_path)
-                if access == "settings"
-                else ("operator" if request_path == _engine_control.PREFIX else "agent")
-            )
-            try:
-                _engine_control.authorize(self.headers, role)
-            except _engine_control.RestartError as error:
-                code = (
-                    "SETTINGS_REJECTED"
-                    if access == "settings"
-                    else "ENGINE_RESTART_REJECTED"
-                )
-                _send_guard_error(
-                    self,
-                    {
-                        "status": error.status,
-                        "code": code,
-                        "message": str(error),
-                        "details": {},
-                    },
-                )
-                return False
-            return True
-        return _require_control_plane(self)
-
-    def _post_collection_start(self):
-        if not _require_control_plane(self):
-            return
-        accepted, _payload = _read_json_body(self)
-        if accepted:
-            self.send_json(_collection_operator_start())
-
-    def _post_desktop_auth_request(self):
-        return _server_desktop_auth_request(self)
-
-    def _get_collection_settings(self, parsed, request_path, query):
-        return _server_collection_settings(self, read=True)
-
-    def _post_engine_control(self):
-        return _server_engine_control(self)
-
-    def _post_collection_settings(self):
-        return _server_collection_settings(self)
+class DataHandler(CollectionRequestHandler):
+    application = sys.modules[__name__]
 
     def _enqueue_collection_job(
         self,
@@ -553,7 +433,7 @@ _method_names = set(ROUTES.values()) | {
     "log_message",
 }
 for _method_name in sorted(_method_names):
-    if _method_name in DataHandler.__dict__:
+    if hasattr(DataHandler, _method_name) and _method_name != "log_message":
         continue
     _method = globals()[_method_name]
     _method.__qualname__ = f"DataHandler.{_method_name}"

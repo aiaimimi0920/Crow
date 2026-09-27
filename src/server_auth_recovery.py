@@ -6,6 +6,7 @@ import hmac
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Event
 from typing import TYPE_CHECKING, ClassVar, Protocol, cast
 
 from .auth_recovery_progress import (
@@ -168,8 +169,10 @@ class AuthRecovery:
             return False, "auth recovery token is invalid"
         return True, ""
 
-    def nas_auth_recovery_watchdog_thread(self) -> None:
-        while True:
+    def nas_auth_recovery_watchdog_thread(
+        self, stop_event: Event | None = None
+    ) -> None:
+        while stop_event is None or not stop_event.is_set():
             try:
                 snapshot = self.sample()
                 active = snapshot.get("active")
@@ -181,7 +184,10 @@ class AuthRecovery:
                     )
             except Exception:
                 logger.exception("[AUTH-RECOVERY] Watchdog sample failed")
-            self.sleep(self.poll_seconds())
+            if stop_event is None:
+                self.sleep(self.poll_seconds())
+            elif stop_event.wait(self.poll_seconds()):
+                return
 
     def _nas_auth_recovery_result(
         self, payload: dict[str, object]
