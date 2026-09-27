@@ -260,7 +260,7 @@ def test_legacy_seed_preservation_entrypoint_delegates_to_auction_adapter():
 
 
 def test_run_maintenance_forwards_reconcile_limit(tmp_path, monkeypatch):
-    import tools.run_recent_enrich_maintenance as maintenance_module
+    import src.collection.detail_maintenance as maintenance_module
 
     calls = {}
 
@@ -268,7 +268,7 @@ def test_run_maintenance_forwards_reconcile_limit(tmp_path, monkeypatch):
         calls.update(options)
         return {"reconcile_limit": options["reconcile_limit"]}
 
-    monkeypatch.setattr(maintenance_module, "run_recent_enrich_maintenance", fake_run)
+    monkeypatch.setattr(maintenance_module, "run_collection_maintenance", fake_run)
     service = DetailCollectionService(tmp_path)
 
     assert service.run_maintenance(reconcile_limit=7) == {"reconcile_limit": 7}

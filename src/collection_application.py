@@ -30,6 +30,7 @@ from .server_routes import GET_GROUPS, POST_GROUPS, build_routes
 from .storage.repository import CollectionRepository
 
 _COLLECTION_MODULES = (
+    "collection_maintenance_handlers",
     "server_http_responses",
     "server_request_guard",
     "server_collection_settings",
@@ -59,11 +60,6 @@ _POSTPROCESSING_POSTS = {
     "_post_analysis_screen",
     "_post_start_all_subtasks",
     "_post_run_all_subtasks_sync",
-    "_post_infer_location",
-    "_post_detail_maintenance",
-    "_post_fetch_missing_detail_archives",
-    "_post_archive_detail_replay",
-    "_post_recent_detail_replay",
 }
 
 

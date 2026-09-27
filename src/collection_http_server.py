@@ -1,5 +1,6 @@
 """Threaded collection API with bounded, independent TLS handshakes."""
 
+import logging
 import socket
 import socketserver
 import ssl
@@ -72,8 +73,11 @@ class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     def server_close(self) -> None:
         with self._jobs_lock:
             self._closing = True
-            if self._jobs is not None:
-                self._jobs.close()
+            jobs = self._jobs
+        if jobs is not None and not jobs.close(timeout=5):
+            logging.getLogger(__name__).warning(
+                "Collection maintenance shutdown is pending worker exit"
+            )
         super().server_close()
 
     def get_request(self) -> tuple[socket.socket, tuple[str, int]]:

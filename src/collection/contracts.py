@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, MutableMapping, Protocol, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from typing import Any, Protocol
 
 from .search_task_policy import SearchTaskPolicy
 from .seed_list_parser import SeedListParser
@@ -65,6 +66,12 @@ class CollectionAdapter(Protocol):
     def archive_date(self, record: Mapping[str, Any]) -> Any: ...
 
     def source_url(self, record: Mapping[str, Any]) -> str | None: ...
+
+    def detail_replay_reason(self, record: Mapping[str, Any]) -> str | None: ...
+
+    def detail_replay_url(self, record: Mapping[str, Any]) -> str | None: ...
+
+    def blocked_capture_reason(self, content: str) -> str | None: ...
 
     def quality_summary(self, record: Mapping[str, Any]) -> str: ...
 

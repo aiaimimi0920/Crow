@@ -122,13 +122,18 @@ def test_maintenance_preserves_delegation(admission, name, kind, code):
 
 
 def test_native_handlers_bind_descriptors_and_publish_context():
+    from src import collection_maintenance_handlers, server
     from src import pipeline_submission_handlers as owner
-    from src import server
 
     handler = object.__new__(server.DataHandler)
     for name in owner.PipelineSubmissionHandlers.__all__:
         function = getattr(server, name)
-        assert function.__module__ == owner.__name__
+        expected_owner = (
+            collection_maintenance_handlers
+            if name in collection_maintenance_handlers.__all__
+            else owner
+        )
+        assert function.__module__ == expected_owner.__name__
         assert getattr(server._CONTEXT, name) is function
         if name.startswith("_post_"):
             method = getattr(handler, name)

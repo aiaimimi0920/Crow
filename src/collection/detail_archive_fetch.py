@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import datetime
-import json
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import requests
 
+from src.archive_json_io import read_records as _load_file_rows
+from src.archive_json_io import write_text
 from src.collection_job_control import job_checkpoint, job_io_timeout
 from src.detail_artifacts import extract_detail_artifacts, get_detail_archive_path
 from src.llm_helper import (
@@ -16,90 +18,25 @@ from src.llm_helper import (
     extract_property_coordinates,
     filter_content,
 )
-from src.storage.repository import create_repository_from_env
+from src.storage.repository import (
+    CollectionRepository,
+    create_collection_repository_from_env,
+)
+
+from .adapter_resolver import collection_adapter_from_env
+from .adapters.taobao_detail_facts import (
+    merge_risk_features as _merge_risk_features,
+)
+from .adapters.taobao_detail_facts import (
+    needs_risk_enrich as _needs_risk_enrich,
+)
+from .archive_records import apply_record_patch, publish_records
+from .contracts import CollectionAdapter
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 )
-
-
-def _blocked_reason_for_html(html_content: str) -> str | None:
-    text = str(html_content or "")
-    lowered = text.lower()
-    if (
-        "login.taobao.com/member/login.jhtml" in lowered
-        or "login.m.taobao.com/login.htm" in lowered
-    ):
-        return "login_redirect"
-    if (
-        "_____tmd_____" in lowered
-        or "sdklogin" in lowered
-        or "localstorage.x5referer" in lowered
-    ):
-        return "anti_bot_gate"
-    if len(text.strip()) < 200:
-        return "empty_html"
-    return None
-
-
-def _load_file_rows(file_path: Path) -> list[dict[str, object]]:
-    payload = json.loads(file_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        return []
-    return [row for row in payload if isinstance(row, dict)]
-
-
-def _needs_risk_enrich(row: dict[str, object]) -> bool:
-    risk_payload = row.get("avm_risk_features")
-    if not isinstance(risk_payload, dict):
-        return True
-    return not any(
-        risk_payload.get(key) not in (None, "", "UNK")
-        for key in (
-            "is_occupied",
-            "has_long_lease",
-            "clear_delivery",
-            "tax_burden",
-            "is_fractional_share",
-        )
-    )
-
-
-def _merge_risk_features(row: dict[str, object], extracted: dict[str, object]) -> None:
-    row["avm_risk_features"] = extracted
-    for key in (
-        "community_name",
-        "build_year",
-        "total_floors",
-        "floor_level",
-        "has_elevator",
-        "orientation",
-        "land_right_type",
-        "is_occupied",
-        "has_long_lease",
-        "clear_delivery",
-        "tax_burden",
-        "is_haunted",
-        "housing_type",
-        "has_keys",
-        "property_fee_owed",
-        "special_school_tag",
-        "evaluation_price",
-        "layout",
-        "is_restricted_purchase",
-        "includes_parking",
-        "is_fractional_share",
-        "tax_is_company_owned",
-        "has_lease_before_mortgage",
-        "extraction_confidence",
-        "evidence_span",
-        "evidence_source",
-        "extraction_version",
-    ):
-        value = extracted.get(key)
-        if value not in (None, "", "UNK"):
-            row[key] = value
 
 
 def fetch_missing_detail_archives(
@@ -108,9 +45,17 @@ def fetch_missing_detail_archives(
     timeout: int,
     extract_risk: bool = False,
     dry_run: bool = False,
+    *,
+    repository: CollectionRepository | None = None,
+    adapter: CollectionAdapter | None = None,
 ) -> dict[str, object]:
     job_checkpoint()
-    repo = create_repository_from_env()
+    selected = adapter or collection_adapter_from_env(default="taobao_judicial")
+    repo = (
+        repository
+        if repository is not None
+        else create_collection_repository_from_env(adapter=selected)
+    )
     candidates = repo.iter_detail_fetch_candidates(limit=limit) if repo.enabled else []
     fetched_count = 0
     touched_files = 0
@@ -118,6 +63,26 @@ def fetch_missing_detail_archives(
     blocked_count = 0
     samples: list[dict[str, object]] = []
 
+    if dry_run:
+        return {
+            "limit": limit,
+            "timeout": timeout,
+            "extract_risk": extract_risk,
+            "dry_run": True,
+            "candidate_count": len(candidates),
+            "planned_count": len(candidates),
+            "fetched_count": 0,
+            "failed_count": 0,
+            "blocked_count": 0,
+            "touched_files": 0,
+            "ai_calls": 0,
+            "samples": [
+                {"item_id": str(row.get("item_id") or row.get("id") or "")}
+                for row in candidates[:20]
+            ],
+        }
+
+    ai_calls = 0
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
 
@@ -128,8 +93,8 @@ def fetch_missing_detail_archives(
             or candidate.get("json_file")
             or candidate.get("source_json_path")
         )
-        source_url = candidate.get("source_url") or candidate.get("url")
-        item_id = str(candidate.get("item_id") or candidate.get("id") or "")
+        source_url = selected.source_url(candidate)
+        item_id = selected.item_id(candidate)
         if (
             not item_id
             or not isinstance(file_path_value, str)
@@ -140,6 +105,22 @@ def fetch_missing_detail_archives(
 
         file_path = Path(file_path_value)
         if not file_path.exists():
+            continue
+
+        file_rows = _load_file_rows(file_path)
+        target_row = next(
+            (row for row in file_rows if selected.item_id(row) == item_id), None
+        )
+        if target_row is None:
+            continue
+        previous_archive = target_row.get("detail_archive_path")
+        if previous_archive and (data_root / str(previous_archive)).is_file():
+            # A prior JSON publication may have succeeded before the DB failed.
+            publish_records(
+                file_path, file_rows, [target_row], repo, "detail_archive_fetched"
+            )
+            touched_files += 1
+            fetched_count += 1
             continue
 
         try:
@@ -157,23 +138,21 @@ def fetch_missing_detail_archives(
                     event_payload={
                         "source_file": str(file_path),
                         "item_id": item_id,
-                        "error": str(exc),
+                        "error_type": type(exc).__name__,
                     },
                 )
             if len(samples) < 20:
-                samples.append(
-                    {"item_id": item_id, "source_url": source_url, "error": str(exc)}
-                )
+                samples.append({"item_id": item_id, "error_type": type(exc).__name__})
             continue
 
-        blocked_reason = _blocked_reason_for_html(html_content)
+        blocked_reason = selected.blocked_capture_reason(html_content)
         if blocked_reason:
             blocked_count += 1
             if not dry_run:
                 file_rows = _load_file_rows(file_path)
                 blocked_row = None
                 for row in file_rows:
-                    if str(row.get("id") or row.get("item_id") or "") == item_id:
+                    if selected.item_id(row) == item_id:
                         row["detail_fetch_status"] = blocked_reason
                         row["detail_fetch_attempted_at"] = (
                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -189,20 +168,14 @@ def fetch_missing_detail_archives(
                         )
                         row["detail_fetch_last_url"] = str(source_url)
                         blocked_row = row
-                        file_path.write_text(
-                            json.dumps(file_rows, ensure_ascii=False, indent=4),
-                            encoding="utf-8",
-                        )
                         break
                 if repo.enabled and isinstance(blocked_row, dict):
-                    repo.upsert_flat_item(
-                        blocked_row,
-                        event_type="detail_archive_fetch_blocked",
-                        event_payload={
-                            "source_file": str(file_path),
-                            "item_id": item_id,
-                            "reason": blocked_reason,
-                        },
+                    publish_records(
+                        file_path,
+                        file_rows,
+                        [blocked_row],
+                        repo,
+                        "detail_archive_fetch_blocked",
                     )
             if len(samples) < 20:
                 samples.append(
@@ -214,17 +187,10 @@ def fetch_missing_detail_archives(
                 )
             continue
 
-        file_rows = _load_file_rows(file_path)
-        target_row = None
-        for row in file_rows:
-            if str(row.get("id") or row.get("item_id") or "") == item_id:
-                target_row = row
-                break
-        if not isinstance(target_row, dict):
-            continue
-
+        revision = uuid4().hex
+        archive_date = selected.archive_date(candidate)
         archive_path = get_detail_archive_path(
-            data_root, candidate.get("auction_date"), item_id
+            data_root, archive_date, item_id, revision=revision
         )
         relative_archive = archive_path.relative_to(data_root).as_posix()
         target_row["detail_archive_path"] = relative_archive
@@ -239,48 +205,61 @@ def fetch_missing_detail_archives(
             + 1
         )
         target_row["detail_fetch_last_url"] = str(source_url)
+        apply_record_patch(
+            target_row,
+            {
+                "detail_archive_path": relative_archive,
+                "detail_captured": True,
+                "is_processed": False,
+            },
+        )
 
         coord = extract_property_coordinates(html_content)
         if coord:
-            target_row["latitude"] = coord["latitude"]
-            target_row["longitude"] = coord["longitude"]
-            target_row["纬度"] = coord["latitude"]
-            target_row["经度"] = coord["longitude"]
-            target_row["coordinate_source"] = "html"
+            apply_record_patch(
+                target_row,
+                {
+                    "latitude": coord["latitude"],
+                    "longitude": coord["longitude"],
+                    "纬度": coord["latitude"],
+                    "经度": coord["longitude"],
+                    "coordinate_source": "html",
+                },
+            )
         artifact_fields = extract_detail_artifacts(
             data_root=data_root,
             html_content=html_content,
             item_id=item_id,
-            auction_date=candidate.get("auction_date"),
+            auction_date=archive_date,
             source_url=str(source_url),
+            archive_revision=revision,
         )
         for key, value in artifact_fields.items():
             if value not in (None, "", []):
-                target_row[key] = value
+                apply_record_patch(target_row, {key: value})
         risk_extracted = False
-        if extract_risk and _needs_risk_enrich(target_row):
+        if (
+            extract_risk
+            and selected.collects_avm_risk
+            and _needs_risk_enrich(target_row)
+        ):
             job_checkpoint()
             page_text = filter_content(html_content)
             extracted_risk = extract_avm_risk_features(page_text, item_id=item_id)
+            ai_calls += 1
+            job_checkpoint()
             if isinstance(extracted_risk, dict):
-                _merge_risk_features(target_row, extracted_risk)
+                risk_patch: dict[str, object] = {}
+                _merge_risk_features(risk_patch, extracted_risk)
+                apply_record_patch(target_row, risk_patch)
                 risk_extracted = True
 
         if not dry_run:
             job_checkpoint()
-            archive_path.write_text(html_content, encoding="utf-8")
-            file_path.write_text(
-                json.dumps(file_rows, ensure_ascii=False, indent=4), encoding="utf-8"
+            write_text(archive_path, html_content)
+            publish_records(
+                file_path, file_rows, [target_row], repo, "detail_archive_fetched"
             )
-            if repo.enabled:
-                repo.upsert_flat_items(
-                    [target_row],
-                    event_type="detail_archive_fetched",
-                    event_payload_factory=lambda record, _idx, file_path=file_path: {
-                        "source_file": str(file_path),
-                        "item_id": record["source"]["item_id"],
-                    },
-                )
             touched_files += 1
 
         fetched_count += 1
@@ -305,5 +284,6 @@ def fetch_missing_detail_archives(
         "failed_count": failed_count,
         "blocked_count": blocked_count,
         "touched_files": touched_files,
+        "ai_calls": ai_calls,
         "samples": samples,
     }

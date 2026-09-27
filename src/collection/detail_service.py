@@ -4,10 +4,11 @@ import datetime
 import logging
 import tempfile
 import threading
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import timezone as _timezone
 from pathlib import Path
-from typing import Any, Callable, ContextManager, Dict
+from typing import Any, ContextManager
 
 from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
@@ -53,8 +54,8 @@ class DetailCollectionService(DetailLocationInference):
 
     @staticmethod
     def _preserve_seed_values(
-        record: Dict[str, Any],
-        seed: Dict[str, Any],
+        record: dict[str, Any],
+        seed: dict[str, Any],
         adapter: CollectionAdapter | None = None,
     ) -> None:
         """Preserve seed values while keeping the legacy Taobao default."""
@@ -94,7 +95,7 @@ class DetailCollectionService(DetailLocationInference):
 
     @staticmethod
     def _expire_dispatches(
-        dispatched_tasks: Dict[str, datetime.datetime],
+        dispatched_tasks: dict[str, datetime.datetime],
         now: datetime.datetime,
         cooldown_seconds: int,
     ) -> None:
@@ -117,13 +118,13 @@ class DetailCollectionService(DetailLocationInference):
 
     def next_task(
         self,
-        dispatched_tasks: Dict[str, datetime.datetime],
+        dispatched_tasks: dict[str, datetime.datetime],
         cooldown_seconds: int,
         dispatch_lock: ContextManager[object] | None = None,
         mark_dispatched: Callable[[str, datetime.datetime], None] | None = None,
         get_dispatched: Callable[[str], datetime.datetime | None] | None = None,
         prune_dispatched: Callable[[datetime.datetime, int], None] | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         now = _utc_now()
         lock = dispatch_lock or self._dispatch_lock
         with lock:
@@ -161,14 +162,14 @@ class DetailCollectionService(DetailLocationInference):
     def next_visit_task(
         self,
         *,
-        dispatched_tasks: Dict[str, datetime.datetime],
+        dispatched_tasks: dict[str, datetime.datetime],
         cooldown_seconds: int,
-        legacy_entries: list[tuple[str, Dict[str, Any]]] | None = None,
+        legacy_entries: list[tuple[str, dict[str, Any]]] | None = None,
         dispatch_lock: ContextManager[object] | None = None,
         mark_dispatched: Callable[[str, datetime.datetime], None] | None = None,
         get_dispatched: Callable[[str], datetime.datetime | None] | None = None,
         prune_dispatched: Callable[[datetime.datetime, int], None] | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         now = _utc_now()
         lock = dispatch_lock or self._dispatch_lock
         with lock:
@@ -176,7 +177,7 @@ class DetailCollectionService(DetailLocationInference):
                 prune_dispatched(now, cooldown_seconds)
             else:
                 self._expire_dispatches(dispatched_tasks, now, cooldown_seconds)
-        candidate_entries: list[tuple[str, Dict[str, Any]]] = []
+        candidate_entries: list[tuple[str, dict[str, Any]]] = []
         if self.repository and getattr(self.repository, "enabled", False):
             candidate_entries = [
                 (
@@ -247,13 +248,13 @@ class DetailCollectionService(DetailLocationInference):
     def batch_tasks(
         self,
         *,
-        dispatched_tasks: Dict[str, datetime.datetime],
+        dispatched_tasks: dict[str, datetime.datetime],
         cooldown_seconds: int,
         batch_size: int = 300,
         mark_dispatched: Callable[[str, datetime.datetime], None] | None = None,
         get_dispatched: Callable[[str], datetime.datetime | None] | None = None,
         prune_dispatched: Callable[[datetime.datetime, int], None] | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         now = _utc_now()
         with self._dispatch_lock:
             if prune_dispatched is not None:
@@ -309,18 +310,18 @@ class DetailCollectionService(DetailLocationInference):
         item_id: str,
         html_content: str,
         status: str | None,
-        get_working_item: Callable[[str, bool], Dict[str, Any] | None],
-        apply_flat_override_patch: Callable[[Dict[str, Any], Dict[str, Any]], None],
-        reset_structured_sections_for_resync: Callable[[Dict[str, Any]], None],
-        update_file_global: Callable[[str, str, Dict[str, Any]], None],
+        get_working_item: Callable[[str, bool], dict[str, Any] | None],
+        apply_flat_override_patch: Callable[[dict[str, Any], dict[str, Any]], None],
+        reset_structured_sections_for_resync: Callable[[dict[str, Any]], None],
+        update_file_global: Callable[[str, str, dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [Dict[str, Any], str, Dict[str, Any] | None], None
+            [dict[str, Any], str, dict[str, Any] | None], None
         ],
         evict_runtime_item: Callable[[str], None],
         submit_task: Callable[[str], None],
         prefer_db_task_reads: Callable[[], bool],
         remove_pending: Callable[[str], bool | None],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         working_item = get_working_item(item_id, True)
         if not working_item:
             return {"status": "id_not_found"}
@@ -381,21 +382,21 @@ class DetailCollectionService(DetailLocationInference):
         self,
         *,
         item_id: str,
-        patch_data: Dict[str, Any],
+        patch_data: dict[str, Any],
         event_type: str,
-        get_working_item: Callable[[str, bool], Dict[str, Any] | None],
-        apply_flat_override_patch: Callable[[Dict[str, Any], Dict[str, Any]], None],
-        reset_structured_sections_for_resync: Callable[[Dict[str, Any]], None],
-        update_file_global: Callable[[str, str, Dict[str, Any]], None],
+        get_working_item: Callable[[str, bool], dict[str, Any] | None],
+        apply_flat_override_patch: Callable[[dict[str, Any], dict[str, Any]], None],
+        reset_structured_sections_for_resync: Callable[[dict[str, Any]], None],
+        update_file_global: Callable[[str, str, dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [Dict[str, Any], str, Dict[str, Any] | None], None
+            [dict[str, Any], str, dict[str, Any] | None], None
         ],
         evict_runtime_item: Callable[[str], None],
         prefer_db_task_reads: Callable[[], bool],
         remove_pending: Callable[[str], bool | None],
         mark_processed: bool = False,
         force_status: str | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         working_item = get_working_item(item_id, True)
         if not (item_id and working_item):
             return {"status": "id_not_found"}
@@ -455,7 +456,7 @@ class DetailCollectionService(DetailLocationInference):
         timeout: int = 15,
         extract_risk: bool = False,
         dry_run: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         from src.collection.detail_archive_fetch import fetch_missing_detail_archives
 
         return fetch_missing_detail_archives(
@@ -464,6 +465,8 @@ class DetailCollectionService(DetailLocationInference):
             timeout=timeout,
             extract_risk=extract_risk,
             dry_run=dry_run,
+            repository=self.repository,
+            adapter=self.adapter,
         )
 
     def backfill_archived(
@@ -472,14 +475,16 @@ class DetailCollectionService(DetailLocationInference):
         limit: int = 200,
         dry_run: bool = True,
         extract_risk: bool = False,
-    ) -> Dict[str, Any]:
-        from tools.backfill_archived_details import backfill_archived_details
+    ) -> dict[str, Any]:
+        from .detail_backfill import backfill_archived_details
 
         return backfill_archived_details(
             self.data_root,
             limit=limit,
             dry_run=dry_run,
             extract_risk=extract_risk,
+            repository=self.repository,
+            adapter=self.adapter,
         )
 
     def prepare_replay(
@@ -488,14 +493,16 @@ class DetailCollectionService(DetailLocationInference):
         window_days: int = 7,
         limit: int = 100,
         dry_run: bool = True,
-    ) -> Dict[str, Any]:
-        from tools.prepare_recent_detail_replay import prepare_recent_detail_replay
+    ) -> dict[str, Any]:
+        from .detail_replay import prepare_recent_detail_replay
 
         return prepare_recent_detail_replay(
             self.data_root,
             window_days=window_days,
             limit=limit,
             dry_run=dry_run,
+            repository=self.repository,
+            adapter=self.adapter,
         )
 
     def run_maintenance(
@@ -512,10 +519,10 @@ class DetailCollectionService(DetailLocationInference):
         extract_risk: bool = False,
         prepare_replay: bool = False,
         fetch_archives: bool = False,
-    ) -> Dict[str, Any]:
-        from tools.run_recent_enrich_maintenance import run_recent_enrich_maintenance
+    ) -> dict[str, Any]:
+        from .detail_maintenance import run_collection_maintenance
 
-        return run_recent_enrich_maintenance(
+        return run_collection_maintenance(
             data_root=self.data_root,
             window_days=window_days,
             archive_limit=archive_limit,
@@ -528,4 +535,6 @@ class DetailCollectionService(DetailLocationInference):
             extract_risk=extract_risk,
             prepare_replay=prepare_replay,
             fetch_archives=fetch_archives,
+            repository=self.repository,
+            adapter=self.adapter,
         )

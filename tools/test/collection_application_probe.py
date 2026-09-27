@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.client import HTTPConnection
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +31,10 @@ class RejectPostprocessing(importlib.abc.MetaPathFinder):
                 "src.avm.",
                 "tools.analysis_",
                 "tools.run_recent_enrich_maintenance",
+                "tools.backfill_archived_details",
+                "tools.prepare_recent_detail_replay",
+                "tools.avm_data_loader",
+                "tools.audit_recent_avm_gaps",
                 "tools.apply_avm_",
             )
         ):
@@ -89,6 +94,7 @@ def run(root: Path, source: str) -> None:
         raise AssertionError("wrong source extractor selected")
 
     app.host.llm_helper = SimpleNamespace(
+        chat_with_glm=lambda _prompt: '{"city": "fixture-city"}',
         extract_auction_data=extract if source == "taobao_sf" else reject_source,
         extract_product_data=reject_source if source == "taobao_sf" else extract,
         extract_avm_risk_features=(lambda *_args, **_kwargs: {})
@@ -189,6 +195,46 @@ def run(root: Path, source: str) -> None:
         assert "avm" not in state and "analysis_stage" not in state["collection_stage"]
         assert request("GET", "/api/collection/overview")[0] == 200
         assert request("GET", "/api/avm/health")[0] == 404
+        for route in (
+            "/api/collection/details/maintenance",
+            "/api/collection/details/fetch_missing",
+            "/api/collection/details/prepare_replay",
+        ):
+            assert request("POST", route, {}, authorized=False)[0] == 403
+            status, receipt = request("POST", route, {"dry_run": True})
+            assert status == 202, (route, status, receipt)
+            deadline = time.monotonic() + 5
+            while True:
+                status, job = request("GET", receipt["status_url"])
+                assert status == 200, job
+                if job["status"] not in {"queued", "running"}:
+                    break
+                assert time.monotonic() < deadline, job
+                threading.Event().wait(0.01)
+            assert job["status"] == "completed", (route, job)
+            assert job["result"]["dry_run"] is True
+        for mode in ("sync", "async"):
+            status, location = request(
+                "POST",
+                "/api/collection/details/infer_location",
+                {"execution_mode": mode, "address": "fixture address", "id": item_id},
+            )
+            if mode == "async":
+                assert status == 202, location
+                deadline = time.monotonic() + 5
+                while True:
+                    status, location_job = request("GET", location["status_url"])
+                    if location_job["status"] not in {"queued", "running"}:
+                        break
+                    assert time.monotonic() < deadline, location_job
+                    threading.Event().wait(0.01)
+                assert location_job["status"] == "completed", location_job
+                location = location_job["result"]
+            else:
+                assert status == 200, location
+            assert location == (
+                {"city": "fixture-city"} if source == "taobao_sf" else {}
+            )
         evidence = "<html><body>Fixture evidence, size 80 square meters.</body></html>"
         status, accepted = request(
             "POST", "/api/collection/details/html", {"id": item_id, "html": evidence}

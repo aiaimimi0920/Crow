@@ -368,19 +368,21 @@ class CollectionJobManager:
                 self._confirm_exit(entry, "interrupted")
             raise
 
-    def close(self, timeout: float = 0) -> None:
+    def close(self, timeout: float = 0) -> bool:
         with self._lock:
             self._closed = True
-            while self._pending:
-                entry = self._pending.popleft()
+            for entry in list(self._active.values()):
                 try:
                     self._request_stop(entry, "cancelled")
                 except Exception:
-                    logger.exception("Unable to confirm queued job cancellation")
+                    # Shutdown must still stop cooperative work if the receipt disk fails.
+                    # The durable status stays unconfirmed until a later write succeeds.
+                    entry.control.request_stop("cancelled")
+                    logger.error("Unable to persist collection job shutdown request")
                 finally:
                     if entry.timer is not None:
                         entry.timer.cancel()
-                    self._active.pop(str(entry.receipt["job_id"]), None)
             thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=timeout)
+        return thread is None or not thread.is_alive()

@@ -37,7 +37,8 @@ def test_early_event_wait_return_cannot_advance_a_job_phase(
 
 
 def test_replay_cancellation_before_publish_keeps_archive_bytes(tmp_path, monkeypatch):
-    from tools import prepare_recent_detail_replay as replay
+    from src.collection import detail_replay as replay
+    from src.collection.adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
 
     control = JobControl(10)
     archive = tmp_path / "archive.json"
@@ -47,18 +48,20 @@ def test_replay_cancellation_before_publish_keeps_archive_bytes(tmp_path, monkey
     archive.write_bytes(original)
     monkeypatch.setattr(
         replay,
-        "_iter_recent_rows",
-        lambda *_args, **_kwargs: [{"__file_path": str(archive)}],
+        "iter_recent_rows",
+        lambda *_args, **_kwargs: [{"id": "item", "__file_path": str(archive)}],
     )
     monkeypatch.setattr(
-        replay, "create_repository_from_env", lambda: SimpleNamespace(enabled=False)
+        replay,
+        "create_collection_repository_from_env",
+        lambda **_: SimpleNamespace(enabled=False),
     )
 
-    def resolve(row):
+    def resolve(_self, row):
         control.request_stop("cancelled")
         return row["url"]
 
-    monkeypatch.setattr(replay, "_resolve_detail_url", resolve)
+    monkeypatch.setattr(TaobaoJudicialAuctionAdapter, "detail_replay_url", resolve)
     with pytest.raises(JobStopped), job_scope(control):
         replay.prepare_recent_detail_replay(tmp_path, window_days=7, limit=1)
     assert archive.read_bytes() == original
@@ -86,8 +89,8 @@ def test_fetch_uses_remaining_budget_and_stops_before_artifact_writes(
     monkeypatch.setattr(fetch.requests, "Session", Session)
     monkeypatch.setattr(
         fetch,
-        "create_repository_from_env",
-        lambda: SimpleNamespace(
+        "create_collection_repository_from_env",
+        lambda **_: SimpleNamespace(
             enabled=True,
             iter_detail_fetch_candidates=lambda **_: [
                 {

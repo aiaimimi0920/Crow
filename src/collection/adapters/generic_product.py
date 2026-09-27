@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, MutableMapping, Sequence
+from typing import Any
 
 from ..contracts import NumberParser, Record
 from ..search_task_policy import GenericSearchTaskPolicy, SearchTaskPolicy
@@ -193,6 +194,17 @@ class GenericProductAdapter:
     def quality_summary(self, record: Mapping[str, Any]) -> str:
         populated = sum(value not in (None, "", []) for value in record.values())
         return f"fields={populated}"
+
+    def detail_replay_reason(self, record: Mapping[str, Any]) -> str | None:
+        if not record.get("detail_archive_path") and self.accepts_detail(record):
+            return "missing_detail_capture"
+        return None
+
+    def detail_replay_url(self, record: Mapping[str, Any]) -> str | None:
+        return self.source_url(record)
+
+    def blocked_capture_reason(self, content: str) -> str | None:
+        return "empty_html" if len(content.strip()) < 200 else None
 
     def location_prompt(self, *, address: str, title: str) -> str | None:
         del address, title

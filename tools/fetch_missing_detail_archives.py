@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch missing detail archives and sync JSON + DB"
     )
-    parser.add_argument("--data-root", type=Path, default=Path("datas"))
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path(os.getenv("FAPAI_DATA_ROOT") or REPO_ROOT / "FPFData" / "datas"),
+    )
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--timeout", type=int, default=15)
     parser.add_argument("--extract-risk", action="store_true")
@@ -27,9 +32,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-path",
         type=Path,
-        default=Path("datas/avm/fetch_missing_detail_archives.json"),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.output_path is None:
+        args.output_path = (
+            args.data_root / "maintenance" / "fetch_missing_detail_archives.json"
+        )
+    return args
 
 
 def main() -> None:

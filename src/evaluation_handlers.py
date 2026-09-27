@@ -2,58 +2,20 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from logging import Logger
 from typing import ClassVar, Protocol
 
+from .location_inference_handlers import LocationHandler as EvaluationHandler
+from .location_inference_handlers import LocationHost, bind_location_inference
+
 Record = dict[str, object]
-
-
-class EvaluationHandler(Protocol):
-    def send_json(self, data: object) -> None: ...
-    def send_error_json(
-        self, *, status: int, code: str, message: str, details: Record
-    ) -> None: ...
-    def _enqueue_collection_job(
-        self,
-        kind: str,
-        work: Callable[[], object],
-        error_code: str,
-        *,
-        response_extra: Record,
-    ) -> object: ...
 
 
 class EvaluationService(Protocol):
     def evaluate_request(self, payload: Record) -> object: ...
 
 
-class LocationService(Protocol):
-    def infer_location(
-        self,
-        *,
-        address: object,
-        title: object,
-        item_id: object,
-        chat_with_glm: Callable[..., object],
-        log_prediction_event: Callable[..., object],
-    ) -> object: ...
-
-
-class LocationHelper(Protocol):
-    chat_with_glm: Callable[..., object]
-    log_prediction_event: Callable[..., object]
-
-
-class EvaluationHost(Protocol):
+class EvaluationHost(LocationHost, Protocol):
     AVM_SERVICE: EvaluationService
-    llm_helper: LocationHelper
-    logger: Logger
-
-    def _read_json_body(self, handler: EvaluationHandler) -> tuple[bool, Record]: ...
-    def _read_execution_mode(
-        self, handler: EvaluationHandler, payload: Record
-    ) -> str | None: ...
-    def _detail_collection_service(self) -> LocationService: ...
 
 
 @dataclass(frozen=True)
@@ -69,19 +31,9 @@ class EvaluationHandlers:
 
 
 def bind_evaluations(host: EvaluationHost) -> EvaluationHandlers:
-    def _read_execution_mode(self: EvaluationHandler, payload: Record) -> str | None:
-        raw_execution_mode = payload.get("execution_mode", "sync")
-        if not isinstance(
-            raw_execution_mode, str
-        ) or raw_execution_mode.strip().lower() not in {"sync", "async"}:
-            self.send_error_json(
-                status=400,
-                code="AVM_INVALID_EXECUTION_MODE",
-                message="execution_mode must be 'sync' or 'async'",
-                details={"allowed": ["sync", "async"]},
-            )
-            return None
-        return raw_execution_mode.strip().lower()
+    location = bind_location_inference(host)
+    _read_execution_mode = location._read_execution_mode
+    _post_infer_location = location._post_infer_location
 
     def _post_analysis_evaluate(self: EvaluationHandler) -> None:
         accepted, payload = host._read_json_body(self)
@@ -137,59 +89,6 @@ def bind_evaluations(host: EvaluationHost) -> EvaluationHandlers:
             )
             return
         self.send_json(result)
-
-    def _post_infer_location(self: EvaluationHandler) -> None:
-        accepted, data = host._read_json_body(self)
-        if not accepted:
-            return
-        execution_mode = host._read_execution_mode(self, data)
-        if execution_mode is None:
-            return
-        try:
-            address = data.get("address", "")
-            title = data.get("title", "")
-            item_id = data.get("id")
-            host.logger.info("[Infer Location] Request for: %s | %s", address, title)
-            service = host._detail_collection_service()
-            chat_with_glm = host.llm_helper.chat_with_glm
-            log_prediction_event = host.llm_helper.log_prediction_event
-            if execution_mode == "async":
-
-                def work() -> object:
-                    return service.infer_location(
-                        address=address,
-                        title=title,
-                        item_id=item_id,
-                        chat_with_glm=chat_with_glm,
-                        log_prediction_event=log_prediction_event,
-                    )
-
-                response_extra: Record = {"execution_mode": "async"}
-                if "id" in data:
-                    response_extra["item_id"] = item_id
-                self._enqueue_collection_job(
-                    "infer_location",
-                    work,
-                    "AVM_DETAIL_INFER_LOCATION_ASYNC_FAILED",
-                    response_extra=response_extra,
-                )
-                return
-            result = service.infer_location(
-                address=address,
-                title=title,
-                item_id=item_id,
-                chat_with_glm=chat_with_glm,
-                log_prediction_event=log_prediction_event,
-            )
-            self.send_json(result)
-        except Exception as error:
-            host.logger.exception("Error in infer_location")
-            self.send_error_json(
-                status=500,
-                code="AVM_DETAIL_INFER_LOCATION_FAILED",
-                message="位置推断失败",
-                details={"error": str(error)},
-            )
 
     return EvaluationHandlers(
         _read_execution_mode, _post_analysis_evaluate, _post_infer_location

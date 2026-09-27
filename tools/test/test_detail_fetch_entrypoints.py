@@ -4,15 +4,51 @@ import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from src.collection import detail_archive_fetch as owner
 from src.collection.detail_service import DetailCollectionService
+from tools import backfill_archived_details, prepare_recent_detail_replay
 from tools import fetch_missing_detail_archives as cli
+
+
+@pytest.mark.parametrize(
+    "module", [cli, backfill_archived_details, prepare_recent_detail_replay]
+)
+def test_maintenance_cli_resolves_data_and_report_roots(module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FAPAI_DATA_ROOT", raising=False)
+    monkeypatch.setattr(sys, "argv", [module.__name__])
+    defaults = module.parse_args()
+    assert defaults.data_root == module.REPO_ROOT / "FPFData" / "datas"
+    assert defaults.output_path.parent == defaults.data_root / "maintenance"
+    monkeypatch.setenv("FAPAI_DATA_ROOT", str(tmp_path / "installed-data"))
+    configured = module.parse_args()
+    assert configured.data_root == tmp_path / "installed-data"
+    assert configured.output_path.parent == configured.data_root / "maintenance"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            module.__name__,
+            "--data-root",
+            str(tmp_path / "override"),
+            "--output-path",
+            str(tmp_path / "preview.json"),
+        ],
+    )
+    explicit = module.parse_args()
+    assert explicit.data_root == tmp_path / "override"
+    assert explicit.output_path == tmp_path / "preview.json"
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_service_fetch_does_not_import_cli_module(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "tools.fetch_missing_detail_archives", None)
     monkeypatch.setattr(
-        owner, "create_repository_from_env", lambda: SimpleNamespace(enabled=False)
+        owner,
+        "create_collection_repository_from_env",
+        lambda **_: SimpleNamespace(enabled=False),
     )
     monkeypatch.setattr(owner.requests, "Session", lambda: SimpleNamespace(headers={}))
     service = DetailCollectionService(tmp_path)

@@ -8,12 +8,21 @@
 
 from __future__ import annotations
 
-import json
 import os
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Iterator, List
+from typing import Any
 
+from src.collection.archive_records import (
+    discover_raw_record_files as discover_raw_record_files,
+)
+from src.collection.archive_records import (
+    load_json_payload as load_json_payload,
+)
+from src.collection.archive_records import (
+    normalize_data_root as normalize_data_root,
+)
 from src.storage.repository import create_repository_from_env
 
 
@@ -24,48 +33,9 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def normalize_data_root(path: Path) -> Path:
-    candidate = Path(path)
-    if candidate.name.lower() == "archive":
-        return candidate.parent
-    return candidate
-
-
-def discover_raw_record_files(data_root: Path) -> List[Path]:
-    root = normalize_data_root(data_root)
-    files: list[Path] = []
-    seen: set[str] = set()
-
-    for pattern_root, matcher in (
-        (root / "archive", "rglob"),
-        (root, "glob"),
-    ):
-        if not pattern_root.exists():
-            continue
-        iterator: Iterable[Path]
-        if matcher == "rglob":
-            iterator = sorted(pattern_root.rglob("*.json"))
-        else:
-            iterator = sorted(pattern_root.glob("*.json"))
-        for path in iterator:
-            if not path.is_file():
-                continue
-            key = str(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            files.append(path)
-    return files
-
-
-def load_json_payload(path: Path) -> Any | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def iter_raw_record_rows(data_root: Path, prefer_db: bool | None = None) -> Iterator[dict[str, Any]]:
+def iter_raw_record_rows(
+    data_root: Path, prefer_db: bool | None = None
+) -> Iterator[dict[str, Any]]:
     use_db = (
         _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
@@ -95,21 +65,50 @@ def iter_raw_record_rows(data_root: Path, prefer_db: bool | None = None) -> Iter
 
 def _looks_analysis_ready(row: dict[str, Any]) -> bool:
     has_date = bool(row.get("auction_date") or row.get("交易时间"))
-    has_area = any(row.get(key) not in (None, "", 0, "0") for key in ("area_sqm", "建筑面积", "建设面积"))
+    has_area = any(
+        row.get(key) not in (None, "", 0, "0")
+        for key in ("area_sqm", "建筑面积", "建设面积")
+    )
     has_city = bool(row.get("city") or row.get("城市"))
     has_district = bool(row.get("district") or row.get("区"))
     has_price_anchor = any(
         row.get(key) not in (None, "", 0, "0")
-        for key in ("transaction_price", "成交价格", "starting_price", "起拍价格", "actual_paid_price", "evaluation_price", "市场评估价")
+        for key in (
+            "transaction_price",
+            "成交价格",
+            "starting_price",
+            "起拍价格",
+            "actual_paid_price",
+            "evaluation_price",
+            "市场评估价",
+        )
     )
     has_location_precision = any(
         row.get(key) not in (None, "")
-        for key in ("latitude", "纬度", "longitude", "经度", "community_name", "所属小区", "business_area", "最靠近商圈")
+        for key in (
+            "latitude",
+            "纬度",
+            "longitude",
+            "经度",
+            "community_name",
+            "所属小区",
+            "business_area",
+            "最靠近商圈",
+        )
     )
-    return has_date and has_area and has_city and has_district and has_price_anchor and has_location_precision
+    return (
+        has_date
+        and has_area
+        and has_city
+        and has_district
+        and has_price_anchor
+        and has_location_precision
+    )
 
 
-def iter_analysis_ready_rows(data_root: Path, prefer_db: bool | None = None) -> Iterator[dict[str, Any]]:
+def iter_analysis_ready_rows(
+    data_root: Path, prefer_db: bool | None = None
+) -> Iterator[dict[str, Any]]:
     use_db = (
         _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
@@ -133,11 +132,15 @@ def iter_analysis_ready_rows(data_root: Path, prefer_db: bool | None = None) -> 
             yield row
 
 
-def load_analysis_ready_rows(data_root: Path, prefer_db: bool | None = None) -> List[dict[str, Any]]:
+def load_analysis_ready_rows(
+    data_root: Path, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
     return list(iter_analysis_ready_rows(data_root, prefer_db=prefer_db))
 
 
-def load_recent_analysis_ready_rows(data_root: Path, window_days: int, prefer_db: bool | None = None) -> List[dict[str, Any]]:
+def load_recent_analysis_ready_rows(
+    data_root: Path, window_days: int, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
     use_db = (
         _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
@@ -177,12 +180,20 @@ def load_recent_analysis_ready_rows(data_root: Path, window_days: int, prefer_db
     return [row for dt, row in dated_rows if dt >= recent_start]
 
 
-def load_raw_record_rows(data_root: Path, prefer_db: bool | None = None) -> List[dict[str, Any]]:
+def load_raw_record_rows(
+    data_root: Path, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
     return list(iter_raw_record_rows(data_root, prefer_db=prefer_db))
 
 
-def load_recent_raw_record_rows(data_root: Path, window_days: int, prefer_db: bool | None = None) -> List[dict[str, Any]]:
-    use_db = _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False) if prefer_db is None else prefer_db
+def load_recent_raw_record_rows(
+    data_root: Path, window_days: int, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
+    use_db = (
+        _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False)
+        if prefer_db is None
+        else prefer_db
+    )
     if use_db:
         repo = create_repository_from_env()
         if repo.enabled:
@@ -217,10 +228,16 @@ def load_recent_raw_record_rows(data_root: Path, window_days: int, prefer_db: bo
     return [row for dt, row in dated_rows if dt >= recent_start]
 
 
-def load_sample_raw_record_rows(data_root: Path, limit: int, prefer_db: bool | None = None) -> List[dict[str, Any]]:
+def load_sample_raw_record_rows(
+    data_root: Path, limit: int, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
-    use_db = _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False) if prefer_db is None else prefer_db
+    use_db = (
+        _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False)
+        if prefer_db is None
+        else prefer_db
+    )
     if use_db:
         repo = create_repository_from_env()
         if repo.enabled:
@@ -239,7 +256,9 @@ def load_sample_raw_record_rows(data_root: Path, limit: int, prefer_db: bool | N
     return rows
 
 
-def load_sample_analysis_ready_rows(data_root: Path, limit: int, prefer_db: bool | None = None) -> List[dict[str, Any]]:
+def load_sample_analysis_ready_rows(
+    data_root: Path, limit: int, prefer_db: bool | None = None
+) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
     use_db = (

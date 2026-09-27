@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-from typing import Any, Mapping, MutableMapping
+from typing import Any
 
 from ..contracts import NumberParser, Record
 from ..record_schema import sync_collection_record
@@ -318,3 +319,48 @@ class TaobaoJudicialAuctionAdapter(GenericProductAdapter):
 }}
 如果某个字段无法推断，请填 null. 仅返回 JSON对象，不要包含 ```json 标记。
 """
+
+    def detail_replay_reason(self, record: Mapping[str, Any]) -> str | None:
+        from .taobao_detail_facts import needs_risk_enrich
+
+        if record.get("detail_archive_path"):
+            return None
+        if not (record.get("detail_captured") or self.accepts_detail(record)):
+            return None
+        missing = any(
+            record.get(key) in (None, "", "UNK")
+            for key in (
+                "latitude",
+                "longitude",
+                "is_occupied",
+                "has_long_lease",
+                "clear_delivery",
+                "tax_burden",
+                "is_fractional_share",
+            )
+        )
+        return "missing_enrich_fields" if missing or needs_risk_enrich(record) else None
+
+    def detail_replay_url(self, record: Mapping[str, Any]) -> str | None:
+        url = self.source_url(record)
+        item_id = record.get("id") or record.get("item_id")
+        if not url and item_id not in (None, ""):
+            return f"https://sf-item.taobao.com/sf_item/{item_id}.htm"
+        return url
+
+    def blocked_capture_reason(self, content: str) -> str | None:
+        lowered = content.lower()
+        if any(
+            value in lowered
+            for value in (
+                "login.taobao.com/member/login.jhtml",
+                "login.m.taobao.com/login.htm",
+            )
+        ):
+            return "login_redirect"
+        if any(
+            value in lowered
+            for value in ("_____tmd_____", "sdklogin", "localstorage.x5referer")
+        ):
+            return "anti_bot_gate"
+        return super().blocked_capture_reason(content)

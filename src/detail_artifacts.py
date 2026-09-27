@@ -23,6 +23,7 @@ def get_detail_archive_path(
     extension: str = ".html",
     *,
     revision: str | None = None,
+    create_parent: bool = True,
 ) -> Path:
     if isinstance(date_str_or_obj, str):
         try:
@@ -40,7 +41,8 @@ def get_detail_archive_path(
     archive_dir = root / "html_archive" / year / day
     if revision is not None:
         archive_dir = archive_dir / f"capture-{revision}"
-    archive_dir.mkdir(parents=True, exist_ok=True)
+    if create_parent:
+        archive_dir.mkdir(parents=True, exist_ok=True)
     normalized_ext = extension if str(extension).startswith(".") else f".{extension}"
     return archive_dir / f"item-{item_id}{normalized_ext}"
 
@@ -73,6 +75,7 @@ def extract_detail_artifacts(
     source_url: str | None = None,
     *,
     archive_revision: str | None = None,
+    dry_run: bool = False,
 ) -> dict[str, object]:
     from bs4 import BeautifulSoup
 
@@ -80,14 +83,19 @@ def extract_detail_artifacts(
     soup = BeautifulSoup(html_content, "html.parser")
     base_url = source_url or ""
     root = Path(data_root)
-    archive_path = partial(get_detail_archive_path, revision=archive_revision)
+    archive_path = partial(
+        get_detail_archive_path,
+        revision=archive_revision,
+        create_parent=not dry_run,
+    )
 
     detail_text = llm_helper.filter_content(html_content)
     if detail_text.strip():
         detail_text_path = archive_path(
             root, auction_date or datetime.datetime.now(), item_id, extension=".txt"
         )
-        write_text(detail_text_path, detail_text)
+        if not dry_run:
+            write_text(detail_text_path, detail_text)
         artifact_fields["detail_text_path"] = os.path.relpath(
             detail_text_path, root
         ).replace("\\", "/")
@@ -100,7 +108,8 @@ def extract_detail_artifacts(
             f"{item_id}.notice",
             extension=".txt",
         )
-        write_text(notice_path, notice_text)
+        if not dry_run:
+            write_text(notice_path, notice_text)
         artifact_fields["notice_text_path"] = os.path.relpath(
             notice_path, root
         ).replace("\\", "/")
@@ -113,7 +122,8 @@ def extract_detail_artifacts(
             f"{item_id}.desc",
             extension=".txt",
         )
-        write_text(desc_path, desc_text)
+        if not dry_run:
+            write_text(desc_path, desc_text)
         artifact_fields["desc_text_path"] = os.path.relpath(desc_path, root).replace(
             "\\", "/"
         )
@@ -135,7 +145,8 @@ def extract_detail_artifacts(
             f"{item_id}.components",
             extension=".json",
         )
-        write_json(component_path, component_payloads, indent=2)
+        if not dry_run:
+            write_json(component_path, component_payloads, indent=2)
         artifact_fields["component_payload_path"] = os.path.relpath(
             component_path, root
         ).replace("\\", "/")
@@ -149,7 +160,7 @@ def extract_detail_artifacts(
             continue
         if any(
             keyword in text for keyword in ("评估", "报告", "公告", "须知", "附件")
-        ) or re.search(r"\.(pdf|docx?|xlsx?|zip)(?:$|\?)", href, re.I):
+        ) or re.search(r"\.(pdf|docx?|xlsx?|zip)(?:$|\?)", href, re.IGNORECASE):
             attachments.append({"url": href, "text": text})
             if "评估" in text or "报告" in text:
                 appraisal_urls.append(href)
@@ -160,7 +171,8 @@ def extract_detail_artifacts(
             f"{item_id}.attachments",
             extension=".json",
         )
-        write_json(attachment_path, attachments, indent=2)
+        if not dry_run:
+            write_json(attachment_path, attachments, indent=2)
         artifact_fields["attachment_manifest_path"] = os.path.relpath(
             attachment_path, root
         ).replace("\\", "/")
@@ -184,7 +196,8 @@ def extract_detail_artifacts(
             f"{item_id}.images",
             extension=".json",
         )
-        write_json(image_path, sorted(set(image_urls)), indent=2)
+        if not dry_run:
+            write_json(image_path, sorted(set(image_urls)), indent=2)
         artifact_fields["image_manifest_path"] = os.path.relpath(
             image_path, root
         ).replace("\\", "/")

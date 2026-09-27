@@ -85,7 +85,9 @@ def test_fetch_missing_detail_archives_fetches_html_and_syncs_json_and_db(
         event_payload={"source_file": str(data_file)},
     )
 
-    monkeypatch.setattr(fetch_module, "create_repository_from_env", lambda: repo)
+    monkeypatch.setattr(
+        fetch_module, "create_collection_repository_from_env", lambda **_: repo
+    )
     monkeypatch.setattr(
         fetch_module.requests,
         "Session",
@@ -104,27 +106,27 @@ def test_fetch_missing_detail_archives_fetches_html_and_syncs_json_and_db(
     )
 
     assert report["fetched_count"] == 1
-    html_file = data_root / "html_archive" / "2026" / "2026-03-05" / "item-3001.html"
-    assert html_file.exists()
-
     payload = json.loads(data_file.read_text(encoding="utf-8"))
-    assert (
-        payload[0]["detail_archive_path"]
-        == "html_archive/2026/2026-03-05/item-3001.html"
-    )
+    html_file = data_root / payload[0]["detail_archive_path"]
+    assert html_file.is_file() and html_file.name == "item-3001.html"
+    assert html_file.parent.name.startswith("capture-")
     assert payload[0]["latitude"] == 31.2002
     assert payload[0]["longitude"] == 121.5001
     assert (
         payload[0]["notice_text_path"]
-        == "html_archive/2026/2026-03-05/item-3001.notice.txt"
+        == (html_file.parent / "item-3001.notice.txt").relative_to(data_root).as_posix()
     )
     assert (
         payload[0]["attachment_manifest_path"]
-        == "html_archive/2026/2026-03-05/item-3001.attachments.json"
+        == (html_file.parent / "item-3001.attachments.json")
+        .relative_to(data_root)
+        .as_posix()
     )
     assert (
         payload[0]["image_manifest_path"]
-        == "html_archive/2026/2026-03-05/item-3001.images.json"
+        == (html_file.parent / "item-3001.images.json")
+        .relative_to(data_root)
+        .as_posix()
     )
 
     assert (data_root / payload[0]["notice_text_path"]).exists()
@@ -133,15 +135,10 @@ def test_fetch_missing_detail_archives_fetches_html_and_syncs_json_and_db(
 
     db_item = repo.get_flat_item("3001")
     assert db_item is not None
-    assert (
-        db_item["detail_archive_path"] == "html_archive/2026/2026-03-05/item-3001.html"
-    )
+    assert db_item["detail_archive_path"] == payload[0]["detail_archive_path"]
     assert db_item["latitude"] == 31.2002
     assert db_item["longitude"] == 121.5001
-    assert (
-        db_item["notice_text_path"]
-        == "html_archive/2026/2026-03-05/item-3001.notice.txt"
-    )
+    assert db_item["notice_text_path"] == payload[0]["notice_text_path"]
     assert db_item["detail_fetch_status"] == "success"
 
 
@@ -189,7 +186,9 @@ def test_fetch_missing_detail_archives_marks_login_gate_as_blocked(
         event_payload={"source_file": str(data_file)},
     )
 
-    monkeypatch.setattr(fetch_module, "create_repository_from_env", lambda: repo)
+    monkeypatch.setattr(
+        fetch_module, "create_collection_repository_from_env", lambda **_: repo
+    )
     monkeypatch.setattr(
         fetch_module.requests,
         "Session",
@@ -260,7 +259,9 @@ def test_fetch_missing_detail_archives_can_extract_risk_features(
         event_payload={"source_file": str(data_file)},
     )
 
-    monkeypatch.setattr(fetch_module, "create_repository_from_env", lambda: repo)
+    monkeypatch.setattr(
+        fetch_module, "create_collection_repository_from_env", lambda **_: repo
+    )
     monkeypatch.setattr(
         fetch_module.requests,
         "Session",

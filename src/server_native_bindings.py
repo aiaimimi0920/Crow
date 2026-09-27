@@ -79,7 +79,10 @@ def bind_collection_server_owners(host: ModuleType) -> tuple[object, ...]:
 
 
 def bind_collection_handler_owners(host: ModuleType) -> tuple[object, ...]:
+    from .location_inference_handlers import LocationHost, bind_location_inference
+
     return (
+        bind_location_inference(cast(LocationHost, host)),
         SolverExecutionGuard(cast(SolverExecutionHost, host)),
         bind_solver_run(cast(SolverRunHost, host)),
         bind_handler_compatibility(cast(HandlerCompatibilityHost, host)),

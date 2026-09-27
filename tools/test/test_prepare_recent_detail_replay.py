@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from src.collection import detail_replay as replay_module
 from src.storage.repository import DatabaseSettings, PropertyRepository
-from tools import prepare_recent_detail_replay as replay_module
 from tools.prepare_recent_detail_replay import prepare_recent_detail_replay
 
 
@@ -59,9 +59,13 @@ def test_prepare_recent_detail_replay_marks_candidates_for_refetch(tmp_path: Pat
         event_payload={"source_file": str(data_file)},
     )
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(replay_module, "create_repository_from_env", lambda: repo)
+    monkeypatch.setattr(
+        replay_module, "create_collection_repository_from_env", lambda **_: repo
+    )
     try:
-        report = prepare_recent_detail_replay(data_root=data_root, window_days=7, limit=10, dry_run=False)
+        report = prepare_recent_detail_replay(
+            data_root=data_root, window_days=7, limit=10, dry_run=False
+        )
     finally:
         monkeypatch.undo()
 
@@ -76,7 +80,9 @@ def test_prepare_recent_detail_replay_marks_candidates_for_refetch(tmp_path: Pat
     assert db_item["is_processed"] is False
 
 
-def test_prepare_recent_detail_replay_can_fallback_to_item_url_without_original_url(tmp_path: Path):
+def test_prepare_recent_detail_replay_can_fallback_to_item_url_without_original_url(
+    tmp_path: Path,
+):
     data_root = tmp_path / "datas"
     archive_dir = data_root / "archive" / "2026"
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +104,9 @@ def test_prepare_recent_detail_replay_can_fallback_to_item_url_without_original_
         encoding="utf-8",
     )
 
-    report = prepare_recent_detail_replay(data_root=data_root, window_days=7, limit=10, dry_run=False)
+    report = prepare_recent_detail_replay(
+        data_root=data_root, window_days=7, limit=10, dry_run=False
+    )
 
     assert report["prepared_count"] == 1
     payload = json.loads(data_file.read_text(encoding="utf-8"))

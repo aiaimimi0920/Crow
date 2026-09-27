@@ -146,12 +146,17 @@ def test_exception_boundary_preserves_evaluation_and_inference_difference(
 
 
 def test_native_evaluation_handlers_publish_context_and_descriptors():
-    from src import evaluation_handlers, server
+    from src import evaluation_handlers, location_inference_handlers, server
 
     handler = object.__new__(server.DataHandler)
     for name in evaluation_handlers.EvaluationHandlers.__all__:
         function = getattr(server, name)
-        assert function.__module__ == evaluation_handlers.__name__
+        expected_owner = (
+            evaluation_handlers
+            if name == "_post_analysis_evaluate"
+            else location_inference_handlers
+        )
+        assert function.__module__ == expected_owner.__name__
         assert getattr(server._CONTEXT, name) is function
         if name.startswith("_post_"):
             assert getattr(handler, name).__self__ is handler

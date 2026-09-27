@@ -5,6 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Protocol, cast
 
+from .collection_maintenance_handlers import (
+    _post_archive_detail_replay,
+    _post_detail_maintenance,
+    _post_fetch_missing_detail_archives,
+)
+
 
 class PipelineHandler(Protocol):
     def send_error_json(
@@ -99,21 +105,6 @@ def bind_pipeline_submissions(host: PipelineHost) -> PipelineSubmissionHandlers:
             alerts_limit=alerts_limit,
         )
         self._submit_pipeline_job(config, "AVM_PIPELINE_RUN_FAILED")
-
-    def _post_detail_maintenance(self: PipelineHandler) -> None:
-        self._submit_maintenance_job(
-            "recent_enrich_maintenance", "AVM_RECENT_ENRICH_MAINTENANCE_FAILED"
-        )
-
-    def _post_fetch_missing_detail_archives(self: PipelineHandler) -> None:
-        self._submit_maintenance_job(
-            "fetch_missing_detail_archives", "AVM_FETCH_MISSING_DETAIL_ARCHIVES_FAILED"
-        )
-
-    def _post_archive_detail_replay(self: PipelineHandler) -> None:
-        self._submit_maintenance_job(
-            "archive_detail_replay", "AVM_ARCHIVE_DETAIL_REPLAY_FAILED"
-        )
 
     def _post_start_all_subtasks(self: PipelineHandler) -> None:
         if not host._require_control_plane(self):

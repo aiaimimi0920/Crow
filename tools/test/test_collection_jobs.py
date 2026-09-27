@@ -187,9 +187,9 @@ def test_close_cancels_queued_work_and_rejects_new_jobs(tmp_path):
         manager.close()
         assert manager.get(b["job_id"])["status"] == "cancelled"
         with pytest.raises(JobQueueFull):
-            manager.submit("closed", lambda: {}, "TEST_FAILED")
+            manager.submit("closed", dict, "TEST_FAILED")
         release.set()
-        assert completed(manager, a)["status"] == "completed"
+        assert completed(manager, a)["status"] == "cancelled"
         assert len(list(manager.root.glob("*.json"))) == 2
     finally:
         release.set()
@@ -233,6 +233,6 @@ def test_explicit_job_id_is_durable_and_list_projects_operation_receipts(tmp_pat
         assert [item["job_id"] for item in listed] == [job_id]
         assert manager.list(operation="other") == []
         with pytest.raises(ValueError, match="already exists"):
-            manager.submit("duplicate", lambda: {}, "FAILED", job_id=job_id)
+            manager.submit("duplicate", dict, "FAILED", job_id=job_id)
     finally:
         manager.close(timeout=3)
