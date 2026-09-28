@@ -52,6 +52,7 @@ $workingDirectory = if ($env:TEMP) { $env:TEMP } else { "C:\Windows\Temp" }
 
 $scriptArgs = @(
     "-NoProfile",
+    "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$backupScript`"",
     "-DataRoot", "`"$taskDataRoot`"",

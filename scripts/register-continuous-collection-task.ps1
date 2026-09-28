@@ -43,6 +43,7 @@ $taskDataRoot = Convert-DataRootForScheduledTask -Path $DataRoot
 
 $scriptArgs = @(
     "-NoProfile",
+    "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$startScript`"",
     "-DataRoot", "`"$taskDataRoot`"",

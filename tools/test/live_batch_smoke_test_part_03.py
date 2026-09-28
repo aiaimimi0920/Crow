@@ -136,7 +136,7 @@ def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypat
     ]
 
 
-def test_fetch_detail_with_browser_reuses_existing_challenge_without_opening_another_page(
+def test_fetch_detail_with_browser_preserves_existing_login_without_opening_another_page(
     monkeypatch,
 ) -> None:
     fake_sync_api = types.ModuleType("playwright.sync_api")
@@ -155,7 +155,7 @@ def test_fetch_detail_with_browser_reuses_existing_challenge_without_opening_ano
     monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
 
     class ExistingPage:
-        url = "https://sf-item.taobao.com/sf_item/3003.htm"
+        url = "https://login.taobao.com/member/login.jhtml"
         brought_to_front = False
 
         def bring_to_front(self):
@@ -186,7 +186,7 @@ def test_fetch_detail_with_browser_reuses_existing_challenge_without_opening_ano
             cdp_endpoint="http://127.0.0.1:9223",
         )
 
-    assert existing_page.brought_to_front is True
+    assert existing_page.brought_to_front is False
 
 def test_fetch_browser_list_page_falls_back_to_navigation_when_open_page_probe_closes(monkeypatch) -> None:
     events: list[str] = []

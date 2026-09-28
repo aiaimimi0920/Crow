@@ -52,6 +52,7 @@ $workingDirectory = $repoRoot
 
 $scriptArgs = @(
     "-NoProfile",
+    "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$watchdogScript`"",
     "-DataRoot", "`"$taskDataRoot`"",

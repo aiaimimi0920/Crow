@@ -108,6 +108,7 @@ Set-Content -LiteralPath $wrapperScript -Value $wrapperLines -Encoding UTF8
 
 $scriptArgs = @(
     "-NoProfile",
+    "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$wrapperScript`""
 )

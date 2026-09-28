@@ -57,6 +57,7 @@ $workingDirectory = if ($env:TEMP) { $env:TEMP } else { "C:\Windows\Temp" }
 
 $scriptArgs = @(
     "-NoProfile",
+    "-WindowStyle", "Hidden",
     "-NonInteractive",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$healthScript`"",

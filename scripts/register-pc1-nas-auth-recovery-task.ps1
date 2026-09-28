@@ -13,6 +13,7 @@ param(
     [int]$IntervalMinutes = 1,
     [int]$LoginWindowSeconds = 300,
     [int]$ExecutionTimeLimitMinutes = 10,
+    [ValidateSet("NoConsole", "Console")][string]$LauncherMode = "NoConsole",
     [switch]$UseSystemProxy,
     [switch]$StartNow
 )
@@ -73,8 +74,25 @@ if ($ApiCaFile) {
     $arguments += @("-ApiCaFile", "`"$ApiCaFile`"")
 }
 
+$executable = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+if ($LauncherMode -eq "NoConsole") {
+    $pythonw = Join-Path (Split-Path -Parent $resolvedPython) "pythonw.exe"
+    $launcher = Join-Path $repoRoot "tools\background_task_launcher.py"
+    foreach ($required in @($pythonw, $launcher)) {
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+            throw "No-console task launcher dependency is unavailable: $required"
+        }
+    }
+    $statusPath = Join-Path $repoRoot "FPFData\runtime\pc1-nas-auth-task.json"
+    $arguments = @(
+        "-I", "`"$launcher`"", "--status-path", "`"$statusPath`"",
+        "--", "`"$executable`""
+    ) + $arguments
+    $executable = $pythonw
+}
+
 $action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
+    -Execute $executable `
     -Argument ($arguments -join " ") `
     -WorkingDirectory $repoRoot
 $trigger = New-ScheduledTaskTrigger `

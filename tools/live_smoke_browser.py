@@ -399,6 +399,7 @@ def fetch_list_page(
 
 def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tuple[str, str, int, str]:
     from playwright.sync_api import sync_playwright
+    from src.collection.adapters.taobao_auth_target import canonical_auth_target
 
     detail_url = seed.get("url")
     if not detail_url:
@@ -409,8 +410,9 @@ def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tup
             if not browser.contexts:
                 raise RuntimeError("attached browser has no contexts")
             context = browser.contexts[0]
-            # Do not open another target while an unresolved login/challenge
-            # page is already visible in the shared operator browser.
+            existing_target_challenge = False
+            # Preserve login tabs. Old challenges, including other stages, are
+            # not proof that this target is blocked with the current cookies.
             for existing_page in getattr(context, "pages", []):
                 existing_url = str(getattr(existing_page, "url", "") or "")
                 try:
@@ -427,18 +429,19 @@ def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tup
                 ):
                     continue
                 try:
-                    existing_page.bring_to_front()
-                except Exception:
-                    pass
-                try:
                     existing_html = str(existing_page.content() or "")
                 except Exception:
                     existing_html = ""
-                if _is_taobao_login_target_url(existing_url) or is_challenge_page(
-                    existing_html,
-                    existing_url,
-                ):
+                if _is_taobao_login_target_url(existing_url) or is_login_page(existing_html, existing_url):
                     raise DetailChallengeError("existing browser detail page", existing_url)
+                if is_challenge_page(existing_html, existing_url):
+                    try:
+                        existing_target_challenge |= (
+                            canonical_auth_target("detail", existing_url)
+                            == canonical_auth_target("detail", str(detail_url))
+                        )
+                    except (ValueError, TypeError):
+                        pass
             page = context.new_page()
             preserve_challenge_page = False
             try:
@@ -453,7 +456,7 @@ def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tup
                 if response and response.status >= 400:
                     raise RuntimeError(f"browser detail request returned HTTP {response.status}")
                 if is_challenge_page(html, final_url):
-                    preserve_challenge_page = True
+                    preserve_challenge_page = not existing_target_challenge
                     raise DetailChallengeError("browser detail request", final_url)
                 return html, final_url, len(html.encode("utf-8")), "browser_navigation"
             finally:
@@ -475,9 +478,10 @@ def fetch_detail_html(
     seed_id = str(seed.get("id"))
     if seed_id in browser_pages:
         html, final_url = browser_pages[seed_id]
-        if is_challenge_page(html, final_url):
-            raise DetailChallengeError("open browser detail page", final_url)
-        return html, final_url, len(html.encode("utf-8")), "open_browser_page"
+        if not is_challenge_page(html, final_url):
+            return html, final_url, len(html.encode("utf-8")), "open_browser_page"
+        # A cached challenge predates any subsequent cookie import. Revalidate
+        # with a fresh request before reporting another challenge to NAS.
 
     detail_url = seed.get("url")
     response = http.get(

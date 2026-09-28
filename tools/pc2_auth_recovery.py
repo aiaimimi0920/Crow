@@ -11,6 +11,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 
 from tools.internal_api_http import fetch_json, post_json
+from tools.pc2_detail_auth_probe import probe_detail_access
 from tools.pc2_seed_auth_probe import probe_seed_access
 
 
@@ -371,15 +372,13 @@ def process_nas_auth_recovery_once(
         stage_receipt = {}
         if active.get("scope"):
             scope = active["scope"]
-            authenticated = True
-            reason = "cookie_import_verified"
-            if scope == "seed":
-                try:
-                    authenticated = probe_seed_access(cdp_endpoint, active.get("target_url", ""))
-                    reason = "seed_payload_verified" if authenticated else "stage_probe_failed"
-                except Exception:
-                    authenticated = False
-                    reason = "stage_probe_unavailable"
+            try:
+                probe = probe_seed_access if scope == "seed" else probe_detail_access
+                authenticated = probe(cdp_endpoint, active.get("target_url", ""))
+                reason = f"{scope}_payload_verified" if authenticated else "stage_probe_failed"
+            except Exception:
+                authenticated = False
+                reason = "stage_probe_unavailable"
             stage_receipt = {
                 "scope": scope, "protocol_version": 2,
                 "snapshot_sha256": expected_sha256, "target_url": active.get("target_url"),
@@ -406,7 +405,11 @@ def process_nas_auth_recovery_once(
             raise OSError("NAS has not confirmed seed access")
         Path(marker_path).unlink(missing_ok=True)
         return {
-            "action": "recovery_confirmed",
+            "action": (
+                "recovery_verifying"
+                if active.get("scope") == "detail" and result.get("status") == "verifying"
+                else "recovery_confirmed"
+            ),
             "recovery_id": recovery_id,
             "cookie_count": imported["cookie_count"],
             "scope": active.get("scope"),

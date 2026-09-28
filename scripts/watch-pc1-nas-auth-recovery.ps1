@@ -246,7 +246,7 @@ $authTab = Get-Pc1RecoveryTab -Tabs $tabs -PreferredId $preferredId -TargetUrl $
 
 if ($null -eq $authTab -and -not $withinWindow) {
     $browserArgs = @(
-        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
         "-File", $startBrowserScript,
         "-Port", $Port,
         "-DataRoot", $DataRoot,
@@ -301,6 +301,7 @@ if ($null -eq $authTab) {
 
 $probeOutput = @(& powershell.exe `
     -NoProfile `
+    -WindowStyle Hidden `
     -ExecutionPolicy Bypass `
     -File $completeAuthScript `
     -Port $Port `

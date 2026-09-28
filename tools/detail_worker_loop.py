@@ -219,7 +219,9 @@ def run_detail_worker_loop(
                 "counts": result.get("counts"),
             }
         )
-        wait(sleep_seconds)
+        from tools.detail_worker_wait import wait_after_detail_batch
+
+        wait_after_detail_batch(config, result, sleep_seconds)
     summary = {
         "decision": "detail_worker_loop_finished",
         "runs": runs,
