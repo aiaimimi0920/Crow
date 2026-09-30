@@ -7,7 +7,7 @@ collector, access PC2/NAS data, or require production credentials.
 
 - CodeQL: Python, JavaScript/TypeScript, Rust, and GitHub Actions, with the
   `security-extended` query suite and no-build extraction
-- OSV-Scanner 2.5.1: both hashed Python locks, both npm locks, and the desktop
+- OSV-Scanner 2.6.0: both hashed Python locks, both npm locks, and the desktop
   Cargo lock; scans PRs, `master`, weekly, and on manual dispatch
 - Gitleaks 8.30.1: the checked-out, Git-tracked tree, with a checksum-verified
   binary, full finding redaction, and positive/negative canary tests
