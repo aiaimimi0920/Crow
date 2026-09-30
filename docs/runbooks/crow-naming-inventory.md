@@ -235,3 +235,17 @@ scheduled-task identities and mode behavior retain their previous meaning.
 Tests load helper-only temporary bundles in both layouts and extract only writer
 blocks; no operator loader, installer, task, cookie or network operation is run.
 Further operator process-read/write integration is tracked separately below.
+
+Operator process readers and explicit setters share the Crow alias helper. The
+operator env-file loader validates complete alias groups before applying process
+updates; the file retains its previous priority over process settings. Missing
+files do not alter settings. Existing simple literal-file parsing and default
+values are preserved; this loader is not a Compose dotenv evaluator. Worker-count
+parameters still override environment values, and solver defaults keep scoped
+process/file/default precedence.
+
+Installer rollback restores files that have backups. Newly introduced helper
+files with no backup may remain; this compatibility change does not add deletion
+or a full installation migration. Tests use synthetic files and extracted pure
+functions only. Analysis-import allowlists, CMD and Linux entrypoints remain
+separate pending boundaries.

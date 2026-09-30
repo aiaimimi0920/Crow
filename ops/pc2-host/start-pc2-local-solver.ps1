@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 
 $root = 'C:\fapaifang-worker'
 $sourceRoot = Join-Path $root 'src'
@@ -16,31 +17,28 @@ if (-not (Test-Path -LiteralPath $python)) {
 }
 
 $solverRuntimeDefaults = [ordered]@{
-  FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED = '0'
-  FAPAI_SOLVER_COOLDOWN_FAIL_THRESHOLD = '10'
-  FAPAI_SOLVER_COOLDOWN_SECONDS = '180'
-  FAPAI_SLIDER_RETRY_INTERVAL_SECONDS = '5'
-  FAPAI_LOCAL_SOLVER_POLL_SECONDS = '5'
+  CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED = '0'
+  CROW_SOLVER_COOLDOWN_FAIL_THRESHOLD = '10'
+  CROW_SOLVER_COOLDOWN_SECONDS = '180'
+  CROW_SLIDER_RETRY_INTERVAL_SECONDS = '5'
+  CROW_LOCAL_SOLVER_POLL_SECONDS = '5'
 }
 foreach ($name in $solverRuntimeDefaults.Keys) {
-  $value = [Environment]::GetEnvironmentVariable($name, 'Process')
+  $value = (Get-CrowEnvironmentValue -Name $name)
   if (-not $value -and (Test-Path -LiteralPath $envFile)) {
-    $setting = Get-Content -LiteralPath $envFile | Where-Object {
-      $_.Trim() -match "^$([regex]::Escape($name))="
-    } | Select-Object -Last 1
-    if ($setting) {
-      $value = $setting.Substring($setting.IndexOf('=') + 1).Trim()
-    }
+    $settings = Read-CrowOperatorEnvironment -Path $envFile
+    $value = (Get-CrowEnvironmentValue -Name $name -Environment $settings)
+    if ($null -ne $value) { $value = $value.Trim() }
   }
   if (-not $value) {
     $value = $solverRuntimeDefaults[$name]
   }
-  [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+  Set-CrowEnvironmentValue -Name $name -Value $value
 }
 
-[Environment]::SetEnvironmentVariable('FAPAI_API_BASE_URL', $ApiBaseUrl, 'Process')
-[Environment]::SetEnvironmentVariable('FAPAI_CDP_ENDPOINT', $CdpEndpoint, 'Process')
-[Environment]::SetEnvironmentVariable('FAPAI_NODE_ID', $NodeId, 'Process')
+(Set-CrowEnvironmentValue -Name 'CROW_API_BASE_URL' -Value ($ApiBaseUrl))
+(Set-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT' -Value ($CdpEndpoint))
+(Set-CrowEnvironmentValue -Name 'CROW_NODE_ID' -Value ($NodeId))
 [Environment]::SetEnvironmentVariable('PYTHONUNBUFFERED', '1', 'Process')
 
 Set-Location -LiteralPath $sourceRoot

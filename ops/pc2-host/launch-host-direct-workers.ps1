@@ -14,6 +14,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 
 $root = 'C:\fapaifang-worker'
 $workerMutex = New-Object System.Threading.Mutex($false, 'Global\FapaiFangPc2RealWorkers')
@@ -24,35 +25,25 @@ if (-not $workerMutex.WaitOne(0)) {
   exit 0
 }
 $envFile = Join-Path $root 'env.worker.local'
-if (Test-Path -LiteralPath $envFile) {
-  Get-Content -LiteralPath $envFile -Encoding UTF8 | ForEach-Object {
-    $line = $_.Trim()
-    if (-not $line -or $line.StartsWith('#')) { return }
-    $separator = $line.IndexOf('=')
-    if ($separator -lt 1) { return }
-    $name = $line.Substring(0, $separator).Trim()
-    $value = $line.Substring($separator + 1)
-    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
-  }
-}
+Import-CrowOperatorEnvironment -Path $envFile
 $logDir = Join-Path $root 'logs\codex-pc2-real'
-$sharedRoot = if ($env:FAPAI_NAS_SHARE_ROOT) {
-  $env:FAPAI_NAS_SHARE_ROOT
+$sharedRoot = if ((Get-CrowEnvironmentValue -Name 'CROW_NAS_SHARE_ROOT' -PathValue)) {
+  (Get-CrowEnvironmentValue -Name 'CROW_NAS_SHARE_ROOT' -PathValue)
 } else {
   '\\192.168.15.200\home\project\project\FPFData'
 }
 $watchdogLog = Join-Path $logDir 'worker-watchdog.log'
 $cdpRecoveryLog = Join-Path $logDir 'cdp-recovery.log'
-$cdpEndpoint = if ($env:FAPAI_CDP_ENDPOINT) {
-  $env:FAPAI_CDP_ENDPOINT
+$cdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT')
 } else {
   'http://127.0.0.1:9223'
 }
-$externalCdp = $env:FAPAI_CDP_EXTERNAL -eq '1'
-$cookieSnapshotPreferred = $env:FAPAI_COOKIE_SNAPSHOT_PREFER -eq '1'
+$externalCdp = (Get-CrowEnvironmentValue -Name 'CROW_CDP_EXTERNAL') -eq '1'
+$cookieSnapshotPreferred = (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_PREFER') -eq '1'
 $collectorRequiresCdp = -not ($externalCdp -and $cookieSnapshotPreferred)
-$apiBaseUrl = if ($env:FAPAI_API_BASE_URL) {
-  $env:FAPAI_API_BASE_URL.TrimEnd('/')
+$apiBaseUrl = if ((Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL').TrimEnd('/')
 } else {
   'http://192.168.15.200:8001/api'
 }

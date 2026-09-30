@@ -85,3 +85,21 @@ def test_both_installers_include_shared_helpers_in_backup_copy_and_rollback_list
         ):
             assert repr(entry).replace("\\\\", "\\") in manifest
         assert source.count("foreach ($name in $files)") >= 3
+
+
+def test_installer_manifests_cover_versioned_environment_consumers():
+    import re
+
+    ops = ROOT / "ops/pc2-host"
+    consumers = {
+        path.relative_to(ops).as_posix().replace("/", "\\")
+        for path in ops.rglob("*.ps1")
+        if "Get-CrowEnvironmentValue" in path.read_text()
+        or "Set-CrowEnvironmentValue" in path.read_text()
+    }
+    consumers.discard("crow-environment.ps1")
+    for name in ("install-cookie-only-runtime.ps1", "install-concurrency-runtime.ps1"):
+        source = (ops / name).read_text()
+        manifest = source.split("$files = @(", 1)[1].split(")", 1)[0]
+        entries = set(re.findall("'([^']+)'", manifest))
+        assert consumers <= entries

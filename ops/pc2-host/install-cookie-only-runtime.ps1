@@ -25,7 +25,17 @@ $files = @(
   'start-host-direct-detail-worker.ps1',
   'start-host-direct-detail-worker-2.ps1',
   'start-host-direct-detail-worker-3.ps1',
-  'start-host-direct-seed-worker.ps1'
+  'start-host-direct-seed-worker.ps1',
+  'load-host-worker-env.ps1',
+  'start-host-detail-worker.ps1',
+  'start-host-seed-worker.ps1',
+  'start-host-seed-worker-2.ps1',
+  'start-pc2-local-solver.ps1',
+  'launch-host-direct-workers\analysis-backend.ps1',
+  'launch-host-direct-workers\control-plane.ps1',
+  'launch-host-direct-workers\process-lifecycle.ps1',
+  'launch-host-direct-workers\worker-specs.ps1',
+  'launch-host-direct-workers\worker-supervision.ps1'
 )
 
 function Test-PowerShellFile {

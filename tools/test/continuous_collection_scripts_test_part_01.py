@@ -397,30 +397,30 @@ def test_collection_entrypoints_can_start_cdp_with_system_proxy() -> None:
 def test_pc2_host_worker_env_disables_runtime_db_bootstrap_and_browser_page_scan() -> None:
     script = _pc2_host_script("load-host-worker-env.ps1")
 
-    assert "FAPAI_DB_AUTO_CREATE" in script
+    assert "CROW_DB_AUTO_CREATE" in script
     assert "'0'" in script
-    assert "FAPAI_DB_ENABLE_POSTGIS" in script
-    assert "FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES" in script
-    assert "FAPAI_API_BASE_URL" in script
-    assert "FAPAI_REPORT_CDP_ENDPOINT" in script
-    assert "FAPAI_NODE_ID" in script
-    assert "SetEnvironmentVariable('FAPAI_COOKIE_SNAPSHOT_PREFER', '0', 'Process')" in script
+    assert "CROW_DB_ENABLE_POSTGIS" in script
+    assert "CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES" in script
+    assert "CROW_API_BASE_URL" in script
+    assert "CROW_REPORT_CDP_ENDPOINT" in script
+    assert "CROW_NODE_ID" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_PREFER' -Value ('0')" in script
 
 
 def test_pc2_host_seed_worker_uses_resident_loop_without_single_run_cap() -> None:
     script = _pc2_host_script("start-host-seed-worker.ps1")
 
-    assert "FAPAI_HOST_SEED_WORKER_ID" in script
-    assert "FAPAI_LIST_BROWSER_FALLBACK" in script
+    assert "CROW_HOST_SEED_WORKER_ID" in script
+    assert "CROW_LIST_BROWSER_FALLBACK" in script
     assert "'1'" in script
-    assert "if (-not $env:FAPAI_LIST_BROWSER_FALLBACK)" in script
+    assert "if (-not (Get-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK'))" in script
     assert "'--loop'" in script
-    assert "FAPAI_SEED_PAGES_PER_RUN" in script
+    assert "CROW_SEED_PAGES_PER_RUN" in script
     assert "'--active-loop-interval-seconds', '10'" in script
     assert "'--loop-interval-seconds', '60'" in script
     assert "'--auth-probe-interval-seconds', '10'" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_THRESHOLD" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_SECONDS" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_THRESHOLD" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_SECONDS" in script
     assert "'--pages-per-run', '5'" not in script
     assert "'--failure-cooldown-threshold', '1'" not in script
     assert "'--failure-cooldown-seconds', '600'" not in script
@@ -430,7 +430,7 @@ def test_pc2_host_seed_worker_uses_resident_loop_without_single_run_cap() -> Non
 def test_pc2_host_seed_worker_2_wraps_primary_seed_worker_with_distinct_worker_id() -> None:
     script = _pc2_host_script("start-host-seed-worker-2.ps1")
 
-    assert "FAPAI_HOST_SEED_WORKER_ID" in script
+    assert "CROW_HOST_SEED_WORKER_ID" in script
     assert "pc2-host-seed-2" in script
     assert "start-host-seed-worker.ps1" in script
 
@@ -438,7 +438,7 @@ def test_pc2_host_seed_worker_2_wraps_primary_seed_worker_with_distinct_worker_i
 def test_pc2_host_detail_worker_uses_resident_loop_and_small_batch_target() -> None:
     script = _pc2_host_script("start-host-detail-worker.ps1")
 
-    assert "FAPAI_HOST_DETAIL_WORKER_ID" in script
+    assert "CROW_HOST_DETAIL_WORKER_ID" in script
     assert "'--loop'" in script
     assert "'--target-success', '2'" in script
     assert "'--max-attempts', '6'" in script

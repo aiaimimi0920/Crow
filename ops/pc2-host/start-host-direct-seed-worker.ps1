@@ -1,12 +1,13 @@
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 $ctx = & 'C:\fapaifang-worker\ops\load-host-direct-nas-env.ps1'
 Set-Location $ctx.SrcRoot
 $outputDir = Join-Path $ctx.SharedRoot 'output\nodes\pc2-real\seed_collector'
 $jobsFile = Join-Path $ctx.SharedRoot 'jobs\seed_jobs_all.json'
-$workerId = if ($env:FAPAI_HOST_SEED_WORKER_ID) { $env:FAPAI_HOST_SEED_WORKER_ID } else { 'pc2-real-seed-1' }
-$solverEnabled = if ($env:FAPAI_SEED_CAPTCHA_SOLVER_ENABLED) {
-  $env:FAPAI_SEED_CAPTCHA_SOLVER_ENABLED
-} elseif ($env:FAPAI_CAPTCHA_SOLVER_ENABLED) {
-  $env:FAPAI_CAPTCHA_SOLVER_ENABLED
+$workerId = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_SEED_WORKER_ID')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_SEED_WORKER_ID') } else { 'pc2-real-seed-1' }
+$solverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_SEED_CAPTCHA_SOLVER_ENABLED')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_SEED_CAPTCHA_SOLVER_ENABLED')
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')
 } else {
   '0'
 }
@@ -46,17 +47,17 @@ if ($null -ne $existing) {
   exit 0
 }
 
-if (-not $env:FAPAI_LIST_BROWSER_FALLBACK) {
-  [Environment]::SetEnvironmentVariable('FAPAI_LIST_BROWSER_FALLBACK', '0', 'Process')
+if (-not (Get-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK')) {
+  (Set-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK' -Value ('0'))
 }
-if (-not $env:FAPAI_LIST_HTTP_TIMEOUT_SECONDS) {
-  [Environment]::SetEnvironmentVariable('FAPAI_LIST_HTTP_TIMEOUT_SECONDS', '8', 'Process')
+if (-not (Get-CrowEnvironmentValue -Name 'CROW_LIST_HTTP_TIMEOUT_SECONDS')) {
+  (Set-CrowEnvironmentValue -Name 'CROW_LIST_HTTP_TIMEOUT_SECONDS' -Value ('8'))
 }
-if (-not $env:FAPAI_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS) {
-  [Environment]::SetEnvironmentVariable('FAPAI_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS', '2', 'Process')
+if (-not (Get-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS')) {
+  (Set-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS' -Value ('2'))
 }
-if (-not $env:FAPAI_LIST_BROWSER_RECOVERY_WAIT_SECONDS) {
-  [Environment]::SetEnvironmentVariable('FAPAI_LIST_BROWSER_RECOVERY_WAIT_SECONDS', '2', 'Process')
+if (-not (Get-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_RECOVERY_WAIT_SECONDS')) {
+  (Set-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_RECOVERY_WAIT_SECONDS' -Value ('2'))
 }
 
 if (-not (Test-Path -LiteralPath $jobsFile)) {
@@ -70,7 +71,7 @@ if (-not (Test-Path -LiteralPath $jobsFile)) {
 $args = @(
   'tools\seed_collector.py',
   '--output-dir', $outputDir,
-  '--cdp-endpoint', $env:FAPAI_CDP_ENDPOINT,
+  '--cdp-endpoint', (Get-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT'),
   '--worker-id', $workerId,
   '--loop',
   '--pages-per-run', '5',

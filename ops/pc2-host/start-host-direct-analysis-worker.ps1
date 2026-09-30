@@ -2,31 +2,33 @@ param(
   [string]$RequestedWorkerId = '',
   [string]$RequestedOutputDir = ''
 )
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
+
 
 $ctx = & 'C:\fapaifang-worker\ops\load-host-direct-nas-env.ps1'
 Set-Location $ctx.SrcRoot
 
 $workerId = if ($RequestedWorkerId) {
   $RequestedWorkerId
-} elseif ($env:FAPAI_HOST_ANALYSIS_WORKER_ID) {
-  $env:FAPAI_HOST_ANALYSIS_WORKER_ID
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_WORKER_ID')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_WORKER_ID')
 } else {
   'pc2-real-analysis-1'
 }
 $outputDir = if ($RequestedOutputDir) {
   $RequestedOutputDir
-} elseif ($env:FAPAI_HOST_ANALYSIS_OUTPUT_DIR) {
-  $env:FAPAI_HOST_ANALYSIS_OUTPUT_DIR
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_OUTPUT_DIR' -PathValue)) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_OUTPUT_DIR' -PathValue)
 } else {
   Join-Path $ctx.SharedRoot 'output\nodes\pc2-real\detail_analysis_worker'
 }
-$targetSuccess = if ($env:FAPAI_HOST_ANALYSIS_TARGET_SUCCESS) {
-  $env:FAPAI_HOST_ANALYSIS_TARGET_SUCCESS
+$targetSuccess = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_TARGET_SUCCESS')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_TARGET_SUCCESS')
 } else {
   '2'
 }
-$maxAttempts = if ($env:FAPAI_HOST_ANALYSIS_MAX_ATTEMPTS) {
-  $env:FAPAI_HOST_ANALYSIS_MAX_ATTEMPTS
+$maxAttempts = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_MAX_ATTEMPTS')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_MAX_ATTEMPTS')
 } else {
   '3'
 }
