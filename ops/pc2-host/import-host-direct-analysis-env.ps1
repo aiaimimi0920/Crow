@@ -4,6 +4,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 
 $root = 'C:\fapaifang-worker'
 $envPath = Join-Path $root 'env.worker.local'
@@ -21,10 +22,13 @@ $allowedNames = @(
   'OPENAI_TIMEOUT_SECONDS',
   'OPENAI_MAX_RETRIES',
   'OPENAI_PROXY',
+  'CROW_LLM_PROXY',
   'FAPAI_LLM_PROXY',
   'OPENAI_HTTP_PROXY',
   'OPENAI_HTTPS_PROXY',
+  'CROW_LLM_HTTP_PROXY',
   'FAPAI_LLM_HTTP_PROXY',
+  'CROW_LLM_HTTPS_PROXY',
   'FAPAI_LLM_HTTPS_PROXY'
 )
 
@@ -60,6 +64,12 @@ Get-Content -LiteralPath $resolvedSource -Encoding UTF8 | ForEach-Object {
   if ($allowedNames -contains $name -and $value) {
     $updates[$name] = $value
   }
+}
+
+# Resolve only the approved proxy groups, before backup or destination writes.
+foreach ($name in @('CROW_LLM_PROXY', 'CROW_LLM_HTTP_PROXY', 'CROW_LLM_HTTPS_PROXY')) {
+  $value = Get-CrowEnvironmentValue -Name $name -Environment $updates
+  if ($null -ne $value) { Set-CrowEnvironmentValue -Name $name -Value $value -Environment $updates }
 }
 
 $hasBaseUrl = @(

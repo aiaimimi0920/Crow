@@ -249,3 +249,21 @@ files with no backup may remain; this compatibility change does not add deletion
 or a full installation migration. Tests use synthetic files and extracted pure
 functions only. Analysis-import allowlists, CMD and Linux entrypoints remain
 separate pending boundaries.
+
+The approved analysis import adds aliases only for the three existing LLM proxy
+keys. Source-root containment, required provider settings and unrelated-key
+exclusion remain unchanged. Conflicting nonempty aliases fail before backup or
+writing; explicit imported values synchronize both spellings, and stale approved
+keys retain the existing removal behavior.
+
+Windows batch defaults fill both spellings only when neither is configured.
+Existing explicit settings remain available to the shared runtime validator;
+operator console messages no longer echo the database URL. Transient exit-code
+variables use Crow names. The local-solver CMD keeps its explicit values and
+sets matching aliases; it is not executed by this change's validation.
+
+The embedded remote-auth Python snippet now reads the Crow-named temporary
+variables supplied by its paired PowerShell producer. External configuration
+still accepts both names. The test evaluates only the five environment-read
+assignments in an isolated synthetic process, never imports or calls the SSH
+client or any remote browser operation.

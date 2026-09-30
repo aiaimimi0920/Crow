@@ -170,11 +170,11 @@ import sys
 
 import paramiko
 
-host = os.environ["FAPAI_REMOTE_AUTH_HOST_ACTIVE"]
-user = os.environ["FAPAI_REMOTE_AUTH_USER_ACTIVE"]
-password = os.environ.get("FAPAI_REMOTE_AUTH_PASSWORD_ACTIVE") or None
-key_path = os.environ.get("FAPAI_REMOTE_AUTH_KEY_PATH_ACTIVE") or None
-command = os.environ["FAPAI_REMOTE_AUTH_COMMAND"]
+host = os.environ["CROW_REMOTE_AUTH_HOST_ACTIVE"]
+user = os.environ["CROW_REMOTE_AUTH_USER_ACTIVE"]
+password = os.environ.get("CROW_REMOTE_AUTH_PASSWORD_ACTIVE") or None
+key_path = os.environ.get("CROW_REMOTE_AUTH_KEY_PATH_ACTIVE") or None
+command = os.environ["CROW_REMOTE_AUTH_COMMAND"]
 
 connect_kwargs = {
     "hostname": host,

@@ -14,6 +14,7 @@ $ErrorActionPreference = 'Stop'
 
 $files = @(
   'crow-environment.ps1',
+  'import-host-direct-analysis-env.ps1',
   'runtime\project-environment.ps1',
   'runtime\compose-environment-file.ps1',
   'apply-worker-concurrency-env.ps1',

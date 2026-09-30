@@ -176,3 +176,36 @@ def test_data_fixer_batch_smoke_runs_against_actual_repo_with_stub_python(
         "src/data_fixer.py",
         expected_cwd=repo_root,
     )
+
+
+@pytest.mark.parametrize("prefix", ["CROW", "FAPAI"])
+def test_main_batch_preserves_explicit_namespace_without_injecting_conflicting_default(
+    tmp_path, prefix
+):
+    root = Path(__file__).resolve().parents[2]
+    fake_repo = _copy_repo_batch_to_fake_repo(root, tmp_path, "main.bat")
+    log = fake_repo / "environment.txt"
+    stub = fake_repo / "capture.cmd"
+    stub.write_text(
+        '@echo off\n> "'
+        + str(log)
+        + '" echo NEW=%CROW_DB_URL%\n>> "'
+        + str(log)
+        + '" echo OLD=%FAPAI_DB_URL%\nexit /b 0\n'
+    )
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("CROW_", "FAPAI_"))
+    }
+    env["PYTHON_CMD"] = str(stub)
+    env[prefix + "_DB_URL"] = "synthetic-db-fixture"
+    result = _run_batch(fake_repo / "auto/main.bat", env)
+    assert result.returncode == 0
+    assert "synthetic-db-fixture" not in result.stdout
+    lines = dict(line.strip().split("=", 1) for line in log.read_text().splitlines())
+    assert lines == (
+        {"NEW": "synthetic-db-fixture", "OLD": ""}
+        if prefix == "CROW"
+        else {"NEW": "", "OLD": "synthetic-db-fixture"}
+    )
