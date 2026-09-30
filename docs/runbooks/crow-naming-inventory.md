@@ -36,31 +36,30 @@ Rust errors/descriptions, capability description, current desktop README and
 seed-generation help. Userscript human-readable description/log prefixes use
 Crow; structured fields are unchanged.
 
-## Deliberate compatibility boundaries and remaining batches
+## Deliberate compatibility boundaries
 
-- DB identifiers `fapai_*`: durable schema and migration contract; no SQL rename
-- Five Fapai* class aliases: old callers and serialized references; no extra model
-- `FPFData`: existing populated data remains in place; both path markers read
-- Tauri `com.fapaifang.collector`, installed AppData/profile paths, NSIS product
-  identity, existing binary/library/package names: next build/installation batch
-  must add compatible discovery/entry points before any old identifier retires
-- Userscript `@name` + `@namespace`, old installed URL/filename and GM storage keys:
-  update identity and persisted state; keep until a tested update/alias path exists
-- Browser archive DOM markers (`fapaifang-meta`) and evidence-source strings:
-  historical artifacts must remain readable; add a dual reader before new writes
-- `FAPAI_*` environment keys and X-FAPAI/X-Fapai HTTP headers: next configuration
-  batch requires dynamic dual-name readers and old-server/new-client handling;
-  no global environment monkeypatch and no secret values in conflict messages
-- Scheduled-task/service/container/image/mutex identities: existing coordination
-  and deployment contracts, not cosmetic labels; prevent duplicate workers
-- Export filename prefixes and Python bootstrap module labels: inventory/readers
-  need compatible aliases before new names become defaults
-- Historical run reports, original listing evidence, logs and migration SQL:
-  retain historical contents; do not rewrite them to appear renamed
+The naming branch implements canonical source names and compatible inputs. It
+is not a migration of installed identities, durable records or historical data.
+The following old names are intentionally retained:
 
-The remaining legacy names are not a declaration that the full naming request
-is finished. Each next batch gets focused compatibility tests, an exact tree
-review and CI on this same draft branch. Merging remains a separate user decision.
+| Boundary | Retained name or format | Reason |
+| --- | --- | --- |
+| SQL and old Python callers | `fapai_*` identifiers, migration revisions, five Fapai* aliases | Preserve existing databases and imports; aliases reference the same models |
+| Runtime data | populated `FPFData`, configured UNC roots, profile/cache/heartbeat paths | Reuse existing data in place; a new name must not hide it |
+| Installed desktop | `fapaifang_collector_desktop.exe`, Tauri identifier/product identity | Preserve upgrades, shortcuts, process detection and AppData; private npm/Rust package/library names are Crow |
+| Browser extension | userscript name/namespace/install URL, GM storage keys | Preserve installed update identity and settings |
+| Archived evidence | `fapaifang-meta`, source fields and historical export prefixes | Existing evidence and downstream readers remain compatible |
+| Host configuration | legacy environment aliases and exported constants | Old configurations remain accepted alongside Crow names |
+| HTTP wire | default client X-FAPAI headers | Older server preflight allowlists accept only the legacy names; servers accept both securely |
+| Container configuration | env_file/service.environment/build ARG legacy keys | Preserve Docker layer precedence and old images; host aliases are adapted separately |
+| Deployment coordination | task/service/mutex/container/volume/image/user identities and release metadata | Avoid duplicate workers, changed mounts or broken rollback |
+| Bootstrap labels | historical Python module/loading labels | Preserve dynamic imports and compatibility facades |
+| Diagnostic/device identity | virtual-mouse name and existing screenshot/export filenames | Preserve operator/device matching and diagnostic consumers; these are not new data roots |
+| History | original listings, reports, logs, migration SQL and prior review records | Historical contents are evidence, not current product wording |
+
+These are compatibility interfaces, not instructions to rename live resources.
+Retiring any durable identity requires a separate migration design and review.
+This draft is not deployed or merged; the user decides when to merge it.
 
 ## Userscript generated revision review (2026-09-30)
 
@@ -78,192 +77,124 @@ The fixed-digest assertion is updated to this reviewed content. Existing
 remains historical evidence. The generated-artifact policy, exclusions,
 handwritten-source limits and authenticated-request test assertions are not relaxed.
 
-## Environment namespace rollout
+## Environment and entrypoint coverage
 
-The first Python cohort uses a small dynamic alias reader for API credentials,
-runtime flags, database configuration and isolated/maintenance entry points.
-`CROW_*` is canonical, while existing `FAPAI_*` inputs and exported legacy
-credential constants remain supported. Conflicting explicitly set values fail
-closed, reporting names only. Empty strings are preserved; each caller keeps
-its existing default and boolean conversion rules.
+`CROW_*` is canonical. Python, PowerShell, native Rust desktop configuration and
+supported host Bash inputs accept legacy `FAPAI_*` aliases. Readers are dynamic
+where the original reads were dynamic; import-time settings retain their original
+lifetime. Injected readers remain isolated from process settings. Explicit empty
+values, caller defaults, boolean/numeric conversion and provider-standard OPENAI
+precedence retain their original contracts. Conflicts report key names only.
 
-Reads do not rewrite `os.environ`. An injected reader stays isolated from global
-process settings. Explicit writes through the helper update both aliases for
-old/new consumers; the private lock covers cooperating helper users, not direct
-external writes to `os.environ`. Caller-supplied mappings are not generic
-transactions and any write failure must stop the caller.
+Reads do not rewrite process environments. Explicit writes synchronize aliases;
+the Python helper lock covers cooperating helper users, not direct external
+`os.environ` writes. Caller-supplied mappings are not generic transactions, and
+write failures stop the caller. Public function-global facades explicitly include
+the reader in their context. Standalone Python and desktop bundles include the
+new dependency closure and have isolated import tests.
 
-Management-root aliases continue through the dedicated path resolver, including
-lexical path equivalence. Generic string-value comparison does not replace that
-path contract. Alembic's bootstrap accepts the new DB environment name; migration
-revision files, schema metadata and SQL identifiers are unchanged.
+Coverage includes API credentials, database/Alembic bootstrap, maintenance and
+diagnostic inputs, source discovery/detail/analysis workers, budgets, CDP/cookie
+transport, watchdogs, healthchecks, desktop settings and injected Compose models.
+Alias conflicts propagate through optional cookie/reconnect fallbacks. Original
+credential role, origin, TLS, cookie containment and storage boundaries remain.
+Tests use isolated settings and synthetic inputs, not live diagnostic entrypoints.
 
-Quality runs clear canonical counterparts of their forced isolated settings,
-then run the original legacy-environment suites plus explicit new-name mirrors.
-This prevents inherited Crow settings from redirecting tests to real data.
-The second cohort covers solver/CDP settings: endpoint, retry/deadline limits,
-flags, browser identity and cookie-cache paths. Old/new/same-value dual inputs
-are tested without a real browser, network or pointer. Invalid numeric settings
-retain their old defaults, but alias conflicts are not swallowed as parse or
-transport failures. Connection configuration is validated before socket changes;
-cookie discovery/export never retries with another transport after a conflict.
+Management roots use their dedicated read-only path resolver, not generic string
+comparison. Desktop path aliases use lexical native path equivalence without
+following links. Process configuration overrides saved configuration by logical
+alias group; original empty-process fallback remains. Explicit script parameters
+still win when conflicting aliases are unused. Existing JSON keys remain readable.
+See [data-root compatibility](crow-data-root-compatibility.md) for discovery,
+ambiguous roots, symlinks, case variants and rollback.
 
-The third cohort covers seed/detail worker configuration and pause ownership,
-worker heartbeat paths, live-batch cookie/proxy/browser configuration, and
-analysis-module configuration. Public compatibility facades clone function
-globals, so the alias reader is explicitly exported through their shared context
-rather than being available only in individual implementation modules. Existing
-facade names and persisted worker/job identifiers remain unchanged.
+## Desktop and HTTP behavior
 
-The old numeric/default/boolean parsing remains; dual explicit source-template
-values now follow the same fail-closed conflict rule. Explicit heartbeat paths
-still win. Cookie snapshots are not used to hide configuration conflicts, and
-optional page-cache/reconnect fallbacks propagate those errors. Tests exercise
-both the public facades and native transport using fake I/O and temporary paths.
+Native API configuration still returns a string on success. Conflicts reject with
+key names only; the paired frontend blocks initial, scheduled and shared HTTP
+requests until the user explicitly applies an API address. Normal browser fallback
+is retained. PR browser tests cover both paths with synthetic responses, including
+a ten-minute virtual-time window with zero requests while blocked.
 
-The fourth cohort covers PC2 solver startup defaults, auth-report inputs,
-retry/fallback/loop flags, watchdog settings and worker healthcheck paths.
-Import-time constants keep their original lifetime; function-level reads remain
-dynamic. Watchdog direct-script imports are tested from an unrelated temporary
-working directory. No watchdog, service or remote process is started by tests.
-The existing heartbeat filenames and service/process matching identities remain
-compatible; this input-alias batch does not rename runtime files.
+Servers accept X-Crow-Control-Token, X-Crow-Recovery-Token and
+X-Crow-Collection-Token alongside the legacy names. Matching is case-insensitive;
+repeated fields, comma-merged values and conflicting aliases fail closed across
+roles. Existing origin/TLS/role gates remain, including CORS. Both namespaces are
+classified as sensitive before client transport checks. Clients retain the old
+wire default for older servers; there is no token probe or negotiation protocol.
 
-The fifth cohort covers injected authentication receipt/cookie readers and
-scoped desktop settings. Injected readers never fall back to global process
-settings. Desktop CROW/FAPAI path aliases compare lexically without following
-links, allowing equivalent trailing separators and native Windows case/UNC
-spellings. Two different explicit paths fail closed without values in errors.
+Private npm and Rust package/library names are Crow. Cargo's explicit binary and
+default-run retain the installed executable name. Dependency versions/checksums
+are unchanged by this source-naming step; Windows CI builds the existing NSIS
+identity. Building a package does not install or activate it.
 
-Process settings override saved desktop settings as a logical alias group;
-original empty-process-value fallback to saved settings is preserved. Saved
-relative paths remain relative to the selected bundle, while relative process
-paths keep their existing current-directory interpretation. Configuration files
-are only read, never rewritten. Old JSON version/keys remain supported and no
-origin, TLS, token, browser-profile or cookie containment boundary is relaxed.
-The standalone desktop bundle includes the new scoped reader. Linux fixture and
-Windows CI coverage verify both namespace spellings and injected isolation.
+## PowerShell and operator bundles
 
-The sixth cohort closes remaining direct Python environment reads for model
-qualification, proxies, community indexes, AVM maintenance, health/location
-facades, browser identity configuration and diagnostic entrypoints. Explicit
-OPENAI settings retain their original precedence and provider-standard names.
-Legacy exported environment-name constants remain aliases; public facades keep
-the new reader in their own exported context where function globals are cloned.
-Live diagnostic scripts use explicit dual-name defaults only when absent, with
-no import/run of those live diagnostics during validation (syntax only).
+The three collection-mode entrypoints use the validated Crow Compose adapter and
+scoped env-file writer. Explicit writes synchronize aliases; defaults preserve
+any existing spelling, including blanks, and unrelated lines remain intact.
+Seed/detail configuration checks precede restart-policy changes.
 
-The seventh cohort covers resolved Compose-model mappings and direct PowerShell
-process-environment reads under `scripts/`. Model readers stay scoped to the
-provided mapping, and unchanged plans stay byte-for-byte equal as Python data.
-Only actual setting changes and newly provisioned worker identity/output values
-explicitly synchronize both spellings; service/container identities and mounts
-are preserved. `environment_changes` retains its legacy-key mapping as a caller
-compatibility API, while writers bridge those keys to both namespaces.
+PC2 operator helpers load from repository scripts/ or a flat runtime/ bundle.
+Installer validation, backup, copy and rollback manifests include the full helper
+closure. Rollback restores files with backups; newly introduced files without
+backups may remain. This change adds no deletion or installation migration.
+Operator env-file loading validates all alias groups before process writes and
+preserves file-over-process priority and existing literal parsing rules.
 
-The PowerShell helper is dynamically read-only unless explicitly asked to set a
-value. Explicitly supplied script parameters still override environment defaults,
-including when the unused aliases conflict. Known local path reads opt into
-lexical equivalence without following links. Saved desktop settings accept either
-namespace; generated settings and launchers carry matching aliases so older
-bundles continue to work. Bundle file manifests include the helper.
-Only helper/parameter-binding fixtures and parser checks run on Linux; operational
-script bodies are not executed. Windows CI covers copied desktop bundles and
-temporary installation-configuration fixtures. Existing static assertions now
-look for canonical getter calls while retaining protocol/security assertions.
+Analysis import adds aliases only for the three approved proxy settings. Conflicts
+fail before backup/write; unrelated keys remain excluded. Batch defaults fill both
+spellings only when both are absent. Solver CMD explicit settings are paired, and
+console output no longer echoes the database URL. Paired remote-auth temporary
+variables use Crow; tests evaluate only environment assignments, never SSH calls.
 
-The eighth cohort adds a read-only Compose environment adapter and completes the
-Docker entrypoint's injected mapping reader. It delegates env-file parsing to
-Docker's config-only JSON renderer, validates logical alias groups before an
-operational command, and passes matching legacy inputs to existing templates.
-The templates' volume/service/image names remain compatibility identities, not
-rename targets. The required Linux CI integration uses synthetic env files and
-only `docker compose config`; local Docker absence is recorded as a skip.
-See [Crow Compose compatibility](crow-compose-compatibility.md).
+PowerShell regression fixtures reuse one host per module for speed, with a fresh
+runspace for each case and restoration of process environment and directory.
+Tests prove same-process reuse cannot leak added/changed/deleted environment
+values, global variables or functions, including after a failed case. Temporary
+files remain isolated. Operational script bodies are not executed by these tests.
 
-The ninth cohort integrates the three collection-mode PowerShell entrypoints
-with the validated Compose adapter and a scoped dual-name env-file writer.
-Explicit settings synchronize aliases; defaults preserve any existing alias,
-including blanks, and unrelated settings stay intact. Seed/detail configuration
-checks precede restart-policy changes. Validation executes only pure writers on
-temporary files and source parsing; no operational entrypoint is run.
+## Compose and Linux boundaries
 
-Remaining scope includes independent Compose/ops entrypoints and bundles,
-embedded remote helper interfaces, HTTP headers and safe build/CLI names;
-none of the direct-reader counts imply these remaining boundaries are finished.
+The Crow Compose adapter validates a strict supported global-argument grammar,
+uses Docker config-only rendering for env parsing, and preserves the exact chosen
+files/project directory. Before forwarding an operation it validates the final
+service environment model using the same selectors. Captured values are neither
+printed nor written to disk. Container alias conflicts use conservative text
+comparison and key/service-only guidance, not host-path equivalence.
+Synthetic Docker integration tests issue only config commands and verify a
+conflicting service model prevents any subsequent operation.
+See [Compose compatibility](crow-compose-compatibility.md).
 
-The tenth cohort covers native desktop process/saved API configuration and the
-saved Python interpreter path. Successful native API responses remain strings;
-conflicts reject the command with key names only. The paired frontend recognizes
-that error, pauses automatic requests and blocks shared HTTP transport until an
-explicit API-address application. Non-Tauri browser fallback remains unchanged.
-Saved interpreter aliases compare native absolute paths lexically, without
-following links; settings execution propagates conflicts before starting Python.
-Existing empty process API values still fall back to saved configuration.
+Container env_file, service.environment and build ARG keys remain legacy wire
+interfaces. New host inputs do not imply equivalence across Docker layers; use
+the documented legacy container keys where indicated in env examples. NAS/PC2
+legacy runners retain their existing commands, Compose v1 fallback and metadata.
 
-The HTTP credential cohort accepts `X-Crow-Control-Token`,
-`X-Crow-Recovery-Token` and `X-Crow-Collection-Token`, alongside their legacy
-spellings. Header matching is case-insensitive. Repeated fields, comma-merged
-tokens or conflicting aliases reject credentials across all roles, so a second
-valid role cannot hide a conflicting field. Origin, TLS and role-route policies
-remain in force; CORS permits the new names only under the existing origin gate.
+Host Bash helpers validate aliases before browser/profile/child work. Declared
+shell env files permit plain UTF-8 LF, optional export, quoting, comments and
+simple variable references. BOM, CR, NUL, conditional/dynamic assignment, command
+substitution, unset, multiline values and compound commands are rejected before
+source. File alias groups retain priority even when equal to preexisting values.
+NAS container-wire files reject Crow-prefixed declarations with key-only guidance.
+Derived build/image values explicitly synchronize aliases; rollback image values
+remain scoped to the original Docker command. Supervisor startup validates first;
+cleanup keeps the preexisting safe grace fallback when exit-time parsing fails.
 
-Clients intentionally retain legacy wire header defaults and exported constants
-for older servers. Sending both names from a browser would fail older servers'
-preflight allowlist. No capability negotiation, credential probe, wider CORS
-policy or new client setting is introduced. Both spellings are classified as
-sensitive credential headers before client destination/transport validation.
+Browser image source-copy lists include shared helpers, but no Linux image is
+built or released by this branch. Tests use synthetic shell files, extracted pure
+blocks and fake child/Docker commands. No PC2/NAS deployment, data migration,
+service restart, real browser-profile operation or installation has been performed.
 
-The private desktop npm package and Rust package/library use Crow names. The
-explicit Cargo binary target and default-run keep
-`fapaifang_collector_desktop.exe`, and Tauri's installation product/identifier stay
-stable for existing shortcuts, process detection and installer upgrades. The lock
-changes affect only the root package names; dependency versions and checksums
-remain identical. Source build names are not a migration of installed identity.
+## Acceptance evidence and limits
 
-The standalone PC2 operator bundle loads the shared PowerShell environment
-helpers through `ops/pc2-host/crow-environment.ps1`. A checkout resolves the
-repository `scripts/` directory; a flat staged bundle carries identical helper
-sources under `runtime/`. Both installer file lists include that dependency
-closure for validation, backup, copying and rollback. Staging must include
-`crow-environment.ps1`, `runtime/project-environment.ps1` and
-`runtime/compose-environment-file.ps1`; copying only a changed caller is incomplete.
+Focused tests cover old/new/equal/conflicting aliases, explicit precedence,
+empty values, bundle closure, unchanged schema, path discovery and rollback
+compatibility. Hosted CI checks real Windows Python/PowerShell and Cargo/NSIS,
+Docker config rendering and browser DOM behavior, in addition to ordinary quality
+and security checks. Exact-head results belong in the PR report; this document
+must not imply that results from an older tree cover later changes.
 
-The concurrency and cookie-only env-file writers synchronize canonical and legacy
-keys in their existing single file-write operation. Other lines, default paths,
-scheduled-task identities and mode behavior retain their previous meaning.
-Tests load helper-only temporary bundles in both layouts and extract only writer
-blocks; no operator loader, installer, task, cookie or network operation is run.
-Further operator process-read/write integration is tracked separately below.
-
-Operator process readers and explicit setters share the Crow alias helper. The
-operator env-file loader validates complete alias groups before applying process
-updates; the file retains its previous priority over process settings. Missing
-files do not alter settings. Existing simple literal-file parsing and default
-values are preserved; this loader is not a Compose dotenv evaluator. Worker-count
-parameters still override environment values, and solver defaults keep scoped
-process/file/default precedence.
-
-Installer rollback restores files that have backups. Newly introduced helper
-files with no backup may remain; this compatibility change does not add deletion
-or a full installation migration. Tests use synthetic files and extracted pure
-functions only. Analysis-import allowlists, CMD and Linux entrypoints remain
-separate pending boundaries.
-
-The approved analysis import adds aliases only for the three existing LLM proxy
-keys. Source-root containment, required provider settings and unrelated-key
-exclusion remain unchanged. Conflicting nonempty aliases fail before backup or
-writing; explicit imported values synchronize both spellings, and stale approved
-keys retain the existing removal behavior.
-
-Windows batch defaults fill both spellings only when neither is configured.
-Existing explicit settings remain available to the shared runtime validator;
-operator console messages no longer echo the database URL. Transient exit-code
-variables use Crow names. The local-solver CMD keeps its explicit values and
-sets matching aliases; it is not executed by this change's validation.
-
-The embedded remote-auth Python snippet now reads the Crow-named temporary
-variables supplied by its paired PowerShell producer. External configuration
-still accepts both names. The test evaluates only the five environment-read
-assignments in an isolated synthetic process, never imports or calls the SSH
-client or any remote browser operation.
+The existing glib 0.18.5 and proc-macro-error 1.0.4 OSV findings remain visible.
+There are no new ignore rules or relaxed test/time limits. Full historical
+platform/live-operation tests are not implied by focused or ordinary CI success.

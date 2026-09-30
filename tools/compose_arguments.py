@@ -18,6 +18,7 @@ class ComposeInputs:
     env_files: tuple[Path, ...]
     explicit_files: bool
     explicit_env_files: bool
+    global_arguments: tuple[str, ...] = ()
 
 
 VALUE_OPTIONS = frozenset(
@@ -40,7 +41,7 @@ FLAG_OPTIONS = frozenset({"--compatibility", "--dry-run", "--all-resources"})
 def _option(item: str) -> tuple[str, str | None]:
     if item.startswith(("-f", "-p")) and not item.startswith("--") and len(item) > 2:
         value = item[2:]
-        return item[:2], value[1:] if value.startswith("=") else value
+        return item[:2], value.removeprefix("=")
     name, equal, value = item.partition("=")
     return name, value if equal else None
 
@@ -103,7 +104,13 @@ def compose_inputs(arguments: Sequence[str], cwd: Path) -> ComposeInputs:
             files.append(root / ".env")
         if cwd != root and (cwd / ".env").is_file():
             files.append(cwd / ".env")
-    return ComposeInputs(root, tuple(files), bool(compose_files), explicit_env_files)
+    return ComposeInputs(
+        root,
+        tuple(files),
+        bool(compose_files),
+        explicit_env_files,
+        tuple(arguments[:index]),
+    )
 
 
 def reject_indirect_selectors(

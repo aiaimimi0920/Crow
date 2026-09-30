@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/process-supervisor.sh"
+crow_validate_env
 
 requested_display="${DISPLAY:-:99}"
-display_mode="${FAPAI_BROWSER_DISPLAY_MODE:-auto}"
-host_display="${FAPAI_BROWSER_HOST_DISPLAY:-:0}"
+display_mode="$(crow_env CROW_BROWSER_DISPLAY_MODE "auto")"
+host_display="$(crow_env CROW_BROWSER_HOST_DISPLAY ":0")"
 display="$requested_display"
-screen_geometry="${FAPAI_BROWSER_SCREEN_GEOMETRY:-1440x900x24}"
-profile_dir="${FAPAI_BROWSER_PROFILE_DIR:-/data/browser-profile}"
-start_url="${FAPAI_BROWSER_START_URL:-https://sf.taobao.com/}"
-vnc_password_file="${FAPAI_VNC_PASSWORD_FILE:-/run/secrets/pc2_vnc_password}"
-cdp_endpoint="${FAPAI_CDP_ENDPOINT:-http://127.0.0.1:9223}"
-cdp_public_port="${FAPAI_CDP_PUBLIC_PORT:-9224}"
-cdp_allowed_client_cidrs="${FAPAI_CDP_ALLOWED_CLIENT_CIDRS:-127.0.0.0/8,::1/128,172.16.0.0/12,192.168.15.20/32,192.168.15.200/32}"
-api_base_url="${FAPAI_API_BASE_URL:-http://192.168.15.200:8001/api}"
-node_id="${FAPAI_NODE_ID:-pc2}"
-browser_user_agent="${FAPAI_BROWSER_USER_AGENT:-}"
-browser_identity_full_version="${FAPAI_BROWSER_IDENTITY_FULL_VERSION:-}"
-browser_executable="${FAPAI_BROWSER_EXECUTABLE:-}"
-browser_identity_ready_path="${FAPAI_BROWSER_IDENTITY_READY_PATH:-/tmp/fapaifang-browser-identity.ready}"
+screen_geometry="$(crow_env CROW_BROWSER_SCREEN_GEOMETRY "1440x900x24")"
+profile_dir="$(crow_env CROW_BROWSER_PROFILE_DIR "/data/browser-profile")"
+start_url="$(crow_env CROW_BROWSER_START_URL "https://sf.taobao.com/")"
+vnc_password_file="$(crow_env CROW_VNC_PASSWORD_FILE "/run/secrets/pc2_vnc_password")"
+cdp_endpoint="$(crow_env CROW_CDP_ENDPOINT "http://127.0.0.1:9223")"
+cdp_public_port="$(crow_env CROW_CDP_PUBLIC_PORT "9224")"
+cdp_allowed_client_cidrs="$(crow_env CROW_CDP_ALLOWED_CLIENT_CIDRS "127.0.0.0/8,::1/128,172.16.0.0/12,192.168.15.20/32,192.168.15.200/32")"
+api_base_url="$(crow_env CROW_API_BASE_URL "http://192.168.15.200:8001/api")"
+node_id="$(crow_env CROW_NODE_ID "pc2")"
+browser_user_agent="$(crow_env CROW_BROWSER_USER_AGENT "")"
+browser_identity_full_version="$(crow_env CROW_BROWSER_IDENTITY_FULL_VERSION "")"
+browser_executable="$(crow_env CROW_BROWSER_EXECUTABLE "")"
+browser_identity_ready_path="$(crow_env CROW_BROWSER_IDENTITY_READY_PATH "/tmp/fapaifang-browser-identity.ready")"
 xauthority="${XAUTHORITY:-/tmp/.Xauthority}"
 vnc_auth_file="/tmp/tigervnc.passwd"
 
@@ -48,7 +49,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [[ "$display_mode" != "auto" && "$display_mode" != "host" && "$display_mode" != "xvfb" ]]; then
-  echo "Unsupported FAPAI_BROWSER_DISPLAY_MODE: $display_mode" >&2
+  echo "Unsupported CROW_BROWSER_DISPLAY_MODE" >&2
   exit 1
 fi
 
@@ -312,7 +313,7 @@ for cidr in "${configured_cdp_cidrs[@]}"; do
   [[ -n "$cidr" ]] && relay_allow_args+=(--allow-cidr "$cidr")
 done
 if (( ${#relay_allow_args[@]} == 0 )); then
-  echo "FAPAI_CDP_ALLOWED_CLIENT_CIDRS must contain at least one CIDR" >&2
+  echo "CROW_CDP_ALLOWED_CLIENT_CIDRS must contain at least one CIDR" >&2
   exit 1
 fi
 python tools/cdp_host_relay.py \
@@ -340,21 +341,21 @@ for _ in range(40):
 raise SystemExit(f"public Chromium CDP relay did not become ready: {endpoint}")
 PY
 
-solver_heartbeat_path="${FAPAI_LOCAL_SOLVER_HEARTBEAT_PATH:-/tmp/fapaifang-local-solver-heartbeat.json}"
+solver_heartbeat_path="$(crow_env CROW_LOCAL_SOLVER_HEARTBEAT_PATH "/tmp/fapaifang-local-solver-heartbeat.json")"
 rm -f "$solver_heartbeat_path"
 python tools/pc2_solver_watchdog.py \
   --heartbeat-path "$solver_heartbeat_path" \
-  --stale-seconds "${FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS:-300}" \
-  --startup-grace-seconds "${FAPAI_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS:-180}" \
-  --poll-seconds "${FAPAI_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS:-30}" \
+  --stale-seconds "$(crow_env CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS "300")" \
+  --startup-grace-seconds "$(crow_env CROW_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS "180")" \
+  --poll-seconds "$(crow_env CROW_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS "30")" \
   --parent-pid "$$" &
 pids+=("$!")
 
 python tools/pc2_local_solver.py \
   --api-base-url "$api_base_url" \
   --cdp-endpoint "$cdp_endpoint" \
-  --poll-seconds "${FAPAI_LOCAL_SOLVER_POLL_SECONDS:-5}" \
-  --max-attempts "${FAPAI_LOCAL_SOLVER_MAX_ATTEMPTS:-10}" \
+  --poll-seconds "$(crow_env CROW_LOCAL_SOLVER_POLL_SECONDS "5")" \
+  --max-attempts "$(crow_env CROW_LOCAL_SOLVER_MAX_ATTEMPTS "10")" \
   --node-id "$node_id" &
 solver_pid="$!"
 pids+=("$solver_pid")

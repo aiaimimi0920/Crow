@@ -1,12 +1,14 @@
 """Load only shared helpers and extracted file-writing blocks in temporary bundles."""
 
 import json
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from tools.test import powershell_fixtures
+
+crow_powershell_batch = powershell_fixtures.crow_powershell_batch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -16,15 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
     "writer", ["apply-cookie-only-worker-env.ps1", "apply-worker-concurrency-env.ps1"]
 )
 def test_operator_bundle_aliases_and_writer_keep_unrelated_settings(
-    tmp_path, layout, writer
+    tmp_path, layout, writer, crow_powershell_batch
 ):
-    shell = (
-        os.environ.get("CROW_TEST_POWERSHELL")
-        or shutil.which("pwsh")
-        or shutil.which("powershell")
-    )
-    if not shell:
-        pytest.skip("PowerShell unavailable")
+    shell = crow_powershell_batch.shell
     ops = tmp_path / "ops/pc2-host" if layout == "checkout" else tmp_path / "ops"
     helpers = tmp_path / "scripts" if layout == "checkout" else ops / "runtime"
     ops.mkdir(parents=True)
@@ -53,7 +49,7 @@ def test_operator_bundle_aliases_and_writer_keep_unrelated_settings(
         + block
         + "\n[IO.File]::ReadAllLines($EnvFile) | ConvertTo-Json -Compress\n"
     )
-    result = subprocess.run(
+    result = crow_powershell_batch(
         [shell, "-NoProfile", "-File", str(script)],
         capture_output=True,
         text=True,

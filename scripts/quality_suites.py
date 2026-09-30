@@ -2,9 +2,12 @@
 
 UNIT_FILES = (
     "test_compose_environment_file.py",
+    "test_compose_service_environment.py",
     "test_pc2_operator_environment_bundle.py",
     "test_pc2_operator_environment_readers.py",
     "test_pc2_analysis_environment_aliases.py",
+    "test_shell_environment_aliases.py",
+    "test_shell_operator_boundaries.py",
     "test_compose_arguments.py",
     "test_compose_environment.py",
     "test_project_environment_compose.py",

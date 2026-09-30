@@ -166,10 +166,10 @@ def test_browser_image_keeps_solver_and_os_mouse_in_one_display() -> None:
     assert "--upstream-host 127.0.0.1" in start_script
     assert "--upstream-port 9223" in start_script
     assert "--allow-cidr" in start_script
-    assert "FAPAI_CDP_ALLOWED_CLIENT_CIDRS" in start_script
-    assert "FAPAI_CDP_PUBLIC_PORT:-9224" in start_script
+    assert "CROW_CDP_ALLOWED_CLIENT_CIDRS" in start_script
+    assert 'crow_env CROW_CDP_PUBLIC_PORT "9224"' in start_script
     assert "tools/pc2_solver_watchdog.py" in start_script
-    assert "FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS:-300" in start_script
+    assert 'crow_env CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS "300"' in start_script
     assert "EXPOSE 6080 9224" in dockerfile
     assert "USER fapaifang" in dockerfile
     assert "--no-sandbox" not in start_script
@@ -209,8 +209,8 @@ def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> Non
     )
     assert "Chrome/152.0.0.0" in env_example
     assert "FAPAI_BROWSER_IDENTITY_FULL_VERSION=152.0.7977.64" in env_example
-    assert 'browser_user_agent="${FAPAI_BROWSER_USER_AGENT:-}"' in start_script
-    assert 'browser_executable="${FAPAI_BROWSER_EXECUTABLE:-}"' in start_script
+    assert 'browser_user_agent="$(crow_env CROW_BROWSER_USER_AGENT "")"' in start_script
+    assert 'browser_executable="$(crow_env CROW_BROWSER_EXECUTABLE "")"' in start_script
     assert "/usr/bin/google-chrome-stable" in start_script
     assert "playwright.chromium.executable_path" in start_script
     assert '"$browser_executable" --version' in start_script
@@ -220,7 +220,7 @@ def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> Non
     assert 'browser_identity_args+=(--user-agent="$browser_user_agent")' in start_script
     assert '"${browser_identity_args[@]}"' in start_script
     assert "tools/cdp_browser_identity.py" in start_script
-    assert "FAPAI_BROWSER_IDENTITY_READY_PATH" in start_script
+    assert "CROW_BROWSER_IDENTITY_READY_PATH" in start_script
     assert (
         "COPY --chmod=0755 ops/pc2-linux/start-browser-solver.sh /usr/local/bin/start-browser-solver"
         in auth_recovery_dockerfile
@@ -253,7 +253,7 @@ def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
     assert "FAPAI_BROWSER_HOST_DISPLAY=:0" in env_example
     assert "FAPAI_BROWSER_HOST_XAUTHORITY_DIR" not in compose
     assert "prepare_host_display_access" in _read(OPS_ROOT / "deploy.sh")
-    assert 'xhost +SI:localuser:"${FAPAI_BROWSER_XHOST_USER:-$(id -un)}"' in _read(
+    assert 'xhost +SI:localuser:"${host_user:-$(id -un)}"' in _read(
         OPS_ROOT / "deploy.sh"
     )
     assert "xhost +SI:localuser:root" not in _read(OPS_ROOT / "deploy.sh")
@@ -367,8 +367,8 @@ def test_deploy_script_has_identity_gate_and_rollback_links() -> None:
     assert "check_capacity" in deploy
     assert "df -Pk" in deploy
     assert "df -Pi" in deploy
-    assert "FAPAI_MIN_FREE_SPACE_PERCENT" in deploy
-    assert "FAPAI_MIN_FREE_INODES_PERCENT" in deploy
+    assert "CROW_MIN_FREE_SPACE_PERCENT" in deploy
+    assert "CROW_MIN_FREE_INODES_PERCENT" in deploy
     assert "Refusing deployment" in deploy
 
 
@@ -386,8 +386,10 @@ def test_pc2_auth_recovery_browser_hotfix_only_overlays_browser_side_files() -> 
         "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py",
         "COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py",
         "COPY src/captcha_solver.py /app/src/captcha_solver.py",
+        "COPY src/project_environment.py /app/src/project_environment.py",
         "COPY --chmod=0755 ops/pc2-linux/start-browser-solver.sh /usr/local/bin/start-browser-solver",
         "COPY ops/pc2-linux/process-supervisor.sh /usr/local/bin/process-supervisor.sh",
+        "COPY scripts/project-environment.sh /usr/local/bin/project-environment.sh",
         "COPY --from=hotfix / /",
     ]
 

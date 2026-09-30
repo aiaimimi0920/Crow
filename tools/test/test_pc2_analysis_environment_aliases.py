@@ -2,26 +2,23 @@
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from tools.test import powershell_fixtures
+
+crow_powershell_batch = powershell_fixtures.crow_powershell_batch
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("mode", ["CROW", "FAPAI", "equal", "conflict"])
 def test_analysis_import_aliases_preserve_allowlist_and_fail_before_write(
-    tmp_path, mode
+    tmp_path, mode, crow_powershell_batch
 ):
-    shell = (
-        os.environ.get("CROW_TEST_POWERSHELL")
-        or shutil.which("pwsh")
-        or shutil.which("powershell")
-    )
-    if not shell:
-        pytest.skip("PowerShell unavailable")
+    shell = crow_powershell_batch.shell
     source = (ROOT / "ops/pc2-host/import-host-direct-analysis-env.ps1").read_text()
     allowed = source[
         source.index("$allowedNames = @(") : source.index(
@@ -63,7 +60,7 @@ def test_analysis_import_aliases_preserve_allowlist_and_fail_before_write(
         + write
         + "\n@{ok=$true}|ConvertTo-Json -Compress\n} catch { @{ok=$false;error=$_.Exception.Message}|ConvertTo-Json -Compress }\n"
     )
-    result = subprocess.run(
+    result = crow_powershell_batch(
         [shell, "-NoProfile", "-File", str(script)],
         cwd=tmp_path,
         capture_output=True,

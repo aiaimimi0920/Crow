@@ -80,3 +80,17 @@ literal single-line mode settings; unsupported quoting/interpolation or multilin
 target definitions fail with key names only. It does not rewrite other settings
 or create a second deployment configuration. Tests use temporary synthetic files
 and extracted writer functions, never execute the operational script bodies.
+
+## Container environment layering
+
+Before forwarding a command (also for `--check`), the adapter renders the final
+configuration with the same validated global selectors and checks each service's
+resolved environment aliases. It captures JSON/diagnostics without saving or
+echoing environment values. A conflicting Crow env-file key and fixed legacy
+`service.environment` key fail before the requested Docker operation.
+
+Container env files, template environment names and Docker build arguments retain
+legacy wire names deliberately. They are a different boundary from host Crow
+inputs. Use the corresponding legacy env-file key where a service overrides that
+setting; do not assume renaming the file's keys preserves Compose layer priority.
+The adapter validates the final model and never rewrites those layers.

@@ -140,7 +140,7 @@ def test_file_conflicts_fail_before_any_operational_compose_command(
         == result["FAPAI_DATA_ROOT_HOST"]
         == "chosen-process"
     )
-    assert set(path.name for path in tmp_path.iterdir()) == {"synthetic.env"}
+    assert {path.name for path in tmp_path.iterdir()} == {"synthetic.env"}
 
 
 def test_compact_multifile_and_project_directory_match_actual_compose(
@@ -227,3 +227,57 @@ def test_indirect_selector_from_env_file_is_rejected_by_cli(
     captured = capsys.readouterr()
     assert "explicitly" in captured.err and "private-indirect-input" not in captured.err
     assert captured.out == ""
+
+
+def test_container_wire_conflict_stops_before_any_operational_command(
+    tmp_path, compose_process, monkeypatch, capsys
+):
+    from tools import crow_compose
+
+    for key in list(os.environ):
+        if key.startswith(("CROW_", "FAPAI_", "COMPOSE_")):
+            monkeypatch.delenv(key, raising=False)
+    config = tmp_path / "synthetic.env"
+    config.write_text("CROW_TEST_FLAG=private-file-value\n", encoding="utf-8")
+    model = tmp_path / "compose.json"
+    model.write_text(
+        json.dumps(
+            {
+                "services": {
+                    "fixture": {
+                        "image": "scratch",
+                        "env_file": [str(config)],
+                        "environment": {"FAPAI_TEST_FLAG": "private-fixed-value"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    real_run = subprocess.run
+    real_validate = crow_compose.validate_service_environment
+
+    def config_only(command, **options):
+        calls.append(command)
+        assert command[:2] == ["docker", "compose"] and "config" in command
+        assert "up" not in command, "Operational command must never be reached"
+        return real_run(command, **options)
+
+    monkeypatch.setattr(crow_compose.subprocess, "run", config_only)
+    monkeypatch.setattr(
+        crow_compose,
+        "validate_service_environment",
+        lambda arguments, environment: real_validate(
+            arguments, environment, runner=config_only
+        ),
+    )
+    arguments = ["--", "--env-file", str(config), "-f", str(model), "up", "--detach"]
+    assert crow_compose.main(arguments) == 2
+    captured = capsys.readouterr()
+    assert "CROW_TEST_FLAG" in captured.err and "FAPAI_TEST_FLAG" in captured.err
+    assert "legacy wire" in captured.err and "private-" not in captured.err
+    assert len(calls) == 1 and calls[0][-3:] == ["config", "--format", "json"]
+    config.write_text("FAPAI_TEST_FLAG=private-file-value\n", encoding="utf-8")
+    assert crow_compose.main(["--check", *arguments]) == 0
+    assert all("up" not in command for command in calls)

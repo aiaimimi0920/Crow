@@ -21,6 +21,7 @@ from tools.compose_arguments import (
     compose_inputs,
     reject_indirect_selectors,
 )
+from tools.compose_service_environment import validate_service_environment
 
 
 def inspect_file_environment(
@@ -59,6 +60,7 @@ def inspect_file_environment(
             env={**(interpolation or {}), **high},
             cwd=root,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             timeout=30,
             check=False,
@@ -87,6 +89,7 @@ def inspect_file_environment(
         KeyError,
         TypeError,
         json.JSONDecodeError,
+        UnicodeError,
     ):
         raise ComposeEnvironmentError(
             "Compose environment inspection unavailable"
@@ -130,7 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate aliases only; no operational Compose command",
+        help="Validate host and final service aliases; no operational Compose command",
     )
     parser.add_argument("compose_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -149,6 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             inputs.root, inputs.env_files, os.environ, explicit
         )
         reject_indirect_selectors(inputs, environment)
+        validate_service_environment(inputs.global_arguments, environment)
         if args.check:
             print("Crow Compose environment validated")
             return 0
