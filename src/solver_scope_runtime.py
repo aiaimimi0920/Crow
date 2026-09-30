@@ -35,7 +35,7 @@ def find_challenge_scope(
         return None
     for scope in CHALLENGE_SCOPES:
         if str(status(scope).get("challenge_id") or "").strip() == normalized:
-            return cast("str", scope)
+            return scope
     return None
 
 
