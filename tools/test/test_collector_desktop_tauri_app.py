@@ -40,7 +40,7 @@ def test_collector_desktop_is_independent_tauri_application() -> None:
     tauri_config = json.loads((APP_ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
     cargo_toml = (APP_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
 
-    assert package_json["name"] == "fapaifang-collector-desktop"
+    assert package_json["name"] == "crow-collector-desktop"
     assert package_json["private"] is True
     assert "tauri" in package_json["scripts"]
     assert "tauri:dev" in package_json["scripts"]
@@ -49,7 +49,16 @@ def test_collector_desktop_is_independent_tauri_application() -> None:
     assert tauri_config["app"]["windows"][0]["title"] == "Crow 运维观察台（PC2 采集）"
     assert tauri_config["build"]["frontendDist"] == "../dist"
     assert tauri_config["bundle"]["icon"] == ["icons/icon.ico"]
-    assert 'name = "fapaifang_collector_desktop"' in cargo_toml
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib
+
+    manifest = tomllib.loads(cargo_toml)
+    assert manifest["package"]["name"] == "crow_collector_desktop"
+    assert manifest["lib"]["name"] == "crow_collector_desktop_lib"
+    assert manifest["package"]["default-run"] == "fapaifang_collector_desktop"
+    assert manifest["bin"] == [{"name": "fapaifang_collector_desktop", "path": "src/main.rs"}]
     assert 'tauri = { version = "2"' in cargo_toml
 
 

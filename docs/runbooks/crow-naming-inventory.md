@@ -213,3 +213,10 @@ for older servers. Sending both names from a browser would fail older servers'
 preflight allowlist. No capability negotiation, credential probe, wider CORS
 policy or new client setting is introduced. Both spellings are classified as
 sensitive credential headers before client destination/transport validation.
+
+The private desktop npm package and Rust package/library use Crow names. The
+explicit Cargo binary target and default-run keep
+`fapaifang_collector_desktop.exe`, and Tauri's installation product/identifier stay
+stable for existing shortcuts, process detection and installer upgrades. The lock
+changes affect only the root package names; dependency versions and checksums
+remain identical. Source build names are not a migration of installed identity.
