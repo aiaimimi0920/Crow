@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from typing import cast
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_solver_auth import (
     _auth_complete_response_confirmed,
     notify_auth_complete,
@@ -26,7 +26,7 @@ from tools.pc2_solver_transport import log_event, read_solver_status
 
 
 def _new_auth_completion_id() -> str:
-    node_id = os.environ.get("FAPAI_NODE_ID", "pc2").strip() or "pc2"
+    node_id = project_getenv("CROW_NODE_ID", "pc2").strip() or "pc2"
     return f"{node_id}-{int(time.time() * 1000)}-{uuid.uuid4().hex}"
 
 

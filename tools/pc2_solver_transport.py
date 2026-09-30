@@ -5,22 +5,23 @@ import json
 import os
 import time
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_solver_config import SOLVER_HEARTBEAT_PATH
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
+    raw = project_getenv(name)
     if raw is None:
         return bool(default)
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def real_taobao_auto_solver_enabled() -> bool:
-    return _env_flag("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", False)
+    return _env_flag("CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED", False)
 
 
 def nas_auth_recovery_client_enabled() -> bool:
-    return _env_flag("FAPAI_NAS_AUTH_RECOVERY_CLIENT_ENABLED", False)
+    return _env_flag("CROW_NAS_AUTH_RECOVERY_CLIENT_ENABLED", False)
 
 
 def _status_url(api_base: str) -> str:

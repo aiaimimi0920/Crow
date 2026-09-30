@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import time
 from typing import TypedDict, cast
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_auth_recovery import process_nas_auth_recovery_once
 from tools.pc2_solver_auth import _recent_healthy_auth_snapshot
 from tools.pc2_solver_auth_pending import (
@@ -56,7 +56,7 @@ def process_pending_control_actions(
         auth_recovery = process_nas_auth_recovery_once(
             api_base_url,
             cdp_endpoint,
-            expected_node_id or os.environ.get("FAPAI_NODE_ID", "pc2"),
+            expected_node_id or project_getenv("CROW_NODE_ID", "pc2"),
             AUTH_RECOVERY_SNAPSHOT_PATH,
             AUTH_RECOVERY_MARKER_PATH,
             AUTH_RECOVERY_TOKEN_PATH,

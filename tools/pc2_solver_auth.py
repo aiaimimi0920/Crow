@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import time
 from typing import cast
 
+from src.project_environment import getenv as project_getenv
 from tools.internal_api_http import post_json
 from tools.pc2_solver_config import (
     AUTH_COMPLETE_REQUEST_ATTEMPTS,
@@ -26,13 +26,13 @@ def notify_auth_complete(
     url = _auth_complete_url(api_base)
     request_payload = {
         "source": source,
-        "node_id": os.environ.get("FAPAI_NODE_ID", "pc2").strip() or "pc2",
+        "node_id": project_getenv("CROW_NODE_ID", "pc2").strip() or "pc2",
         "refresh_cookie_snapshot": refresh_cookie_snapshot,
         "completion_id": completion_id,
         "challenge_id": challenge_id,
         "scope": scope,
     }
-    report_endpoint = os.environ.get("FAPAI_REPORT_CDP_ENDPOINT", "").strip()
+    report_endpoint = project_getenv("CROW_REPORT_CDP_ENDPOINT", "").strip()
     if report_endpoint:
         request_payload["cdp_endpoint"] = report_endpoint
     attempts = max(1, min(int(AUTH_COMPLETE_REQUEST_ATTEMPTS), 10))
@@ -202,10 +202,10 @@ def notify_collection_resume_after_cooldown(
     challenge_id: str | None = None,
     scope: str | None = None,
 ) -> dict[str, object]:
-    node_id = os.environ.get("FAPAI_NODE_ID", "pc2").strip() or "pc2"
+    node_id = project_getenv("CROW_NODE_ID", "pc2").strip() or "pc2"
     cdp_endpoint = (
-        os.environ.get("FAPAI_REPORT_CDP_ENDPOINT")
-        or os.environ.get("FAPAI_CDP_ENDPOINT")
+        project_getenv("CROW_REPORT_CDP_ENDPOINT")
+        or project_getenv("CROW_CDP_ENDPOINT")
         or ""
     ).strip()
     request_payload = {

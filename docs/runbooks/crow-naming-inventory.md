@@ -121,5 +121,13 @@ still win. Cookie snapshots are not used to hide configuration conflicts, and
 optional page-cache/reconnect fallbacks propagate those errors. Tests exercise
 both the public facades and native transport using fake I/O and temporary paths.
 
+The fourth cohort covers PC2 solver startup defaults, auth-report inputs,
+retry/fallback/loop flags, watchdog settings and worker healthcheck paths.
+Import-time constants keep their original lifetime; function-level reads remain
+dynamic. Watchdog direct-script imports are tested from an unrelated temporary
+working directory. No watchdog, service or remote process is started by tests.
+The existing heartbeat filenames and service/process matching identities remain
+compatible; this input-alias batch does not rename runtime files.
+
 Other worker/maintenance readers, injected desktop settings, PowerShell/Compose
 and HTTP header aliases remain later cohorts until their compatibility tests pass.
