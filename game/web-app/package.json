@@ -7,7 +7,9 @@
     "dev": "npm run build:runtime-css && vite",
     "build:runtime-css": "tailwindcss -i ./runtime-tailwind.css -o ./public/runtime-tailwind.css --minify",
     "build": "npm run build:runtime-css && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prebuild": "node scripts/build-entry.mjs",
+    "predev": "node scripts/build-entry.mjs"
   },
   "dependencies": {
     "html2canvas": "^1.4.1",
