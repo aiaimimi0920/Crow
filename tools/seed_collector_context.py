@@ -31,6 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import getenv as project_getenv
 from src.storage.repository import PropertyRepository, create_repository_from_env
 from src.collection.adapter_resolver import collection_adapter_from_env
 from src.collection.contracts import CollectionAdapter
@@ -164,6 +165,7 @@ SeedRuntimeContextFactory = Callable[[], Any]
 SeedProgressEmitFunc = Callable[[dict[str, Any]], None]
 
 __all__ = (
+    "project_getenv",
     'argparse',
     'json',
     'os',

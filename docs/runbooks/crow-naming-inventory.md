@@ -108,5 +108,18 @@ retain their old defaults, but alias conflicts are not swallowed as parse or
 transport failures. Connection configuration is validated before socket changes;
 cookie discovery/export never retries with another transport after a conflict.
 
-Worker readers, injected desktop settings, PowerShell/Compose and HTTP header
-aliases remain later cohorts until their own compatibility tests pass.
+The third cohort covers seed/detail worker configuration and pause ownership,
+worker heartbeat paths, live-batch cookie/proxy/browser configuration, and
+analysis-module configuration. Public compatibility facades clone function
+globals, so the alias reader is explicitly exported through their shared context
+rather than being available only in individual implementation modules. Existing
+facade names and persisted worker/job identifiers remain unchanged.
+
+The old numeric/default/boolean parsing remains; dual explicit source-template
+values now follow the same fail-closed conflict rule. Explicit heartbeat paths
+still win. Cookie snapshots are not used to hide configuration conflicts, and
+optional page-cache/reconnect fallbacks propagate those errors. Tests exercise
+both the public facades and native transport using fake I/O and temporary paths.
+
+Other worker/maintenance readers, injected desktop settings, PowerShell/Compose
+and HTTP header aliases remain later cohorts until their compatibility tests pass.

@@ -157,67 +157,65 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[SeedCol
     default_category = adapter.source_platform if generic_defaults else DEFAULT_SEED_CATEGORY
     default_sorts = "source:source:default" if generic_defaults else DEFAULT_SEED_SORTS
     default_max_page = 1 if generic_defaults else 83
-    source_url_template_default = os.getenv("CROW_SEED_SOURCE_URL_TEMPLATE") or os.getenv(
-        "FAPAI_SEED_SOURCE_URL_TEMPLATE", ""
-    )
-    loop_interval_default = _safe_non_negative_int(os.getenv("FAPAI_SEED_LOOP_INTERVAL_SECONDS"), 1800)
+    source_url_template_default = project_getenv("CROW_SEED_SOURCE_URL_TEMPLATE", "")
+    loop_interval_default = _safe_non_negative_int(project_getenv("CROW_SEED_LOOP_INTERVAL_SECONDS"), 1800)
     active_loop_interval_default = _safe_non_negative_int(
-        os.getenv("FAPAI_SEED_ACTIVE_LOOP_INTERVAL_SECONDS"),
+        project_getenv("CROW_SEED_ACTIVE_LOOP_INTERVAL_SECONDS"),
         loop_interval_default,
     )
     auth_probe_interval_default = _safe_non_negative_int(
-        os.getenv("FAPAI_SEED_AUTH_PROBE_INTERVAL_SECONDS"),
+        project_getenv("CROW_SEED_AUTH_PROBE_INTERVAL_SECONDS"),
         DEFAULT_AUTH_PROBE_INTERVAL_SECONDS,
     )
     parser = argparse.ArgumentParser(description="DB-backed rough-collection page scanner.")
-    parser.add_argument("--job-key", default=os.getenv("FAPAI_SEED_JOB_KEY", default_job_key))
-    parser.add_argument("--province", default=os.getenv("FAPAI_SEED_PROVINCE", "" if generic_defaults else "广东省"))
-    parser.add_argument("--city", default=os.getenv("FAPAI_SEED_CITY", "" if generic_defaults else "广州市"))
-    parser.add_argument("--district", default=os.getenv("FAPAI_SEED_DISTRICT", "" if generic_defaults else "南沙区"))
-    parser.add_argument("--location-code", default=os.getenv("FAPAI_SEED_LOCATION_CODE", default_location))
-    parser.add_argument("--category", default=os.getenv("FAPAI_SEED_CATEGORY", default_category))
-    parser.add_argument("--sorts", default=os.getenv("FAPAI_SEED_SORTS", default_sorts))
-    parser.add_argument("--max-page", type=int, default=_safe_int(os.getenv("FAPAI_SEED_MAX_PAGE"), default_max_page))
+    parser.add_argument("--job-key", default=project_getenv("CROW_SEED_JOB_KEY", default_job_key))
+    parser.add_argument("--province", default=project_getenv("CROW_SEED_PROVINCE", "" if generic_defaults else "广东省"))
+    parser.add_argument("--city", default=project_getenv("CROW_SEED_CITY", "" if generic_defaults else "广州市"))
+    parser.add_argument("--district", default=project_getenv("CROW_SEED_DISTRICT", "" if generic_defaults else "南沙区"))
+    parser.add_argument("--location-code", default=project_getenv("CROW_SEED_LOCATION_CODE", default_location))
+    parser.add_argument("--category", default=project_getenv("CROW_SEED_CATEGORY", default_category))
+    parser.add_argument("--sorts", default=project_getenv("CROW_SEED_SORTS", default_sorts))
+    parser.add_argument("--max-page", type=int, default=_safe_int(project_getenv("CROW_SEED_MAX_PAGE"), default_max_page))
     parser.add_argument("--source-url-template", default=source_url_template_default)
-    parser.add_argument("--cdp-endpoint", default=os.getenv("FAPAI_CDP_ENDPOINT", DEFAULT_CDP_ENDPOINT))
-    parser.add_argument("--output-dir", type=Path, default=Path(os.getenv("FAPAI_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR / "seed_collector"))))
-    parser.add_argument("--worker-id", default=os.getenv("FAPAI_SEED_WORKER_ID", f"seed-{os.getpid()}"))
-    parser.add_argument("--lease-seconds", type=int, default=_safe_int(os.getenv("FAPAI_SEED_LEASE_SECONDS"), 120))
-    parser.add_argument("--loop", action="store_true", default=os.getenv("FAPAI_SEED_LOOP", "").lower() in {"1", "true", "yes", "on"})
+    parser.add_argument("--cdp-endpoint", default=project_getenv("CROW_CDP_ENDPOINT", DEFAULT_CDP_ENDPOINT))
+    parser.add_argument("--output-dir", type=Path, default=Path(project_getenv("CROW_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR / "seed_collector"))))
+    parser.add_argument("--worker-id", default=project_getenv("CROW_SEED_WORKER_ID", f"seed-{os.getpid()}"))
+    parser.add_argument("--lease-seconds", type=int, default=_safe_int(project_getenv("CROW_SEED_LEASE_SECONDS"), 120))
+    parser.add_argument("--loop", action="store_true", default=project_getenv("CROW_SEED_LOOP", "").lower() in {"1", "true", "yes", "on"})
     parser.add_argument("--loop-interval-seconds", type=int, default=loop_interval_default)
     parser.add_argument("--active-loop-interval-seconds", type=int, default=active_loop_interval_default)
     parser.add_argument("--auth-probe-interval-seconds", type=int, default=auth_probe_interval_default)
-    parser.add_argument("--pages-per-run", type=int, default=_safe_int(os.getenv("FAPAI_SEED_PAGES_PER_RUN"), 10))
+    parser.add_argument("--pages-per-run", type=int, default=_safe_int(project_getenv("CROW_SEED_PAGES_PER_RUN"), 10))
     parser.add_argument(
         "--page-delay-seconds",
         type=float,
-        default=max(_safe_float(os.getenv("FAPAI_SEED_PAGE_DELAY_SECONDS"), 8.0), 0.0),
+        default=max(_safe_float(project_getenv("CROW_SEED_PAGE_DELAY_SECONDS"), 8.0), 0.0),
         help="Base delay between list-page requests in the same rough-collection cycle.",
     )
     parser.add_argument(
         "--pacing-jitter-ratio",
         type=float,
-        default=max(_safe_float(os.getenv("FAPAI_SEED_PACING_JITTER_RATIO"), 0.35), 0.0),
+        default=max(_safe_float(project_getenv("CROW_SEED_PACING_JITTER_RATIO"), 0.35), 0.0),
         help="Symmetric jitter ratio for list-page delays; clamped to 0..1.",
     )
     parser.add_argument("--max-runs", type=int, default=None)
-    parser.add_argument("--api-base-url", default=os.getenv("FAPAI_API_BASE_URL", ""))
-    parser.add_argument("--jobs-file", default=os.getenv("FAPAI_SEED_JOBS_FILE", ""))
-    parser.add_argument("--jobs-json", default=os.getenv("FAPAI_SEED_JOBS_JSON", ""))
+    parser.add_argument("--api-base-url", default=project_getenv("CROW_API_BASE_URL", ""))
+    parser.add_argument("--jobs-file", default=project_getenv("CROW_SEED_JOBS_FILE", ""))
+    parser.add_argument("--jobs-json", default=project_getenv("CROW_SEED_JOBS_JSON", ""))
     parser.add_argument(
         "--failure-cooldown-threshold",
         type=int,
-        default=_safe_non_negative_int(os.getenv("FAPAI_SEED_FAILURE_COOLDOWN_THRESHOLD"), 0),
+        default=_safe_non_negative_int(project_getenv("CROW_SEED_FAILURE_COOLDOWN_THRESHOLD"), 0),
     )
     parser.add_argument(
         "--failure-cooldown-seconds",
         type=int,
-        default=_safe_non_negative_int(os.getenv("FAPAI_SEED_FAILURE_COOLDOWN_SECONDS"), 0),
+        default=_safe_non_negative_int(project_getenv("CROW_SEED_FAILURE_COOLDOWN_SECONDS"), 0),
     )
     parser.add_argument(
         "--parallel-sorts",
         action="store_true",
-        default=os.getenv("FAPAI_SEED_PARALLEL_SORTS", "").lower() in {"1", "true", "yes", "on"},
+        default=project_getenv("CROW_SEED_PARALLEL_SORTS", "").lower() in {"1", "true", "yes", "on"},
     )
     parser.add_argument(
         "--solver-enabled",
@@ -229,12 +227,12 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[SeedCol
     parser.add_argument(
         "--manual-challenge-reporting",
         action="store_true",
-        default=os.getenv("FAPAI_MANUAL_CHALLENGE_REPORTING", "").lower() in {"1", "true", "yes", "on"},
+        default=project_getenv("CROW_MANUAL_CHALLENGE_REPORTING", "").lower() in {"1", "true", "yes", "on"},
         help="Pause collection and request PC1 manual authentication without starting the automatic solver.",
     )
     args = parser.parse_args(argv)
-    if args.max_runs is None and os.getenv("FAPAI_SEED_MAX_RUNS"):
-        args.max_runs = _safe_int(os.getenv("FAPAI_SEED_MAX_RUNS"), 1)
+    if args.max_runs is None and project_getenv("CROW_SEED_MAX_RUNS"):
+        args.max_runs = _safe_int(project_getenv("CROW_SEED_MAX_RUNS"), 1)
     sort_specs = parse_seed_sort_specs(args.sorts)
     max_page = max(int(args.max_page), 1)
     jobs_source = ""

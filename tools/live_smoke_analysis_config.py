@@ -23,18 +23,18 @@ class AnalysisModuleBIncompleteError(RuntimeError):
     pass
 
 def _analysis_module_b_mode() -> str:
-    mode = str(os.environ.get("FAPAI_ANALYSIS_MODULE_B_MODE") or "off").strip().lower()
+    mode = str(project_getenv("CROW_ANALYSIS_MODULE_B_MODE") or "off").strip().lower()
     if mode not in {"off", "shadow", "primary"}:
-        raise ValueError("FAPAI_ANALYSIS_MODULE_B_MODE must be one of: off, shadow, primary")
+        raise ValueError("CROW_ANALYSIS_MODULE_B_MODE must be one of: off, shadow, primary")
     return mode
 
 def _analysis_module_b_models() -> tuple[str, ...]:
     from src.analysis_ensemble import parse_distinct_models
     from src.llm_helper import require_non_gpt_analysis_model
 
-    configured = str(os.environ.get("FAPAI_ANALYSIS_MODULE_B_CANDIDATE_MODELS") or "").strip()
+    configured = str(project_getenv("CROW_ANALYSIS_MODULE_B_CANDIDATE_MODELS") or "").strip()
     return tuple(
-        require_non_gpt_analysis_model(model, setting="FAPAI_ANALYSIS_MODULE_B_CANDIDATE_MODELS")
+        require_non_gpt_analysis_model(model, setting="CROW_ANALYSIS_MODULE_B_CANDIDATE_MODELS")
         for model in parse_distinct_models(configured or ANALYSIS_MODULE_B_DEFAULT_MODELS)
     )
 
@@ -42,30 +42,31 @@ def _analysis_module_b_arbiter_model() -> str:
     from src.llm_helper import require_non_gpt_analysis_model
 
     model = str(
-        os.environ.get("FAPAI_ANALYSIS_MODULE_B_ARBITER_MODEL")
+        project_getenv("CROW_ANALYSIS_MODULE_B_ARBITER_MODEL")
         or ANALYSIS_MODULE_B_DEFAULT_ARBITER
     ).strip()
-    return require_non_gpt_analysis_model(model, setting="FAPAI_ANALYSIS_MODULE_B_ARBITER_MODEL")
+    return require_non_gpt_analysis_model(model, setting="CROW_ANALYSIS_MODULE_B_ARBITER_MODEL")
 
 def _analysis_module_b_parallelism() -> int:
+    raw = project_getenv("CROW_ANALYSIS_MODULE_B_MAX_PARALLEL")
     try:
-        configured = int(os.environ.get("FAPAI_ANALYSIS_MODULE_B_MAX_PARALLEL") or "3")
+        configured = int(raw or "3")
     except ValueError:
         configured = 3
     return min(max(configured, 1), 3)
 
 def _analysis_module_b_candidate_attempts() -> int:
+    raw = project_getenv("CROW_ANALYSIS_MODULE_B_CANDIDATE_ATTEMPTS")
     try:
-        configured = int(os.environ.get("FAPAI_ANALYSIS_MODULE_B_CANDIDATE_ATTEMPTS") or "3")
+        configured = int(raw or "3")
     except ValueError:
         configured = 3
     return min(max(configured, 1), 5)
 
 def _analysis_module_b_candidate_retry_seconds() -> float:
+    raw = project_getenv("CROW_ANALYSIS_MODULE_B_CANDIDATE_RETRY_SECONDS")
     try:
-        configured = float(
-            os.environ.get("FAPAI_ANALYSIS_MODULE_B_CANDIDATE_RETRY_SECONDS") or "10"
-        )
+        configured = float(raw or "10")
     except ValueError:
         configured = 10.0
     return min(max(configured, 0.0), 60.0)
@@ -81,17 +82,17 @@ def _analysis_module_b_retryable_candidate_error(exc: BaseException) -> bool:
 
 def _analysis_module_b_shadow_sample_rate() -> float:
     configured = str(
-        os.environ.get("FAPAI_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE") or "0.01"
+        project_getenv("CROW_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE") or "0.01"
     ).strip()
     try:
         rate = float(configured)
     except ValueError as exc:
         raise ValueError(
-            "FAPAI_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE must be a number from 0 to 1"
+            "CROW_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE must be a number from 0 to 1"
         ) from exc
     if not 0 <= rate <= 1:
         raise ValueError(
-            "FAPAI_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE must be a number from 0 to 1"
+            "CROW_ANALYSIS_MODULE_B_SHADOW_SAMPLE_RATE must be a number from 0 to 1"
         )
     return rate
 

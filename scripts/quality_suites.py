@@ -242,6 +242,7 @@ SUITES = {
         "test_generic_collection_runtime.py",
     ),
     "collection-runtime": (
+        "test_project_environment_workers.py",
         "test_collection_application.py",
         "test_runtime_lifecycle.py",
         "test_collection_file_runtime_native.py",

@@ -119,7 +119,7 @@ def _live_config(config: DetailWorkerConfig, *, target_url: str) -> LiveSmokeCon
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -127,73 +127,74 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[DetailWorkerConfig, bool]:
     adapter = collection_adapter_from_env(default="taobao_judicial")
-    loop_interval_default = _safe_non_negative_int(os.getenv("FAPAI_DETAIL_LOOP_INTERVAL_SECONDS"), 900)
+    loop_interval_default = _safe_non_negative_int(project_getenv("CROW_DETAIL_LOOP_INTERVAL_SECONDS"), 900)
     active_loop_interval_default = _safe_non_negative_int(
-        os.getenv("FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS"),
+        project_getenv("CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS"),
         loop_interval_default,
     )
+    archive_root_default = project_getenv("CROW_DETAIL_ARCHIVE_ROOT")
     parser = argparse.ArgumentParser(description="DB backed detail worker for legal auction seed URLs.")
-    parser.add_argument("--output-dir", type=Path, default=Path(os.getenv("FAPAI_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR / "detail_worker"))))
-    parser.add_argument("--cdp-endpoint", default=os.getenv("FAPAI_CDP_ENDPOINT", DEFAULT_CDP_ENDPOINT))
-    parser.add_argument("--target-success", type=int, default=_safe_int(os.getenv("FAPAI_DETAIL_TARGET_SUCCESS"), 5))
-    parser.add_argument("--max-attempts", type=int, default=_safe_int(os.getenv("FAPAI_DETAIL_MAX_ATTEMPTS"), 20))
-    parser.add_argument("--item-max-attempts", type=int, default=_safe_int(os.getenv("FAPAI_DETAIL_ITEM_MAX_ATTEMPTS"), 3))
+    parser.add_argument("--output-dir", type=Path, default=Path(project_getenv("CROW_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR / "detail_worker"))))
+    parser.add_argument("--cdp-endpoint", default=project_getenv("CROW_CDP_ENDPOINT", DEFAULT_CDP_ENDPOINT))
+    parser.add_argument("--target-success", type=int, default=_safe_int(project_getenv("CROW_DETAIL_TARGET_SUCCESS"), 5))
+    parser.add_argument("--max-attempts", type=int, default=_safe_int(project_getenv("CROW_DETAIL_MAX_ATTEMPTS"), 20))
+    parser.add_argument("--item-max-attempts", type=int, default=_safe_int(project_getenv("CROW_DETAIL_ITEM_MAX_ATTEMPTS"), 3))
     parser.add_argument(
         "--failure-cooldown-seconds",
         type=int,
-        default=_safe_int(os.getenv("FAPAI_DETAIL_FAILURE_COOLDOWN_SECONDS"), 0),
+        default=_safe_int(project_getenv("CROW_DETAIL_FAILURE_COOLDOWN_SECONDS"), 0),
         help="Skip recently failed detail items for this many seconds before retrying them.",
     )
     parser.add_argument(
         "--success-delay-seconds",
         type=float,
-        default=_safe_non_negative_float(os.getenv("FAPAI_DETAIL_SUCCESS_DELAY_SECONDS"), 6.0),
+        default=_safe_non_negative_float(project_getenv("CROW_DETAIL_SUCCESS_DELAY_SECONDS"), 6.0),
         help="Base delay between successful collection items in the same batch.",
     )
     parser.add_argument(
         "--failure-delay-seconds",
         type=float,
-        default=_safe_non_negative_float(os.getenv("FAPAI_DETAIL_FAILURE_DELAY_SECONDS"), 15.0),
+        default=_safe_non_negative_float(project_getenv("CROW_DETAIL_FAILURE_DELAY_SECONDS"), 15.0),
         help="Base backoff between failed collection items in the same batch.",
     )
     parser.add_argument(
         "--pacing-jitter-ratio",
         type=float,
-        default=_safe_non_negative_float(os.getenv("FAPAI_DETAIL_PACING_JITTER_RATIO"), 0.35),
+        default=_safe_non_negative_float(project_getenv("CROW_DETAIL_PACING_JITTER_RATIO"), 0.35),
         help="Symmetric jitter ratio for per-item delays; clamped to the range 0..1.",
     )
     parser.add_argument(
         "--challenge-cooldown-seconds",
         type=int,
-        default=_safe_non_negative_int(os.getenv("FAPAI_DETAIL_CHALLENGE_COOLDOWN_SECONDS"), 900),
+        default=_safe_non_negative_int(project_getenv("CROW_DETAIL_CHALLENGE_COOLDOWN_SECONDS"), 900),
         help="Minimum delay before a looped worker resumes after a challenge page.",
     )
-    parser.add_argument("--worker-id", default=os.getenv("FAPAI_DETAIL_WORKER_ID", f"detail-{os.getpid()}"))
-    parser.add_argument("--lease-seconds", type=int, default=_safe_int(os.getenv("FAPAI_DETAIL_LEASE_SECONDS"), 900))
-    parser.add_argument("--loop", action="store_true", default=_env_flag("FAPAI_DETAIL_LOOP", False))
+    parser.add_argument("--worker-id", default=project_getenv("CROW_DETAIL_WORKER_ID", f"detail-{os.getpid()}"))
+    parser.add_argument("--lease-seconds", type=int, default=_safe_int(project_getenv("CROW_DETAIL_LEASE_SECONDS"), 900))
+    parser.add_argument("--loop", action="store_true", default=_env_flag("CROW_DETAIL_LOOP", False))
     parser.add_argument("--loop-interval-seconds", type=int, default=loop_interval_default)
     parser.add_argument("--active-loop-interval-seconds", type=int, default=active_loop_interval_default)
     parser.add_argument("--max-runs", type=int, default=None)
-    parser.add_argument("--risk", action="store_true", default=_env_flag("FAPAI_ENABLE_RISK", False))
-    parser.add_argument("--llm-preflight", action="store_true", default=_env_flag("FAPAI_LLM_PREFLIGHT", False))
+    parser.add_argument("--risk", action="store_true", default=_env_flag("CROW_ENABLE_RISK", False))
+    parser.add_argument("--llm-preflight", action="store_true", default=_env_flag("CROW_LLM_PREFLIGHT", False))
     parser.add_argument(
         "--raw-only",
         action="store_true",
-        default=_env_flag("FAPAI_DETAIL_RAW_ONLY", False),
+        default=_env_flag("CROW_DETAIL_RAW_ONLY", False),
         help="Archive raw detail artifacts without running AI extraction or finalizing flat items.",
     )
     parser.add_argument(
         "--analysis-only",
         action="store_true",
-        default=_env_flag("FAPAI_DETAIL_ANALYSIS_ONLY", False)
-        or (os.getenv("FAPAI_RUN_MODE", "").strip().lower() in {"detail-analysis-worker", "detail-analysis-batch"}),
+        default=_env_flag("CROW_DETAIL_ANALYSIS_ONLY", False)
+        or (project_getenv("CROW_RUN_MODE", "").strip().lower() in {"detail-analysis-worker", "detail-analysis-batch"}),
         help="Consume previously captured raw detail artifacts and run only the AI finalization stage.",
     )
-    parser.add_argument("--api-base-url", default=os.getenv("FAPAI_API_BASE_URL", ""))
+    parser.add_argument("--api-base-url", default=project_getenv("CROW_API_BASE_URL", ""))
     parser.add_argument(
         "--detail-archive-root",
         type=Path,
-        default=(Path(os.environ["FAPAI_DETAIL_ARCHIVE_ROOT"]) if os.getenv("FAPAI_DETAIL_ARCHIVE_ROOT") else None),
+        default=(Path(archive_root_default) if archive_root_default else None),
         help="raw detail HTML 持久归档根目录；不设则不归档",
     )
     parser.add_argument(
@@ -206,27 +207,27 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[DetailW
     parser.add_argument(
         "--manual-challenge-reporting",
         action="store_true",
-        default=_env_flag("FAPAI_MANUAL_CHALLENGE_REPORTING", False),
+        default=_env_flag("CROW_MANUAL_CHALLENGE_REPORTING", False),
         help="Pause collection and request PC1 manual authentication without starting the automatic solver.",
     )
     parser.add_argument(
         "--llm-preflight-timeout-seconds",
         type=float,
-        default=_safe_float(os.getenv("FAPAI_LLM_PREFLIGHT_TIMEOUT_SECONDS"), 15.0),
+        default=_safe_float(project_getenv("CROW_LLM_PREFLIGHT_TIMEOUT_SECONDS"), 15.0),
     )
     parser.add_argument(
         "--llm-preflight-attempts",
         type=int,
-        default=_safe_int(os.getenv("FAPAI_LLM_PREFLIGHT_ATTEMPTS"), 3),
+        default=_safe_int(project_getenv("CROW_LLM_PREFLIGHT_ATTEMPTS"), 3),
     )
     parser.add_argument(
         "--llm-preflight-retry-delay-seconds",
         type=float,
-        default=_safe_non_negative_float(os.getenv("FAPAI_LLM_PREFLIGHT_RETRY_DELAY_SECONDS"), 2.0),
+        default=_safe_non_negative_float(project_getenv("CROW_LLM_PREFLIGHT_RETRY_DELAY_SECONDS"), 2.0),
     )
     args = parser.parse_args(argv)
-    if args.max_runs is None and os.getenv("FAPAI_DETAIL_MAX_RUNS"):
-        args.max_runs = _safe_int(os.getenv("FAPAI_DETAIL_MAX_RUNS"), 1)
+    if args.max_runs is None and project_getenv("CROW_DETAIL_MAX_RUNS"):
+        args.max_runs = _safe_int(project_getenv("CROW_DETAIL_MAX_RUNS"), 1)
     analysis_only = bool(args.analysis_only)
     return (
         DetailWorkerConfig(
