@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
+from src.project_environment import getenv as project_getenv
+
 ROOT_KEYS = ("CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST")
 SHELL_FILES = {".gitignore", "README.md"}
 
@@ -113,7 +115,7 @@ def resolve_collection_data_dir(
     repo_root: str | Path, explicit: str | Path | None = None
 ) -> Path:
     """Preserve the legacy collection-subdirectory override's meaning."""
-    value = explicit or os.getenv("FAPAI_DATA_ROOT")
+    value = explicit or project_getenv("CROW_DATA_ROOT")
     return (
         Path(value).resolve()
         if value

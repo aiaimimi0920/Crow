@@ -20,7 +20,7 @@ queues, not necessarily judicial-auction property. They now use:
 Old/new imports point to the same mapped class and table. Internal production
 references use canonical English names. Existing SQL table, column, constraint,
 index and foreign-key names remain byte-for-byte identical, as do migration
-files. PostgreSQL and SQLite DDL signatures are checked against the pre-rename
+revision files (`alembic/versions`). PostgreSQL and SQLite DDL signatures are checked against the pre-rename
 baseline. Existing legacy class/instance pickle references remain readable;
 production storage has no identified ORM-pickle persistence flow.
 
@@ -77,3 +77,29 @@ The fixed-digest assertion is updated to this reviewed content. Existing
 [authenticated-client review](../plan/userscript-generated-artifact-review-20260921.md)
 remains historical evidence. The generated-artifact policy, exclusions,
 handwritten-source limits and authenticated-request test assertions are not relaxed.
+
+## Environment namespace rollout
+
+The first Python cohort uses a small dynamic alias reader for API credentials,
+runtime flags, database configuration and isolated/maintenance entry points.
+`CROW_*` is canonical, while existing `FAPAI_*` inputs and exported legacy
+credential constants remain supported. Conflicting explicitly set values fail
+closed, reporting names only. Empty strings are preserved; each caller keeps
+its existing default and boolean conversion rules.
+
+Reads do not rewrite `os.environ`. An injected reader stays isolated from global
+process settings. Explicit writes through the helper update both aliases for
+old/new consumers; the private lock covers cooperating helper users, not direct
+external writes to `os.environ`. Caller-supplied mappings are not generic
+transactions and any write failure must stop the caller.
+
+Management-root aliases continue through the dedicated path resolver, including
+lexical path equivalence. Generic string-value comparison does not replace that
+path contract. Alembic's bootstrap accepts the new DB environment name; migration
+revision files, schema metadata and SQL identifiers are unchanged.
+
+Quality runs clear canonical counterparts of their forced isolated settings,
+then run the original legacy-environment suites plus explicit new-name mirrors.
+This prevents inherited Crow settings from redirecting tests to real data.
+Worker/captcha readers, injected desktop settings, PowerShell/Compose and HTTP
+header aliases remain later cohorts until their own compatibility tests pass.

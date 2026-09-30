@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.collection.detail_backfill import backfill_archived_details
 from src.project_data_paths import resolve_project_data_root
+from src.project_environment import getenv as project_getenv
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.data_root is None:
         args.data_root = Path(
-            os.getenv("FAPAI_DATA_ROOT")
+            project_getenv("CROW_DATA_ROOT")
             or resolve_project_data_root(REPO_ROOT) / "datas"
         )
     if args.output_path is None:

@@ -1,11 +1,11 @@
 """Fixed operator routes from the TLS gateway to the same-host collection API."""
 import ipaddress
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 
+from src.project_environment import getenv as project_getenv
 from src.collection_engine_restart import RestartError, token
 from src.collection_operator_actions import OPERATOR_ACTION_PATHS, validate_operator_body
 
@@ -18,7 +18,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def runtime_origin():
-    value = os.getenv("FAPAI_CONTROL_LOCAL_API_BASE", "").strip()
+    value = project_getenv("CROW_CONTROL_LOCAL_API_BASE", "").strip()
     try:
         parsed = urllib.parse.urlsplit(value)
         valid = (

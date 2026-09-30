@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import TypedDict
@@ -13,6 +12,8 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from src.project_data_paths import resolve_project_data_root
+from src.project_environment import getenv as project_getenv
+from src.project_environment import set_env
 
 
 class RuntimeConfig(TypedDict):
@@ -55,10 +56,10 @@ def run_server(config: RuntimeConfig) -> int:
 
     listener_tls = tls_context(config.get("tls_cert_file"), config.get("tls_key_file"))
     if config.get("db_url"):
-        os.environ["FAPAI_DB_URL"] = str(config["db_url"])
-        os.environ["FAPAI_DB_ENABLED"] = "1"
+        set_env("CROW_DB_URL", str(config["db_url"]))
+        set_env("CROW_DB_ENABLED", "1")
     if config.get("collection_api_lightweight_status", True):
-        os.environ["FAPAI_COLLECTION_API_LIGHTWEIGHT_STATUS"] = "1"
+        set_env("CROW_COLLECTION_API_LIGHTWEIGHT_STATUS", "1")
     from src.collection.search_bootstrap import DEFAULT_CATEGORIES
     from src.collection_application import create_application
     from src.collection_server import serve_application
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--port", type=int, default=8011)
     parser.add_argument("--db-url", default=None)
-    parser.add_argument("--data-root", default=os.getenv("FAPAI_DATA_ROOT"))
+    parser.add_argument("--data-root", default=project_getenv("CROW_DATA_ROOT"))
     parser.add_argument("--tls-cert-file", default=None)
     parser.add_argument("--tls-key-file", default=None)
     parser.add_argument(

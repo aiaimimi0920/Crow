@@ -1,6 +1,8 @@
 """Explicit small offline suites; do not classify every legacy test as quick."""
 
 UNIT_FILES = (
+    "test_project_environment.py",
+    "test_project_environment_runtime.py",
     "test_collection_model_names.py",
     "test_project_data_paths.py",
     "test_project_data_path_entrypoints.py",

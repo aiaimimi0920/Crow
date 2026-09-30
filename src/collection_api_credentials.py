@@ -1,11 +1,12 @@
 """Bind collection credentials and private CA trust to one configured API."""
 
 import ipaddress
-import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import SplitResult, urlsplit, urlunsplit
+
+from src.project_environment import getenv as project_getenv
 
 WORKER_TOKEN_HEADER = "X-FAPAI-Collection-Token"
 TOKEN_FILE_ENV = "FAPAI_COLLECTION_WORKER_TOKEN_FILE"
@@ -13,6 +14,11 @@ ORIGIN_ENV = "FAPAI_API_BASE_URL"
 RECOVERY_TOKEN_FILE_ENV = "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE"
 RECOVERY_TOKEN_HEADER = "X-Fapai-Recovery-Token"
 CA_FILE_ENV = "FAPAI_API_CA_FILE"
+# Preserve legacy exported constants for callers; runtime uses canonical names.
+CROW_TOKEN_FILE_ENV = "CROW_COLLECTION_WORKER_TOKEN_FILE"
+CROW_ORIGIN_ENV = "CROW_API_BASE_URL"
+CROW_RECOVERY_TOKEN_FILE_ENV = "CROW_NAS_AUTH_RECOVERY_TOKEN_FILE"
+CROW_CA_FILE_ENV = "CROW_API_CA_FILE"
 CREDENTIAL_HEADERS = frozenset(
     {"x-fapai-collection-token", "x-fapai-recovery-token", "x-fapai-control-token"}
 )
@@ -70,7 +76,7 @@ def _requires_private_ca(parsed: SplitResult) -> bool:
 def _validate_private_ca(parsed: SplitResult) -> None:
     if not _requires_private_ca(parsed):
         return
-    ca_file = os.getenv(CA_FILE_ENV, "").strip()
+    ca_file = project_getenv(CROW_CA_FILE_ENV, "").strip()
     if not ca_file:
         raise OSError("Collection API CA file is required for remote HTTPS")
     if not Path(ca_file).is_file():
@@ -93,7 +99,7 @@ def secure_api_origin(value: str) -> str:
 
 def worker_token() -> str:
     """Read on demand so rotation needs no process-wide secret cache."""
-    path = os.getenv(TOKEN_FILE_ENV, "").strip()
+    path = project_getenv(CROW_TOKEN_FILE_ENV, "").strip()
     if not path:
         return ""
     try:
@@ -106,9 +112,11 @@ def worker_token() -> str:
 
 
 def _bound_target(url: str) -> SplitResult | None:
-    configured = os.getenv(ORIGIN_ENV, "").strip()
+    configured = project_getenv(CROW_ORIGIN_ENV, "").strip()
     if not configured:
-        raise OSError("Collection credential requires FAPAI_API_BASE_URL")
+        raise OSError(
+            "Collection credential requires CROW_API_BASE_URL (legacy FAPAI_API_BASE_URL is supported)"
+        )
     try:
         base, target = _parse_url(configured), _parse_url(url)
     except ValueError as error:
@@ -141,8 +149,8 @@ def request_headers(
             raise OSError("Invalid collection credential destination") from error
         if not _secure(supplied_target):
             raise OSError("Collection credentials require HTTPS or a loopback tunnel")
-    worker_configured = bool(os.getenv(TOKEN_FILE_ENV, "").strip())
-    recovery_path = os.getenv(RECOVERY_TOKEN_FILE_ENV, "").strip()
+    worker_configured = bool(project_getenv(CROW_TOKEN_FILE_ENV, "").strip())
+    recovery_path = project_getenv(CROW_RECOVERY_TOKEN_FILE_ENV, "").strip()
     if not worker_configured and not recovery_path:
         return headers
     if not worker_configured:
@@ -177,12 +185,12 @@ def request_headers(
 
 def request_verify(url: str) -> str | bool:
     """Use a private CA only for the configured API; never disable TLS verification."""
-    if not os.getenv(ORIGIN_ENV, "").strip():
+    if not project_getenv(CROW_ORIGIN_ENV, "").strip():
         return True
     target = _bound_target(url)
     if target is None or target.scheme != "https":
         return True
-    ca_file = os.getenv(CA_FILE_ENV, "").strip()
+    ca_file = project_getenv(CROW_CA_FILE_ENV, "").strip()
     if not ca_file:
         raise OSError("Collection API CA file is required for remote HTTPS")
     if not Path(ca_file).is_file():
@@ -192,9 +200,11 @@ def request_verify(url: str) -> str | bool:
 
 def configured_api_base() -> str:
     """Resolve the explicit secure API destination for diagnostic clients."""
-    configured = os.getenv(ORIGIN_ENV, "").strip().rstrip("/")
+    configured = project_getenv(CROW_ORIGIN_ENV, "").strip().rstrip("/")
     if not configured:
-        raise OSError("Collection diagnostics require FAPAI_API_BASE_URL")
+        raise OSError(
+            "Collection diagnostics require CROW_API_BASE_URL (legacy FAPAI_API_BASE_URL is supported)"
+        )
     target = _bound_target(configured + "/status")
     if target is None:
         raise OSError("Collection API base must use the /api prefix")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+from src.project_environment import getenv as project_getenv
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -126,7 +126,7 @@ class SolverDispatch:
         )
 
     def _manual_solver_retry_interval_seconds(self) -> int:
-        raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_INTERVAL_SECONDS", "180")
+        raw = project_getenv("CROW_SOLVER_MANUAL_RETRY_INTERVAL_SECONDS", "180")
         try:
             value = int(str(raw or "").strip())
         except ValueError:
@@ -136,7 +136,7 @@ class SolverDispatch:
         return value
 
     def _solver_max_runtime_seconds(self) -> int:
-        raw = os.getenv("FAPAI_SOLVER_MAX_RUNTIME_SECONDS", "180")
+        raw = project_getenv("CROW_SOLVER_MAX_RUNTIME_SECONDS", "180")
         try:
             value = int(str(raw or "").strip())
         except ValueError:
@@ -146,7 +146,7 @@ class SolverDispatch:
         return value
 
     def _solver_worker_quiesce_seconds(self) -> int:
-        raw = os.getenv("FAPAI_SOLVER_WORKER_QUIESCE_SECONDS", "0")
+        raw = project_getenv("CROW_SOLVER_WORKER_QUIESCE_SECONDS", "0")
         try:
             value = int(str(raw or "").strip())
         except ValueError:
@@ -154,7 +154,7 @@ class SolverDispatch:
         return max(0, min(value, 300))
 
     def _solver_cdp_ready_timeout_seconds(self) -> int:
-        raw = os.getenv("FAPAI_SOLVER_CDP_READY_TIMEOUT_SECONDS", "0")
+        raw = project_getenv("CROW_SOLVER_CDP_READY_TIMEOUT_SECONDS", "0")
         try:
             value = int(str(raw or "").strip())
         except ValueError:
@@ -223,7 +223,7 @@ class SolverDispatch:
         return False
 
     def _solver_cdp_probe_timeout_seconds(self) -> float:
-        raw = os.getenv("FAPAI_SOLVER_CDP_PROBE_TIMEOUT_SECONDS", "3")
+        raw = project_getenv("CROW_SOLVER_CDP_PROBE_TIMEOUT_SECONDS", "3")
         try:
             value = float(str(raw or "").strip())
         except ValueError:
@@ -250,7 +250,7 @@ class SolverDispatch:
         return True
 
     def _manual_solver_retry_poll_seconds(self) -> int:
-        raw = os.getenv("FAPAI_SOLVER_MANUAL_RETRY_POLL_SECONDS", "30")
+        raw = project_getenv("CROW_SOLVER_MANUAL_RETRY_POLL_SECONDS", "30")
         try:
             value = int(str(raw or "").strip())
         except ValueError:

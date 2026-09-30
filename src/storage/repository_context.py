@@ -17,6 +17,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from src.project_environment import getenv as project_getenv
+from src.project_data_paths import resolve_project_data_root
 from .canonical_record import (
     CANONICAL_RECORD_SCHEMA_VERSION,
     build_canonical_payload,
@@ -171,14 +173,18 @@ def _shared_data_root_candidates() -> list[Path]:
     candidates: list[Path] = []
     seen: set[str] = set()
     for env_name in (
-        "FAPAI_SHARED_ARTIFACT_ROOT",
-        "FAPAI_SHARED_DATA_ROOT_HOST",
+        "CROW_SHARED_ARTIFACT_ROOT",
+        "CROW_SHARED_DATA_ROOT_HOST",
         "CROW_DATA_ROOT_HOST",
-        "FAPAI_DATA_ROOT_HOST",
-        "FAPAI_SHARED_DATA_ROOT",
-        "FAPAI_DATA_ROOT",
+        "CROW_SHARED_DATA_ROOT",
+        "CROW_DATA_ROOT",
     ):
-        raw = str(os.getenv(env_name) or "").strip()
+        if env_name == "CROW_DATA_ROOT_HOST":
+            if not any(str(os.getenv(key) or "").strip() for key in ("CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST")):
+                continue
+            raw = str(resolve_project_data_root(Path(__file__).resolve().parents[2]))
+        else:
+            raw = str(project_getenv(env_name) or "").strip()
         if not raw:
             continue
         path = Path(raw).expanduser()
@@ -255,7 +261,7 @@ def _resolve_collection_artifact_path(path_value: Any) -> str | None:
 
 
 def _taobao_location_override_path() -> Path:
-    configured = str(os.getenv("FAPAI_TAOBAO_LOCATIONS_FILE") or "").strip()
+    configured = str(project_getenv("CROW_TAOBAO_LOCATIONS_FILE") or "").strip()
     if configured:
         return Path(configured)
     return (
@@ -300,7 +306,7 @@ class DatabaseSettings:
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}

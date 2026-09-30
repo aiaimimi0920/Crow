@@ -14,6 +14,8 @@ from pathlib import Path
 from types import ModuleType
 from urllib.request import urlopen
 
+from src.project_environment import getenv as project_getenv
+
 from . import llm_helper
 from .captcha_solver import CaptchaSolver
 from .collection import DetailCollectionService, SeedCollectionService
@@ -132,31 +134,35 @@ def create_collection_host(
         "NAS_AUTH_RECOVERY_POLL_SECONDS": (60, 5),
         "NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS": (300, 60),
     }.items():
-        resources[name] = max(minimum, float(os.getenv("FAPAI_" + name, str(default))))
+        resources[name] = max(
+            minimum, float(project_getenv("CROW_" + name, str(default)))
+        )
     resources["SOLVER_DETAIL_PROGRESS_GRACE_SECONDS"] = max(
         float(str(resources["SOLVER_AUTH_REPORT_GRACE_SECONDS"])),
         float(str(resources["SOLVER_DETAIL_PROGRESS_GRACE_SECONDS"])),
     )
-    state = Path(os.getenv("FAPAI_SOLVER_STATE_DIR") or data)
+    state = Path(project_getenv("CROW_SOLVER_STATE_DIR") or data)
     resources["NAS_AUTH_RECOVERY"] = NasAuthRecoveryCoordinator(
         Path(
-            os.getenv("FAPAI_NAS_AUTH_RECOVERY_STATE_PATH")
+            project_getenv("CROW_NAS_AUTH_RECOVERY_STATE_PATH")
             or state / "nas-auth-recovery.json"
         ),
-        enabled=os.getenv("FAPAI_NAS_AUTH_RECOVERY_ENABLED", "0").strip().lower()
+        enabled=project_getenv("CROW_NAS_AUTH_RECOVERY_ENABLED", "0").strip().lower()
         in {"1", "true", "yes", "on"},
-        stall_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_STALL_SECONDS", "1800")),
+        stall_seconds=float(
+            project_getenv("CROW_NAS_AUTH_RECOVERY_STALL_SECONDS", "1800")
+        ),
         pc1_timeout_seconds=float(
-            os.getenv("FAPAI_NAS_AUTH_RECOVERY_PC1_TIMEOUT_SECONDS", "1800")
+            project_getenv("CROW_NAS_AUTH_RECOVERY_PC1_TIMEOUT_SECONDS", "1800")
         ),
         pc2_timeout_seconds=float(
-            os.getenv("FAPAI_NAS_AUTH_RECOVERY_PC2_TIMEOUT_SECONDS", "600")
+            project_getenv("CROW_NAS_AUTH_RECOVERY_PC2_TIMEOUT_SECONDS", "600")
         ),
         verify_timeout_seconds=float(
-            os.getenv("FAPAI_NAS_AUTH_RECOVERY_VERIFY_TIMEOUT_SECONDS", "600")
+            project_getenv("CROW_NAS_AUTH_RECOVERY_VERIFY_TIMEOUT_SECONDS", "600")
         ),
         cooldown_seconds=float(
-            os.getenv("FAPAI_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")
+            project_getenv("CROW_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")
         ),
     )
     vars(host).update(resources)

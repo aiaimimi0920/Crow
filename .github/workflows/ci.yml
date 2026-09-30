@@ -44,9 +44,9 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements-dev.lock
       - run: python -c "import cv2, ddddocr, numpy, onnxruntime"
       - run: python scripts/generate_auth_recovery_codes.py --check
-      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection_api_credentials.py tools/test/test_collection_api_credentials.py tools/internal_api_http.py
-      - run: python -m ruff format --check src/collection_api_credentials.py tools/test/test_collection_api_credentials.py tools/internal_api_http.py
-      - run: python -m mypy --strict --follow-imports skip src/collection_api_credentials.py
+      - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B src/collection_api_credentials.py tools/test/test_collection_api_credentials.py tools/internal_api_http.py src/project_environment.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py
+      - run: python -m ruff format --check src/collection_api_credentials.py tools/test/test_collection_api_credentials.py tools/internal_api_http.py src/project_environment.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py
+      - run: python -m mypy --strict --explicit-package-bases --follow-imports skip src/collection_api_credentials.py src/project_environment.py
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B tools/pc1_desktop_recovery.py tools/pc1_recovery_request.py tools/test/test_recovery_client_transport.py tools/test/test_pc1_watcher_transport.py
       - run: python -m ruff format --check tools/pc1_desktop_recovery.py tools/pc1_recovery_request.py tools/test/test_recovery_client_transport.py tools/test/test_pc1_watcher_transport.py
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B tools/test/test_desktop_api_configuration.py tools/test/test_pc1_python_resolution.py
@@ -225,7 +225,7 @@ jobs:
           python-version: '3.10'
       - run: python -m pip install --require-hashes -r requirements-dev.lock
         working-directory: .
-      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py
+      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py
         working-directory: .
   desktop-smoke:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

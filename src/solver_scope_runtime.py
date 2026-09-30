@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 
 from src.archive_json_io import write_json
 from src.collection_control_state import CHALLENGE_SCOPES, new_scope_state
+from src.project_environment import getenv as project_getenv
 from src.solver_request_payload import _normalize_challenge_scope
 
 if TYPE_CHECKING:
@@ -47,7 +48,7 @@ class SolverScopeRuntime:
     force_reset_seconds: float
 
     def state_root_path(self) -> Path:
-        configured = str(os.getenv("FAPAI_SOLVER_STATE_DIR") or "").strip()
+        configured = str(project_getenv("CROW_SOLVER_STATE_DIR") or "").strip()
         if configured:
             state_dir = configured
         else:
@@ -182,7 +183,7 @@ class SolverScopeRuntime:
 
     def manual_flag_path(self, scope: str | None = None) -> str:
         state_dir = str(
-            os.getenv("FAPAI_SOLVER_STATE_DIR") or self.data_dir
+            project_getenv("CROW_SOLVER_STATE_DIR") or self.data_dir
         ).strip() or str(self.data_dir)
         if scope is None:
             return os.path.join(state_dir, "force_unlock.flag")

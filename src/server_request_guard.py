@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hmac
 import json
-import os
 import socket
 from pathlib import Path
 from typing import BinaryIO, Protocol, TypedDict
@@ -12,18 +11,19 @@ from urllib.parse import urlsplit
 
 from src import collection_api_credentials as _worker_credentials
 from src import collection_engine_restart as _engine_tokens
+from src.project_environment import getenv as project_getenv
 from src.server_runtime_paths import NAS_AUTH_RECOVERY_TOKEN_FILE
 from src.solver_request_payload import _normalize_solver_cdp_endpoint
 
 REQUEST_BODY_MAX_BYTES = max(
-    65536, int(os.getenv("FAPAI_MAX_REQUEST_BODY_BYTES") or 16 * 1024 * 1024)
+    65536, int(project_getenv("CROW_MAX_REQUEST_BODY_BYTES") or 16 * 1024 * 1024)
 )
 REQUEST_BODY_HTML_MAX_BYTES = max(
     REQUEST_BODY_MAX_BYTES,
-    int(os.getenv("FAPAI_MAX_HTML_REQUEST_BODY_BYTES") or 64 * 1024 * 1024),
+    int(project_getenv("CROW_MAX_HTML_REQUEST_BODY_BYTES") or 64 * 1024 * 1024),
 )
 UPLOAD_MAX_BYTES = max(
-    65536, int(os.getenv("FAPAI_MAX_UPLOAD_BYTES") or 64 * 1024 * 1024)
+    65536, int(project_getenv("CROW_MAX_UPLOAD_BYTES") or 64 * 1024 * 1024)
 )
 CORS_DEFAULT_ORIGINS = (
     "tauri://localhost",
@@ -66,7 +66,7 @@ class GuardError(TypedDict):
 
 
 def _env_flag(name: str, default: str) -> bool:
-    return str(os.getenv(name) or default).strip().lower() in _TRUTHY
+    return str(project_getenv(name) or default).strip().lower() in _TRUTHY
 
 
 def _read_json_body(
@@ -155,7 +155,7 @@ def _read_limited_body(
 
 
 def _cors_allowed_origins() -> set[str]:
-    configured = str(os.getenv("FAPAI_CORS_ALLOWED_ORIGINS") or "")
+    configured = str(project_getenv("CROW_CORS_ALLOWED_ORIGINS") or "")
     origins = {
         item.strip().rstrip("/") for item in configured.split(",") if item.strip()
     }
@@ -179,7 +179,7 @@ def _apply_cors_headers(self: GuardRequest) -> None:
 
 def _control_plane_expected_tokens() -> list[bytes]:
     tokens: list[bytes] = []
-    env_token = str(os.getenv("FAPAI_CONTROL_PLANE_TOKEN") or "").strip()
+    env_token = str(project_getenv("CROW_CONTROL_PLANE_TOKEN") or "").strip()
     if env_token:
         tokens.append(env_token.encode("utf-8"))
     file_token = _engine_tokens.token("operator")
@@ -347,8 +347,10 @@ def _cdp_endpoint_permitted(value: object) -> bool:
         return False
     if not parsed.hostname or parsed.fragment:
         return False
-    configured = [os.getenv("FAPAI_CDP_ENDPOINT") or ""]
-    configured.extend(str(os.getenv("FAPAI_CDP_ALLOWED_ENDPOINTS") or "").split(","))
+    configured = [project_getenv("CROW_CDP_ENDPOINT") or ""]
+    configured.extend(
+        str(project_getenv("CROW_CDP_ALLOWED_ENDPOINTS") or "").split(",")
+    )
     allowed = {
         _normalize_solver_cdp_endpoint(item.strip()).rstrip("/")
         for item in configured

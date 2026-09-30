@@ -360,6 +360,7 @@ foreach ($relativePath in @(
         "tools\desktop_settings_client.py",
         "src\auth_recovery_codes.py",
         "src\project_data_paths.py",
+        "src\project_environment.py",
         "src\auth_snapshot_contract.py",
         "src\cdp_cookie_transport.py",
         "src\cookie_snapshot_metadata.py",

@@ -15,6 +15,8 @@ import pytest
 def test_runner_limits_module_collection_and_preserves_failures(
     tmp_path, monkeypatch, selected_result, timing
 ):
+    monkeypatch.setenv("CROW_DB_URL", "must-not-reach-test-runtime")
+    monkeypatch.setenv("CROW_DATA_ROOT_HOST", "must-not-reach-test-runtime")
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
     runner = importlib.import_module("run_quality_tests")
     project = tmp_path / "project"
@@ -40,6 +42,8 @@ def test_runner_limits_module_collection_and_preserves_failures(
                 assert pytestconfig.rootpath == Path(__file__).parent
                 assert os.environ["FAPAI_DB_ENABLED"] == "0"
                 assert os.environ["FAPAI_DB_URL"] == ""
+                assert "CROW_DB_URL" not in os.environ
+                assert "CROW_DATA_ROOT_HOST" not in os.environ
                 assert os.environ["FAPAI_DATA_ROOT"] == os.environ["FAPAI_SOLVER_STATE_DIR"]
                 monkeypatch.setenv("CROW_QUALITY_RUNNER_FIXTURE", "loaded")
 

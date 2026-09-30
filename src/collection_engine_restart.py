@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hmac
-import os
 from pathlib import Path
 import re
 import secrets
 import sqlite3
 import time
 
+from src.project_environment import getenv as project_getenv
 from .project_data_paths import resolve_project_data_root
 
 PREFIX = "/api/collection/control/restart"
@@ -24,7 +24,7 @@ class RestartError(Exception):
 
 
 def token(role: str) -> str:
-    path = os.getenv(f"FAPAI_ENGINE_{role.upper()}_TOKEN_FILE", "").strip()
+    path = project_getenv(f"CROW_ENGINE_{role.upper()}_TOKEN_FILE", "").strip()
     if not path:
         return ""
     try:
@@ -40,7 +40,7 @@ def configured() -> bool:
 
 
 def runtime_root() -> Path:
-    override = os.getenv("FAPAI_ENGINE_CONTROL_ROOT", "").strip()
+    override = project_getenv("CROW_ENGINE_CONTROL_ROOT", "").strip()
     return Path(override).resolve() if override else resolve_project_data_root(Path(__file__).resolve().parents[1])
 
 

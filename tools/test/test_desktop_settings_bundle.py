@@ -19,6 +19,7 @@ def test_standalone_bundle_imports_and_sanitizes_missing_config(tmp_path):
         "src/collection_settings_schema.py",
         "src/collection_engine_restart.py",
         "src/project_data_paths.py",
+        "src/project_environment.py",
         "src/collection_operator_actions.py",
         "src/llm_analysis_policy.py",
     ]
