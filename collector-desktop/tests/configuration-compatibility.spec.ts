@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 
 test("native alias conflict blocks initial and timed HTTP until explicit apply", async ({ page, baseURL }) => {
   let requests = 0;
+  const browserErrors: string[] = [];
+  page.on("pageerror", error => browserErrors.push(error.message));
   await page.clock.install();
   await page.route("**/api/**", async route => {
     requests += 1;
@@ -9,6 +11,7 @@ test("native alias conflict blocks initial and timed HTTP until explicit apply",
   });
   await page.addInitScript(() => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {
+      metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
       invoke: async (command: string) => {
         if (command === "default_api_base") {
           throw new Error("crow_configuration_alias_conflict:CROW_COLLECTOR_API_BASE,FAPAI_COLLECTOR_API_BASE");
@@ -29,6 +32,7 @@ test("native alias conflict blocks initial and timed HTTP until explicit apply",
   const initial = requests;
   await page.clock.fastForward(60_001);
   await expect.poll(() => requests).toBeGreaterThan(initial);
+  expect(browserErrors).toEqual([]);
 });
 
 test("plain browser startup keeps its same-origin fallback", async ({ page, baseURL }) => {
