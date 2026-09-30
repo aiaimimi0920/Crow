@@ -144,5 +144,14 @@ origin, TLS, token, browser-profile or cookie containment boundary is relaxed.
 The standalone desktop bundle includes the new scoped reader. Linux fixture and
 Windows CI coverage verify both namespace spellings and injected isolation.
 
-Other worker/maintenance readers, PowerShell/Compose and HTTP header aliases
-remain later cohorts until their compatibility tests pass.
+The sixth cohort closes remaining direct Python environment reads for model
+qualification, proxies, community indexes, AVM maintenance, health/location
+facades, browser identity configuration and diagnostic entrypoints. Explicit
+OPENAI settings retain their original precedence and provider-standard names.
+Legacy exported environment-name constants remain aliases; public facades keep
+the new reader in their own exported context where function globals are cloned.
+Live diagnostic scripts use explicit dual-name defaults only when absent, with
+no import/run of those live diagnostics during validation (syntax only).
+
+Injected Compose-model configuration, PowerShell/Compose inputs and HTTP header
+aliases remain later cohorts until their compatibility tests pass.

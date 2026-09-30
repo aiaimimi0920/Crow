@@ -31,6 +31,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import getenv as project_getenv
+
 from tools import generate_seed_jobs  # noqa: E402
 
 DEFAULT_CATEGORY = "50025969"
@@ -152,6 +154,7 @@ class AdminLocationIndex:
                     self.city_by_province_and_short_name.setdefault((province, short_region_name(city)), city)
 
 __all__ = (
+    "project_getenv",
     'argparse',
     'json',
     'os',

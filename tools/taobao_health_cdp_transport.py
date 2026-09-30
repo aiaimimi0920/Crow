@@ -204,7 +204,7 @@ def list_cdp_targets(cdp_endpoint: str) -> list[Mapping[str, object]]:
 
 
 def cdp_page_target_limit() -> int:
-    raw_limit = os.environ.get("FAPAI_CDP_MAX_PAGE_TARGETS", str(DEFAULT_CDP_PAGE_TARGET_LIMIT)).strip()
+    raw_limit = project_getenv("CROW_CDP_MAX_PAGE_TARGETS", str(DEFAULT_CDP_PAGE_TARGET_LIMIT)).strip()
     try:
         limit = int(raw_limit)
     except ValueError:

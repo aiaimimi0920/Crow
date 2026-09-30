@@ -127,7 +127,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--raw-only",
         action="store_true",
-        default=os.environ.get("LIVE_BATCH_RAW_ONLY", os.environ.get("FAPAI_DETAIL_RAW_ONLY", "0")).strip().lower() in TRUE_VALUES,
+        default=os.environ.get("LIVE_BATCH_RAW_ONLY", project_getenv("CROW_DETAIL_RAW_ONLY", "0")).strip().lower() in TRUE_VALUES,
         help="Fetch and archive raw detail artifacts without invoking the LLM extraction stage.",
     )
     parser.add_argument(

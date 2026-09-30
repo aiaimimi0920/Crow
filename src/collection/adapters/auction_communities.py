@@ -8,11 +8,12 @@ geographic anchor when the community is not in that index.
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+from src.project_environment import getenv as project_getenv
 
 AUDIT_KEYS = (
     "community_name_source",
@@ -222,7 +223,7 @@ class CommunityIndex:
 
 
 def _default_index_path() -> Path | None:
-    env_path = _clean_text(os.getenv(DEFAULT_INDEX_ENV_VAR))
+    env_path = _clean_text(project_getenv(DEFAULT_INDEX_ENV_VAR))
     paths: list[Path] = []
     if env_path:
         paths.append(Path(env_path))

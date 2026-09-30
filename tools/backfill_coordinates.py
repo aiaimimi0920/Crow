@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -14,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import getenv as project_getenv
 from tools.geocode_client import AmapGeocoder, GeocodeProviderError, GeocodeQuotaExceeded
 from tools.geocode_targets import build_target_key
 
@@ -223,12 +223,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     from src.storage.repository import create_repository_from_env
 
     args = parse_args(argv)
-    api_key = os.getenv("FAPAI_AMAP_API_KEY", "").strip()
+    api_key = project_getenv("CROW_AMAP_API_KEY", "").strip()
     if not api_key:
-        raise SystemExit("FAPAI_AMAP_API_KEY must be set")
+        raise SystemExit("CROW_AMAP_API_KEY (legacy FAPAI_AMAP_API_KEY) must be set")
     repo = create_repository_from_env()
     if not repo.enabled:
-        raise SystemExit("FAPAI_DB_URL must be set")
+        raise SystemExit("CROW_DB_URL (legacy FAPAI_DB_URL) must be set")
     summary = backfill_coordinates_from_geocoder(
         repo,
         AmapGeocoder(api_key=api_key),

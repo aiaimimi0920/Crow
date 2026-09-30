@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 
+from src.project_environment import getenv as project_getenv
 from src.llm_qualification_cases import VERSION
 from src.project_data_paths import resolve_project_data_root
 
@@ -16,7 +17,7 @@ from src.project_data_paths import resolve_project_data_root
 class QualificationStore:
     @staticmethod
     def resolve_path(path=None):
-        explicit = path or os.environ.get("FAPAI_ANALYSIS_MODEL_POOL_PATH")
+        explicit = path or project_getenv("CROW_ANALYSIS_MODEL_POOL_PATH")
         if explicit:
             return Path(explicit).resolve()
         return resolve_project_data_root(Path(__file__).resolve().parents[1]) / "model-pool" / "pool.sqlite3"

@@ -1,5 +1,4 @@
 """Bounded discovery, five-case qualification and failover for collection AI."""
-import os
 import re
 import sqlite3
 import threading
@@ -7,6 +6,7 @@ import time
 
 import requests
 
+from src.project_environment import getenv as project_getenv
 from src.llm_analysis_policy import require_non_gpt_analysis_model
 from src.llm_model_selector import LLMBackendUnavailableError
 from src.llm_qualification_cases import CASES, INSTRUCTION, VERSION, exact_match
@@ -24,7 +24,7 @@ _REFRESH_THREADS = {}
 
 
 def pool_enabled():
-    return os.environ.get("FAPAI_ANALYSIS_MODEL_POOL_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
+    return project_getenv("CROW_ANALYSIS_MODEL_POOL_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
 
 
 def eligible_model(model):

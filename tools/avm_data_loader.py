@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,11 +22,12 @@ from src.collection.archive_records import (
 from src.collection.archive_records import (
     normalize_data_root as normalize_data_root,
 )
+from src.project_environment import getenv as project_getenv
 from src.storage.repository import create_repository_from_env
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
@@ -37,7 +37,7 @@ def iter_raw_record_rows(
     data_root: Path, prefer_db: bool | None = None
 ) -> Iterator[dict[str, Any]]:
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )
@@ -110,7 +110,7 @@ def iter_analysis_ready_rows(
     data_root: Path, prefer_db: bool | None = None
 ) -> Iterator[dict[str, Any]]:
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )
@@ -142,7 +142,7 @@ def load_recent_analysis_ready_rows(
     data_root: Path, window_days: int, prefer_db: bool | None = None
 ) -> list[dict[str, Any]]:
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )
@@ -190,7 +190,7 @@ def load_recent_raw_record_rows(
     data_root: Path, window_days: int, prefer_db: bool | None = None
 ) -> list[dict[str, Any]]:
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_CONTROL_PLANE_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )
@@ -234,7 +234,7 @@ def load_sample_raw_record_rows(
     if limit <= 0:
         return []
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_CONTROL_PLANE_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )
@@ -262,7 +262,7 @@ def load_sample_analysis_ready_rows(
     if limit <= 0:
         return []
     use_db = (
-        _env_flag("FAPAI_DB_PREFER_ANALYTICS_SOURCE", False)
+        _env_flag("CROW_DB_PREFER_ANALYTICS_SOURCE", False)
         if prefer_db is None
         else prefer_db
     )

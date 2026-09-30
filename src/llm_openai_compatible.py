@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from src.project_environment import getenv as project_getenv
 from src.llm_config import get_model_pool
 from src.llm_model_selector import (
     AUTH_INVALID_ERROR_CODES,
@@ -77,7 +78,7 @@ def _get_openai_compatible_config():
 
 def _first_nonempty_env(*names):
     for name in names:
-        value = os.environ.get(name)
+        value = project_getenv(name)
         if value and value.strip():
             return value.strip()
     return None
@@ -97,16 +98,16 @@ def _is_local_openai_compatible_url(base_url):
 
 
 def _get_openai_compatible_proxies(base_url=None):
-    fallback_proxy = _first_nonempty_env("OPENAI_PROXY", "FAPAI_LLM_PROXY")
-    explicit_http_proxy = _first_nonempty_env("OPENAI_HTTP_PROXY", "FAPAI_LLM_HTTP_PROXY")
-    explicit_https_proxy = _first_nonempty_env("OPENAI_HTTPS_PROXY", "FAPAI_LLM_HTTPS_PROXY")
+    fallback_proxy = _first_nonempty_env("OPENAI_PROXY", "CROW_LLM_PROXY")
+    explicit_http_proxy = _first_nonempty_env("OPENAI_HTTP_PROXY", "CROW_LLM_HTTP_PROXY")
+    explicit_https_proxy = _first_nonempty_env("OPENAI_HTTPS_PROXY", "CROW_LLM_HTTPS_PROXY")
     if base_url and _is_local_openai_compatible_url(base_url) and not (
         fallback_proxy or explicit_http_proxy or explicit_https_proxy
     ):
         return {}
 
-    http_proxy = explicit_http_proxy or _first_nonempty_env("FAPAI_HTTP_PROXY") or fallback_proxy
-    https_proxy = explicit_https_proxy or _first_nonempty_env("FAPAI_HTTPS_PROXY") or fallback_proxy or http_proxy
+    http_proxy = explicit_http_proxy or _first_nonempty_env("CROW_HTTP_PROXY") or fallback_proxy
+    https_proxy = explicit_https_proxy or _first_nonempty_env("CROW_HTTPS_PROXY") or fallback_proxy or http_proxy
     proxies = {}
     if http_proxy:
         proxies["http"] = http_proxy
