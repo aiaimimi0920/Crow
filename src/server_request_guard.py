@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from src import collection_api_credentials as _worker_credentials
 from src import collection_engine_restart as _engine_tokens
+from src import credential_header_aliases as _credential_aliases
 from src.project_environment import getenv as project_getenv
 from src.server_runtime_paths import NAS_AUTH_RECOVERY_TOKEN_FILE
 from src.solver_request_payload import _normalize_solver_cdp_endpoint
@@ -219,7 +220,7 @@ def _verify_control_plane_token(
     expected = _control_plane_expected_tokens()
     if not expected:
         return False, _control_plane_unconfigured_error()
-    if _token_matches(headers.get(CONTROL_TOKEN_HEADER), expected):
+    if _token_matches(_credential_aliases.credential_header(headers, CONTROL_TOKEN_HEADER), expected):
         return True, None
     return False, {
         "code": "AVM_CONTROL_PLANE_FORBIDDEN",
@@ -246,10 +247,10 @@ def _verify_node_auth_token(
     if not recovery and not control:
         return False, _control_plane_unconfigured_error()
     if recovery and _token_matches(
-        headers.get(RECOVERY_TOKEN_HEADER), [recovery.encode("utf-8")]
+        _credential_aliases.credential_header(headers, RECOVERY_TOKEN_HEADER), [recovery.encode("utf-8")]
     ):
         return True, None
-    if control and _token_matches(headers.get(CONTROL_TOKEN_HEADER), control):
+    if control and _token_matches(_credential_aliases.credential_header(headers, CONTROL_TOKEN_HEADER), control):
         return True, None
     return False, {
         "code": "COLLECTION_AUTH_RECOVERY_FORBIDDEN",
@@ -297,7 +298,7 @@ def _require_node_auth(self: GuardRequest) -> bool:
 
 def _require_collection_worker(self: GuardRequest) -> bool:
     control = _control_plane_expected_tokens()
-    if _token_matches(self.headers.get(CONTROL_TOKEN_HEADER), control):
+    if _token_matches(_credential_aliases.credential_header(self.headers, CONTROL_TOKEN_HEADER), control):
         return True
     try:
         expected = _worker_credentials.worker_token()
@@ -315,7 +316,7 @@ def _require_collection_worker(self: GuardRequest) -> bool:
         )
         return False
     if _token_matches(
-        self.headers.get(_worker_credentials.WORKER_TOKEN_HEADER),
+        _credential_aliases.credential_header(self.headers, _worker_credentials.WORKER_TOKEN_HEADER),
         [expected.encode("utf-8")],
     ):
         return True
@@ -406,4 +407,5 @@ __all__ = [
     "_public_auth_recovery_snapshot",
     "_engine_tokens",
     "_worker_credentials",
+    "_credential_aliases",
 ]

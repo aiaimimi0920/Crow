@@ -200,3 +200,16 @@ explicit API-address application. Non-Tauri browser fallback remains unchanged.
 Saved interpreter aliases compare native absolute paths lexically, without
 following links; settings execution propagates conflicts before starting Python.
 Existing empty process API values still fall back to saved configuration.
+
+The HTTP credential cohort accepts `X-Crow-Control-Token`,
+`X-Crow-Recovery-Token` and `X-Crow-Collection-Token`, alongside their legacy
+spellings. Header matching is case-insensitive. Repeated fields, comma-merged
+tokens or conflicting aliases reject credentials across all roles, so a second
+valid role cannot hide a conflicting field. Origin, TLS and role-route policies
+remain in force; CORS permits the new names only under the existing origin gate.
+
+Clients intentionally retain legacy wire header defaults and exported constants
+for older servers. Sending both names from a browser would fail older servers'
+preflight allowlist. No capability negotiation, credential probe, wider CORS
+policy or new client setting is introduced. Both spellings are classified as
+sensitive credential headers before client destination/transport validation.

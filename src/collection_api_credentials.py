@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
+from src.credential_header_aliases import CREDENTIAL_HEADERS, credentials_consistent
 from src.project_environment import getenv as project_getenv
 
 WORKER_TOKEN_HEADER = "X-FAPAI-Collection-Token"
@@ -19,9 +20,6 @@ CROW_TOKEN_FILE_ENV = "CROW_COLLECTION_WORKER_TOKEN_FILE"
 CROW_ORIGIN_ENV = "CROW_API_BASE_URL"
 CROW_RECOVERY_TOKEN_FILE_ENV = "CROW_NAS_AUTH_RECOVERY_TOKEN_FILE"
 CROW_CA_FILE_ENV = "CROW_API_CA_FILE"
-CREDENTIAL_HEADERS = frozenset(
-    {"x-fapai-collection-token", "x-fapai-recovery-token", "x-fapai-control-token"}
-)
 NODE_AUTH_PATHS = frozenset(
     "/api/collection/auth/" + action
     for action in ("complete", "force_reset", "resume_after_cooldown")
@@ -141,6 +139,8 @@ def request_headers(
 ) -> dict[str, str]:
     """Bind automatic role credentials to canonical routes at the configured origin."""
     headers = dict(supplied or {})
+    if not credentials_consistent(headers):
+        raise OSError("Conflicting collection credential header names")
     supplied_credential = any(name.lower() in CREDENTIAL_HEADERS for name in headers)
     if supplied_credential:
         try:
@@ -155,7 +155,13 @@ def request_headers(
         return headers
     if not worker_configured:
         if any(
-            name.lower() in {"x-fapai-control-token", "x-fapai-recovery-token"}
+            name.lower()
+            in {
+                "x-fapai-control-token",
+                "x-fapai-recovery-token",
+                "x-crow-control-token",
+                "x-crow-recovery-token",
+            }
             for name in headers
         ):
             return headers

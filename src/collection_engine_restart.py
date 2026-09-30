@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hmac
-from pathlib import Path
 import re
 import secrets
 import sqlite3
 import time
+from pathlib import Path
 
+from src.credential_header_aliases import credential_header
 from src.project_environment import getenv as project_getenv
+
 from .project_data_paths import resolve_project_data_root
 
 PREFIX = "/api/collection/control/restart"
@@ -47,7 +49,7 @@ def runtime_root() -> Path:
 def authorize(headers, role: str) -> None:
     if not configured():
         raise RestartError("Restart control requires two distinct configured token files", 503)
-    supplied = str(headers.get("X-FAPAI-Control-Token", ""))
+    supplied = str(credential_header(headers, "X-Crow-Control-Token") or "")
     if not hmac.compare_digest(supplied.encode(), token(role).encode()):
         raise RestartError("Restart authorization rejected", 403)
 

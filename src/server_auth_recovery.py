@@ -1,3 +1,4 @@
+
 """NAS authentication recovery monitoring and authenticated result handling."""
 
 from __future__ import annotations
@@ -8,6 +9,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
 from typing import TYPE_CHECKING, ClassVar, Protocol, cast
+
+from src.credential_header_aliases import credential_header
 
 from .auth_recovery_progress import (
     ProgressRepository,
@@ -160,7 +163,7 @@ class AuthRecovery:
         if not self.coordinator().enabled:
             return False, "auth recovery is disabled"
         expected = self.expected_token()
-        supplied = str(headers.get("X-Fapai-Recovery-Token") or "").strip()
+        supplied = str(credential_header(headers, "X-Crow-Recovery-Token") or "").strip()
         if not expected:
             return False, "auth recovery token is not configured"
         if not supplied or not hmac.compare_digest(

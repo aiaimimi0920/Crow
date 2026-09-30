@@ -373,6 +373,7 @@ foreach ($relativePath in @(
         "src\cookie_snapshot_metadata.py",
         "src\cookie_snapshot_storage.py",
         "src\collection_api_credentials.py",
+        "src\credential_header_aliases.py",
         "src\collection_settings_schema.py",
         "src\collection\adapters\taobao_auth_target.py",
         "src\collection\adapters\taobao_health.py",
