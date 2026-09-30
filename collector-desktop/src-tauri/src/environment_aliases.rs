@@ -38,6 +38,11 @@ pub fn same_absolute_path(left: &str, right: &str) -> bool {
         return true;
     }
     fn normalized(value: &str) -> Option<PathBuf> {
+        #[cfg(windows)]
+        let native = value.replace('/', "\\");
+        #[cfg(windows)]
+        let path = Path::new(&native);
+        #[cfg(not(windows))]
         let path = Path::new(value);
         if !path.is_absolute() {
             return None;
