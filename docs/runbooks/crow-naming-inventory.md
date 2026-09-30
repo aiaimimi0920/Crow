@@ -191,3 +191,12 @@ temporary files and source parsing; no operational entrypoint is run.
 Remaining scope includes independent Compose/ops entrypoints and bundles,
 embedded remote helper interfaces, HTTP headers and safe build/CLI names;
 none of the direct-reader counts imply these remaining boundaries are finished.
+
+The tenth cohort covers native desktop process/saved API configuration and the
+saved Python interpreter path. Successful native API responses remain strings;
+conflicts reject the command with key names only. The paired frontend recognizes
+that error, pauses automatic requests and blocks shared HTTP transport until an
+explicit API-address application. Non-Tauri browser fallback remains unchanged.
+Saved interpreter aliases compare native absolute paths lexically, without
+following links; settings execution propagates conflicts before starting Python.
+Existing empty process API values still fall back to saved configuration.

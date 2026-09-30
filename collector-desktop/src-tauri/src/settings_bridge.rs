@@ -68,7 +68,7 @@ fn execute(request: SettingsRequest) -> Result<Value, String> {
     if !helper.is_file() {
         return Err("Desktop settings helper is not installed".into());
     }
-    let python = super::runtime_config::python_for_bundle(root)
+    let python = super::runtime_config::python_for_bundle(root)?
         .ok_or("Desktop Python interpreter is not configured")?;
     let mut command = Command::new(python);
     command

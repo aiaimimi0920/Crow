@@ -249,7 +249,9 @@ def test_collector_desktop_frontend_can_run_as_plain_html_console() -> None:
     assert "function defaultBrowserApiBase()" in main_js
     assert "window.location.origin" in main_js
     assert 'value="${defaultBrowserApiBase()}"' in main_js
-    assert "state.apiBase = defaultBrowserApiBase();" in main_js
+    assert 'startupApiBase(() => tryInvoke("default_api_base"), defaultBrowserApiBase)' in main_js
+    assert "state.apiBase = initialConfig.apiBase" in main_js
+    assert "setConfigurationBlocked(initialConfig.blocked)" in main_js
     assert "not running inside Tauri" in main_js
     assert 'window.open(current.target_url, "_blank", "noopener,noreferrer")' in main_js
     assert "普通浏览器无法读取挑战窗口的 cookie" in main_js
@@ -341,7 +343,7 @@ def test_collector_desktop_refreshes_region_status_separately_every_ten_minutes(
     assert "regionRefreshStatus" in main_js
     assert "requestId === state.regionsRequestId" in main_js
     assert "最后刷新所在地" in main_js
-    assert 'setInterval(() => loadRegions({ silent: true }), REGION_REFRESH_INTERVAL_MS)' in main_js
+    assert 'setInterval(() => { if (!isConfigurationBlocked()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS)' in main_js
     assert '$("refreshRegions").addEventListener("click", () => loadRegions({ silent: false }))' in main_js
     assert "每 10 分钟自动刷新所在地状态" in main_js
 

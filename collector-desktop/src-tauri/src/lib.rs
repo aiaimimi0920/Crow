@@ -1,20 +1,21 @@
 mod auth_bridge;
 mod desktop_tray;
+mod environment_aliases;
 mod helper_process;
 mod runtime_config;
 mod settings_bridge;
 
 #[tauri::command]
-fn default_api_base() -> String {
-    let configured = std::env::var("FAPAI_COLLECTOR_API_BASE")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            bundled_script_path("desktop-auth-challenge.ps1").and_then(|script| {
-                runtime_config::api_base_for_script(std::path::Path::new(&script))
-            })
-        });
-    api_base_or_default(configured)
+fn default_api_base() -> Result<String, String> {
+    let configured = environment_aliases::api_source(
+        std::env::var("CROW_COLLECTOR_API_BASE").ok(),
+        std::env::var("FAPAI_COLLECTOR_API_BASE").ok(),
+        || match bundled_script_path("desktop-auth-challenge.ps1") {
+            Some(script) => runtime_config::api_base_for_script(std::path::Path::new(&script)),
+            None => Ok(None),
+        },
+    )?;
+    Ok(api_base_or_default(configured))
 }
 
 fn api_base_or_default(value: Option<String>) -> String {
