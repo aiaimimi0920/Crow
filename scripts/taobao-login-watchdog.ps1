@@ -16,11 +16,15 @@ param(
     [switch]$TriggerCaptchaSolver,
     [switch]$NoSnapshotExport
 )
-
 $ErrorActionPreference = "Stop"
-$captchaSolverEnv = [string]$env:FAPAI_CAPTCHA_SOLVER_ENABLED
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+$captchaSolverEnv = [string](Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')
 $effectiveTriggerCaptchaSolver = [bool]($TriggerCaptchaSolver -or ($captchaSolverEnv -match '^(?i:1|true|yes|y|on)$'))
-$resolvedAlertWebhookUrl = if ($AlertWebhookUrl) { $AlertWebhookUrl } else { [string]$env:FAPAI_OPERATIONS_WEBHOOK_URL }
+$resolvedAlertWebhookUrl = if ($AlertWebhookUrl) { $AlertWebhookUrl } else { [string](Get-CrowEnvironmentValue -Name 'CROW_OPERATIONS_WEBHOOK_URL') }
 
 function Send-OperationalAlert {
     param(

@@ -237,7 +237,7 @@ def test_auth_challenge_network_is_bounded_and_completion_waits_for_verification
 def test_tauri_inplace_auth_uses_port_9225_without_browser_restart_switch() -> None:
     helper = (REPO_ROOT / "tools/pc1_desktop_auth.py").read_text(encoding="utf-8")
     assert "handoff.complete_inplace_auth" in helper
-    assert '"FAPAI_AUTH_LOCAL_CDP_PORT") or 9225' in helper
+    assert 'environment_value("CROW_AUTH_LOCAL_CDP_PORT", environment=environment, root=ROOT) or 9225' in helper
     assert '"-ForceNew"' not in helper
 
 
@@ -446,7 +446,7 @@ def test_collector_desktop_local_deploy_script_builds_to_temp_and_copies_local_r
     assert "-ExpectedSha256 (Get-FileHash" in script
     assert '[string]$DataRoot = ""' in script
     assert '$previousEnvironment.FAPAI_DATA_ROOT_HOST' in script
-    assert '$previousEnvironment.FAPAI_AUTH_BROWSER_PROFILE_DIR' in script
+    assert "CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue" in script
     shortcut = REPO_ROOT.joinpath("scripts", "update-collector-desktop-shortcut.ps1").read_text(encoding="utf-8")
     assert "CreateShortcut" in shortcut
     assert "WScript.Shell" in shortcut
@@ -479,8 +479,8 @@ def test_pc1_auth_bridge_uses_private_reverse_tunnel_and_human_browser_mode() ->
     assert "127.0.0.1:{0}:127.0.0.1:{1}" in script
     assert '"ExitOnForwardFailure=yes"' in script
     assert '"ServerAliveInterval=15"' in script
-    assert "FAPAI_AUTH_BROWSER_PROFILE_DIR" in script
-    assert "FAPAI_AUTH_BROWSER_PATH" in script
+    assert "CROW_AUTH_BROWSER_PROFILE_DIR" in script
+    assert "CROW_AUTH_BROWSER_PATH" in script
     assert "report_cdp_endpoint" in script
     assert "report_cdp_websocket_url" in script
     assert "webSocketDebuggerUrl" in script

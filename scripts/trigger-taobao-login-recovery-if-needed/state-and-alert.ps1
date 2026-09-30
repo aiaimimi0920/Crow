@@ -1,3 +1,6 @@
+
+. (Join-Path $PSScriptRoot '..\project-environment.ps1')
+
 function Write-JsonLine {
     param([Parameter(Mandatory = $true)]$Value)
 
@@ -144,10 +147,10 @@ function Resolve-ApiBaseUrl {
 
     $candidate = if ($Value) {
         $Value
-    } elseif ($env:FAPAI_API_BASE_URL) {
-        $env:FAPAI_API_BASE_URL
-    } elseif ($env:FAPAI_CENTRAL_API_BASE_URL) {
-        $env:FAPAI_CENTRAL_API_BASE_URL
+    } elseif ((Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')) {
+        (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')
+    } elseif ((Get-CrowEnvironmentValue -Name 'CROW_CENTRAL_API_BASE_URL')) {
+        (Get-CrowEnvironmentValue -Name 'CROW_CENTRAL_API_BASE_URL')
     } else {
         throw "An explicit HTTPS API origin or protected loopback tunnel is required."
     }

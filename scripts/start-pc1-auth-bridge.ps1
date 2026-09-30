@@ -12,8 +12,12 @@ param(
     [int]$TunnelStartupTimeoutSeconds = 30,
     [switch]$SkipBrowserStart
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
 . (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 function Get-CdpEndpointProbe {
@@ -116,8 +120,8 @@ function Resolve-KeyPath {
     if ($RemoteKeyPath) {
         return $RemoteKeyPath
     }
-    if ($env:FAPAI_REMOTE_AUTH_KEY_PATH) {
-        return $env:FAPAI_REMOTE_AUTH_KEY_PATH
+    if ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH' -PathValue)) {
+        return (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH' -PathValue)
     }
     foreach ($candidate in @(
             (Join-Path $HOME ".ssh\id_ed25519"),
@@ -152,30 +156,30 @@ function Stop-TunnelProcesses {
 
 $resolvedRemoteHost = if ($RemoteHost) {
     $RemoteHost
-} elseif ($env:FAPAI_REMOTE_AUTH_HOST) {
-    $env:FAPAI_REMOTE_AUTH_HOST
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST')
 } else {
     "192.168.15.104"
 }
 $resolvedRemoteUser = if ($RemoteUser) {
     $RemoteUser
-} elseif ($env:FAPAI_REMOTE_AUTH_USER) {
-    $env:FAPAI_REMOTE_AUTH_USER
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER')
 } else {
     "Admin"
 }
 $resolvedKeyPath = Resolve-KeyPath
 $resolvedProfileDir = if ($ProfileDir) {
     $ProfileDir
-} elseif ($env:FAPAI_AUTH_BROWSER_PROFILE_DIR) {
-    $env:FAPAI_AUTH_BROWSER_PROFILE_DIR
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -PathValue)) {
+    (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -PathValue)
 } else {
     Join-Path (Resolve-DataRoot) "chrome-cdp-profile-pc1-human-clean"
 }
 $resolvedBrowserPath = if ($BrowserPath) {
     $BrowserPath
-} elseif ($env:FAPAI_AUTH_BROWSER_PATH) {
-    $env:FAPAI_AUTH_BROWSER_PATH
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -PathValue)) {
+    (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -PathValue)
 } else {
     "C:\Program Files\Google\Chrome\Application\chrome.exe"
 }

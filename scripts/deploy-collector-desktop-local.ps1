@@ -2,7 +2,7 @@ param(
     [string]$InstallRoot = "",
     [string]$BuildTargetRoot = "",
     [string]$DesktopDirectory = [Environment]::GetFolderPath('Desktop'),
-    [string]$ApiBase = $env:FAPAI_COLLECTOR_API_BASE,
+    [string]$ApiBase = "",
     [string]$ApiCaFile = "",
     [string]$SettingsApiBase = "",
     [string]$SettingsCaFile = "",
@@ -22,8 +22,12 @@ param(
     [switch]$SkipLaunch,
     [switch]$SkipShortcut
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+if (-not $PSBoundParameters.ContainsKey('ApiBase')) { $ApiBase = (Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE') }
+
+
 . (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 function Write-Utf8NoBomFile {
@@ -175,41 +179,41 @@ function Write-LauncherScript {
 
     $launcherLines = New-Object System.Collections.Generic.List[string]
     if ($ApiBaseUrl) {
-        $launcherLines.Add(('$env:FAPAI_COLLECTOR_API_BASE = ''{0}''' -f $ApiBaseUrl.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_COLLECTOR_API_BASE = $env:FAPAI_COLLECTOR_API_BASE = ''{0}''' -f $ApiBaseUrl.Replace("'", "''")))
     }
     if ($RemoteHost) {
-        $launcherLines.Add(('$env:FAPAI_REMOTE_AUTH_HOST = ''{0}''' -f $RemoteHost.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_REMOTE_AUTH_HOST = $env:FAPAI_REMOTE_AUTH_HOST = ''{0}''' -f $RemoteHost.Replace("'", "''")))
     }
     if ($RemoteUserName) {
-        $launcherLines.Add(('$env:FAPAI_REMOTE_AUTH_USER = ''{0}''' -f $RemoteUserName.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_REMOTE_AUTH_USER = $env:FAPAI_REMOTE_AUTH_USER = ''{0}''' -f $RemoteUserName.Replace("'", "''")))
     }
     if ($RemotePasswordValue) {
         $credentialPath = Join-Path (Split-Path -Parent $LauncherPath) ("secrets\remote-auth-{0}.dpapi" -f [Guid]::NewGuid().ToString('N'))
         $protected = ConvertTo-SecureString -String $RemotePasswordValue -AsPlainText -Force | ConvertFrom-SecureString
         Write-Utf8NoBomFile -Path $credentialPath -Content $protected
         $launcherLines.Add(('$protectedPassword = [IO.File]::ReadAllText(''{0}'') | ConvertTo-SecureString' -f $credentialPath.Replace("'", "''")))
-        $launcherLines.Add('$env:FAPAI_REMOTE_AUTH_PASSWORD = ([pscredential]::new(''remote-auth'', $protectedPassword)).GetNetworkCredential().Password')
+        $launcherLines.Add('$env:CROW_REMOTE_AUTH_PASSWORD = $env:FAPAI_REMOTE_AUTH_PASSWORD = ([pscredential]::new(''remote-auth'', $protectedPassword)).GetNetworkCredential().Password')
         $launcherLines.Add('$protectedPassword.Dispose()')
     }
     if ($RemoteKeyPath) {
-        $launcherLines.Add(('$env:FAPAI_REMOTE_AUTH_KEY_PATH = ''{0}''' -f $RemoteKeyPath.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_REMOTE_AUTH_KEY_PATH = $env:FAPAI_REMOTE_AUTH_KEY_PATH = ''{0}''' -f $RemoteKeyPath.Replace("'", "''")))
     }
     if ($DataRootValue) {
-        $launcherLines.Add(('$env:FAPAI_DATA_ROOT_HOST = ''{0}''' -f $DataRootValue.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_DATA_ROOT_HOST = $env:FAPAI_DATA_ROOT_HOST = ''{0}''' -f $DataRootValue.Replace("'", "''")))
     }
     if ($CookieSnapshotValue) {
-        $launcherLines.Add(('$env:FAPAI_COOKIE_SNAPSHOT = ''{0}''' -f $CookieSnapshotValue.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_COOKIE_SNAPSHOT = $env:FAPAI_COOKIE_SNAPSHOT = ''{0}''' -f $CookieSnapshotValue.Replace("'", "''")))
     }
     if ($AuthBrowserModeValue) {
-        $launcherLines.Add(('$env:FAPAI_AUTH_BROWSER_MODE = ''{0}''' -f $AuthBrowserModeValue.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_AUTH_BROWSER_MODE = $env:FAPAI_AUTH_BROWSER_MODE = ''{0}''' -f $AuthBrowserModeValue.Replace("'", "''")))
     }
-    $launcherLines.Add(('$env:FAPAI_AUTH_LOCAL_CDP_PORT = ''{0}''' -f $AuthLocalCdpPortValue))
-    $launcherLines.Add(('$env:FAPAI_AUTH_REMOTE_CDP_PORT = ''{0}''' -f $AuthRemoteCdpPortValue))
+    $launcherLines.Add(('$env:CROW_AUTH_LOCAL_CDP_PORT = $env:FAPAI_AUTH_LOCAL_CDP_PORT = ''{0}''' -f $AuthLocalCdpPortValue))
+    $launcherLines.Add(('$env:CROW_AUTH_REMOTE_CDP_PORT = $env:FAPAI_AUTH_REMOTE_CDP_PORT = ''{0}''' -f $AuthRemoteCdpPortValue))
     if ($AuthBrowserProfileDirValue) {
-        $launcherLines.Add(('$env:FAPAI_AUTH_BROWSER_PROFILE_DIR = ''{0}''' -f $AuthBrowserProfileDirValue.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_AUTH_BROWSER_PROFILE_DIR = $env:FAPAI_AUTH_BROWSER_PROFILE_DIR = ''{0}''' -f $AuthBrowserProfileDirValue.Replace("'", "''")))
     }
     if ($AuthBrowserPathValue) {
-        $launcherLines.Add(('$env:FAPAI_AUTH_BROWSER_PATH = ''{0}''' -f $AuthBrowserPathValue.Replace("'", "''")))
+        $launcherLines.Add(('$env:CROW_AUTH_BROWSER_PATH = $env:FAPAI_AUTH_BROWSER_PATH = ''{0}''' -f $AuthBrowserPathValue.Replace("'", "''")))
     }
     $launcherLines.Add(('Start-Process -FilePath ''{0}''' -f $ExecutablePath.Replace("'", "''")))
 
@@ -260,11 +264,12 @@ if (Test-Path -LiteralPath $runtimeConfigPath -PathType Leaf) {
     }
 }
 $previousEnvironment = if ($previousRuntime) { $previousRuntime.environment } else { $null }
-if (-not $ApiBase) { $ApiBase = [string]$previousEnvironment.FAPAI_COLLECTOR_API_BASE }
-if (-not $ApiCaFile) { $ApiCaFile = [string]$previousEnvironment.FAPAI_API_CA_FILE }
-if (-not $SettingsApiBase) { $SettingsApiBase = [string]$previousEnvironment.FAPAI_SETTINGS_API_BASE }
-if (-not $SettingsCaFile) { $SettingsCaFile = [string]$previousEnvironment.FAPAI_SETTINGS_CA_FILE }
-if (-not $OperatorTokenFile) { $OperatorTokenFile = [string]$previousEnvironment.FAPAI_ENGINE_OPERATOR_TOKEN_FILE }
+$savedEnvironment = ConvertTo-CrowEnvironmentMap -Value $previousEnvironment
+if (-not $ApiBase) { $ApiBase = [string](Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE' -Environment $savedEnvironment) }
+if (-not $ApiCaFile) { $ApiCaFile = [string](Get-CrowEnvironmentValue -Name 'CROW_API_CA_FILE' -Environment $savedEnvironment -PathValue) }
+if (-not $SettingsApiBase) { $SettingsApiBase = [string](Get-CrowEnvironmentValue -Name 'CROW_SETTINGS_API_BASE' -Environment $savedEnvironment) }
+if (-not $SettingsCaFile) { $SettingsCaFile = [string](Get-CrowEnvironmentValue -Name 'CROW_SETTINGS_CA_FILE' -Environment $savedEnvironment -PathValue) }
+if (-not $OperatorTokenFile) { $OperatorTokenFile = [string](Get-CrowEnvironmentValue -Name 'CROW_ENGINE_OPERATOR_TOKEN_FILE' -Environment $savedEnvironment -PathValue) }
 . (Join-Path $PSScriptRoot 'collection-api-origin.ps1')
 $ApiBase = ConvertTo-CollectionApiOrigin -ApiBase $ApiBase
 if ($ApiCaFile -and -not (Test-Path -LiteralPath $ApiCaFile -PathType Leaf)) {
@@ -294,11 +299,11 @@ if (-not $DataRoot) {
 if (-not $DataRoot) {
     $DataRoot = Resolve-CrowProjectDataRoot -RepoRoot $repoRoot
 }
-if (-not $CookieSnapshotPath -and $previousEnvironment.FAPAI_COOKIE_SNAPSHOT) {
-    $CookieSnapshotPath = [string]$previousEnvironment.FAPAI_COOKIE_SNAPSHOT
+if (-not $CookieSnapshotPath -and (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -Environment $savedEnvironment -PathValue)) {
+    $CookieSnapshotPath = [string](Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -Environment $savedEnvironment -PathValue)
 }
-if (-not $AuthBrowserProfileDir -and $previousEnvironment.FAPAI_AUTH_BROWSER_PROFILE_DIR) {
-    $AuthBrowserProfileDir = [string]$previousEnvironment.FAPAI_AUTH_BROWSER_PROFILE_DIR
+if (-not $AuthBrowserProfileDir -and (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue)) {
+    $AuthBrowserProfileDir = [string](Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue)
 }
 if (-not $AuthBrowserProfileDir) {
     $AuthBrowserProfileDir = Join-Path $DataRoot "chrome-cdp-profile-pc1-human-clean"
@@ -336,6 +341,7 @@ foreach ($relativePath in @(
         "scripts\watch-pc1-nas-auth-recovery.ps1",
         "scripts\collection-api-origin.ps1",
         "scripts\project-data-root.ps1",
+        "scripts\project-environment.ps1",
         "scripts\pc1-recovery-http.ps1",
         "scripts\pc1-auth-recovery-policy.ps1",
         "scripts\register-pc1-nas-auth-recovery-task.ps1",

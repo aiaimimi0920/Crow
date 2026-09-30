@@ -3,12 +3,16 @@ param(
     [string]$PostgresContainer = "fapaifang-postgres",
     [string]$PostgresDb = "fapaifang",
     [string]$PostgresUser = "fapaifang",
-    [string]$PostgresPassword = $env:FAPAI_POSTGRES_PASSWORD,
+    [string]$PostgresPassword = "",
     [int]$KeepLast = 96,
     [int]$CommandTimeoutSeconds = 900
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+if (-not $PSBoundParameters.ContainsKey('PostgresPassword')) { $PostgresPassword = (Get-CrowEnvironmentValue -Name 'CROW_POSTGRES_PASSWORD') }
+
+
 . (Join-Path $PSScriptRoot "project-data-root.ps1")
 $DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 

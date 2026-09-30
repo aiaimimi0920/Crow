@@ -6,8 +6,12 @@ param(
     [int]$RetryCount = 2,
     [int]$RetryWaitSeconds = 2
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 
 . (Join-Path $PSScriptRoot "project-data-root.ps1")
@@ -18,7 +22,7 @@ if (-not [System.IO.Path]::IsPathRooted($SourceRoot)) {
 $SourceRoot = [System.IO.Path]::GetFullPath($SourceRoot)
 
 if ([string]::IsNullOrWhiteSpace($TargetRoot)) {
-    $TargetRoot = [string]$env:FAPAI_ARTIFACT_SYNC_TARGET_ROOT
+    $TargetRoot = [string](Get-CrowEnvironmentValue -Name 'CROW_ARTIFACT_SYNC_TARGET_ROOT')
 }
 if ([string]::IsNullOrWhiteSpace($TargetRoot)) {
     throw "TargetRoot is required. Pass -TargetRoot or set FAPAI_ARTIFACT_SYNC_TARGET_ROOT."

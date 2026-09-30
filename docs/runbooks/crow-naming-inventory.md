@@ -153,5 +153,25 @@ the new reader in their own exported context where function globals are cloned.
 Live diagnostic scripts use explicit dual-name defaults only when absent, with
 no import/run of those live diagnostics during validation (syntax only).
 
-Injected Compose-model configuration, PowerShell/Compose inputs and HTTP header
-aliases remain later cohorts until their compatibility tests pass.
+The seventh cohort covers resolved Compose-model mappings and direct PowerShell
+process-environment reads under `scripts/`. Model readers stay scoped to the
+provided mapping, and unchanged plans stay byte-for-byte equal as Python data.
+Only actual setting changes and newly provisioned worker identity/output values
+explicitly synchronize both spellings; service/container identities and mounts
+are preserved. `environment_changes` retains its legacy-key mapping as a caller
+compatibility API, while writers bridge those keys to both namespaces.
+
+The PowerShell helper is dynamically read-only unless explicitly asked to set a
+value. Explicitly supplied script parameters still override environment defaults,
+including when the unused aliases conflict. Known local path reads opt into
+lexical equivalence without following links. Saved desktop settings accept either
+namespace; generated settings and launchers carry matching aliases so older
+bundles continue to work. Bundle file manifests include the helper.
+Only helper/parameter-binding fixtures and parser checks run on Linux; operational
+script bodies are not executed. Windows CI covers copied desktop bundles and
+temporary installation-configuration fixtures. Existing static assertions now
+look for canonical getter calls while retaining protocol/security assertions.
+
+Remaining scope includes env-file writers, Compose templates, independent ops
+bundles, embedded remote helper interfaces, HTTP headers and safe build/CLI names;
+none of the direct-reader counts imply these remaining boundaries are finished.

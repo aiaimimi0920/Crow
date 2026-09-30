@@ -9,8 +9,12 @@ param(
     [string]$RemoteBrowserScript = "",
     [ValidateSet("remote", "local-bridge")][string]$AuthMode = ""
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
 
 function Get-LocalAuthBrowserScript {
     return (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "start-taobao-cdp-browser.ps1")).ProviderPath
@@ -53,15 +57,15 @@ function Start-LocalAuthBrowserFallback {
 
 $resolvedAuthMode = if ($AuthMode) {
     $AuthMode
-} elseif ($env:FAPAI_AUTH_BROWSER_MODE) {
-    $env:FAPAI_AUTH_BROWSER_MODE
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_MODE')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_MODE')
 } else {
     "remote"
 }
 
 if ($resolvedAuthMode -eq "local-bridge") {
-    $manualAuthScript = if ($env:FAPAI_AUTH_BRIDGE_SCRIPT) {
-        $env:FAPAI_AUTH_BRIDGE_SCRIPT
+    $manualAuthScript = if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BRIDGE_SCRIPT' -PathValue)) {
+        (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BRIDGE_SCRIPT' -PathValue)
     } else {
         Join-Path $PSScriptRoot "start-pc1-auth-bridge.ps1"
     }
@@ -90,48 +94,48 @@ if ($resolvedAuthMode -eq "local-bridge") {
 
 $resolvedRemoteHost = if ($RemoteHost) {
     $RemoteHost
-} elseif ($env:FAPAI_REMOTE_AUTH_HOST) {
-    $env:FAPAI_REMOTE_AUTH_HOST
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST')
 } else {
     "192.168.15.104"
 }
 
 $resolvedRemoteUser = if ($RemoteUser) {
     $RemoteUser
-} elseif ($env:FAPAI_REMOTE_AUTH_USER) {
-    $env:FAPAI_REMOTE_AUTH_USER
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER')
 } else {
     "Admin"
 }
 
 $resolvedRemotePassword = if ($RemotePassword) {
     $RemotePassword
-} elseif ($env:FAPAI_REMOTE_AUTH_PASSWORD) {
-    $env:FAPAI_REMOTE_AUTH_PASSWORD
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PASSWORD')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PASSWORD')
 } else {
     ""
 }
 
 $resolvedRemoteKeyPath = if ($RemoteKeyPath) {
     $RemoteKeyPath
-} elseif ($env:FAPAI_REMOTE_AUTH_KEY_PATH) {
-    $env:FAPAI_REMOTE_AUTH_KEY_PATH
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH' -PathValue)) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH' -PathValue)
 } else {
     ""
 }
 
 $resolvedRemoteProfileDir = if ($RemoteProfileDir) {
     $RemoteProfileDir
-} elseif ($env:FAPAI_REMOTE_AUTH_PROFILE_DIR) {
-    $env:FAPAI_REMOTE_AUTH_PROFILE_DIR
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PROFILE_DIR')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PROFILE_DIR')
 } else {
     "C:\Users\Public\nas_home\AI\FPFData\edge-cdp-profile-pc2"
 }
 
 $resolvedRemoteBrowserScript = if ($RemoteBrowserScript) {
     $RemoteBrowserScript
-} elseif ($env:FAPAI_REMOTE_AUTH_REMOTE_SCRIPT) {
-    $env:FAPAI_REMOTE_AUTH_REMOTE_SCRIPT
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_REMOTE_SCRIPT')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_REMOTE_SCRIPT')
 } else {
     "C:\fapaifang-worker\ops\trigger-open-auth-task.ps1"
 }
@@ -154,11 +158,11 @@ $escapedRemoteProfileDir = $resolvedRemoteProfileDir.Replace("'", "''")
 $escapedStartUrl = $StartUrl.Replace("'", "''")
 $remoteCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command ""& '$escapedRemoteBrowserScript' -Port $Port -ProfileDir '$escapedRemoteProfileDir' -StartUrl '$escapedStartUrl'"""
 
-$env:FAPAI_REMOTE_AUTH_HOST_ACTIVE = $resolvedRemoteHost
-$env:FAPAI_REMOTE_AUTH_USER_ACTIVE = $resolvedRemoteUser
-$env:FAPAI_REMOTE_AUTH_PASSWORD_ACTIVE = $resolvedRemotePassword
-$env:FAPAI_REMOTE_AUTH_KEY_PATH_ACTIVE = $resolvedRemoteKeyPath
-$env:FAPAI_REMOTE_AUTH_COMMAND = $remoteCommand
+Set-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST_ACTIVE' -Value ($resolvedRemoteHost)
+Set-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER_ACTIVE' -Value ($resolvedRemoteUser)
+Set-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PASSWORD_ACTIVE' -Value ($resolvedRemotePassword)
+Set-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH_ACTIVE' -Value ($resolvedRemoteKeyPath)
+Set-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_COMMAND' -Value ($remoteCommand)
 
 $pythonCode = @'
 import os

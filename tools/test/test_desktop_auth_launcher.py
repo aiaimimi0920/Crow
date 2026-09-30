@@ -21,6 +21,7 @@ def bundle(tmp_path):
     (root / "tools").mkdir()
     shutil.copyfile(ROOT / "scripts/desktop-auth-challenge.ps1", root / "scripts/desktop-auth-challenge.ps1")
     shutil.copyfile(ROOT / "scripts/project-data-root.ps1", root / "scripts/project-data-root.ps1")
+    shutil.copyfile(ROOT / "scripts/project-environment.ps1", root / "scripts/project-environment.ps1")
     (root / "tools/__init__.py").write_text("", encoding="utf-8")
     (root / "tools/pc1_desktop_auth.py").write_text(
         "import json, os, sys\n"

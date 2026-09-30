@@ -16,11 +16,15 @@ param(
     [string]$StatePath = "",
     [switch]$DryRun
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
 . (Join-Path $PSScriptRoot "project-data-root.ps1")
 $DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
-$resolvedAlertWebhookUrl = if ($AlertWebhookUrl) { $AlertWebhookUrl } else { [string]$env:FAPAI_OPERATIONS_WEBHOOK_URL }
+$resolvedAlertWebhookUrl = if ($AlertWebhookUrl) { $AlertWebhookUrl } else { [string](Get-CrowEnvironmentValue -Name 'CROW_OPERATIONS_WEBHOOK_URL') }
 
 $moduleRoot = Join-Path $PSScriptRoot "trigger-taobao-login-recovery-if-needed"
 . (Join-Path $moduleRoot "state-and-alert.ps1")
