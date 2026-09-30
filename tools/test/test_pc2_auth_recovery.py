@@ -252,14 +252,17 @@ def test_import_cookie_snapshot_requires_session_identities_not_rotating_analyti
     assert result["verified_session_cookie_count"] == 1
 
 
-def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypatch):
+@pytest.mark.parametrize("initial_status", ["snapshot_ready", "restarting"])
+def test_recovery_cycle_imports_without_restart_and_waits_for_progress(
+    tmp_path, monkeypatch, initial_status
+):
     path, digest = _snapshot(tmp_path)
     marker = tmp_path / "pc2-auth-recovery-marker.json"
     token_path = tmp_path / "nas-auth-recovery.token"
     token_path.write_text("test-recovery-token\n", encoding="utf-8")
     active = {
         "recovery_id": "auth-recovery-1",
-        "status": "snapshot_ready",
+        "status": initial_status,
         "snapshot": {"sha256": digest, "cookie_count": 1},
     }
     posted = []
@@ -278,6 +281,7 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
             active["status"] = "restarting"
         elif url.endswith("/result"):
             active["status"] = "verifying"
+            return {"ok": True, "status": "verifying"}
         return {"ok": True}
 
     imports = []
@@ -305,8 +309,8 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
         fetcher=fetcher,
         poster=poster,
     )
-    assert first["action"] == "restart_requested"
-    assert marker.exists()
+    assert first["action"] == "recovery_verifying"
+    assert not marker.exists()
 
     second = pc2_auth_recovery.process_nas_auth_recovery_once(
         "http://nas:8001/api",
@@ -318,19 +322,24 @@ def test_recovery_cycle_claims_imports_restarts_then_confirms(tmp_path, monkeypa
         fetcher=fetcher,
         poster=poster,
     )
-    assert second["action"] == "recovery_confirmed"
+    assert second["action"] == "waiting_for_collection_progress"
     assert marker.exists() is False
-    assert imports == [digest, digest]
+    assert imports == [digest]
     assert all(
         "secret-cookie-value" not in json.dumps(payload) for _, payload, _ in posted
     )
+    expected = ["heartbeat"]
+    if initial_status == "snapshot_ready":
+        expected += ["claim", "pc2_restarting"]
     assert [url.rsplit("/", 1)[-1] for url, _, _ in posted] == [
-        "heartbeat",
-        "claim",
-        "pc2_restarting",
-        "heartbeat",
+        *expected,
         "result",
+        "heartbeat",
     ]
+    result_payload = next(
+        payload for url, payload, _ in posted if url.endswith("/result")
+    )
+    assert result_payload["reason"] == "cookie_import_verified"
 
 
 def test_local_solver_exits_pid1_after_recovery_requests_restart(monkeypatch):

@@ -14,7 +14,6 @@ from tools.internal_api_http import fetch_json, post_json
 from tools.pc2_detail_auth_probe import probe_detail_access
 from tools.pc2_seed_auth_probe import probe_seed_access
 
-
 # Chromium pages legitimately rotate or remove analytics cookies immediately
 # after Storage.setCookies.  These stable session cookies are the fail-closed
 # anchors that prove the reusable Taobao session itself survived the import.
@@ -51,7 +50,9 @@ def load_cookie_snapshot(
     digest = hashlib.sha256(raw).hexdigest()
     expected = str(expected_sha256 or "").strip().lower()
     if expected and digest != expected:
-        raise ValueError("cookie snapshot digest does not match the NAS recovery metadata")
+        raise ValueError(
+            "cookie snapshot digest does not match the NAS recovery metadata"
+        )
     payload = json.loads(raw.decode("utf-8-sig"))
     if not isinstance(payload, list) or not payload:
         raise ValueError("cookie snapshot must contain a non-empty JSON list")
@@ -89,7 +90,9 @@ def ensure_cookie_snapshot(
         pass
 
     payload = fetcher(
-        _recovery_url(api_base_url, f"/snapshot?recovery_id={quote(recovery_id, safe='')}"),
+        _recovery_url(
+            api_base_url, f"/snapshot?recovery_id={quote(recovery_id, safe='')}"
+        ),
         timeout=20,
         headers=headers,
     )
@@ -108,8 +111,14 @@ def ensure_cookie_snapshot(
         raise ValueError("NAS authentication snapshot payload is invalid") from exc
     digest = hashlib.sha256(raw).hexdigest()
     expected = str(expected_sha256 or "").strip().lower()
-    if not expected or digest != expected or str(payload.get("sha256") or "").lower() != expected:
-        raise ValueError("downloaded authentication snapshot digest does not match recovery metadata")
+    if (
+        not expected
+        or digest != expected
+        or str(payload.get("sha256") or "").lower() != expected
+    ):
+        raise ValueError(
+            "downloaded authentication snapshot digest does not match recovery metadata"
+        )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
@@ -133,7 +142,11 @@ def _cookie_param(cookie: dict[str, Any]) -> dict[str, Any]:
         "httpOnly": bool(cookie.get("httpOnly", False)),
     }
     expires = cookie.get("expires")
-    if isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires > 0:
+    if (
+        isinstance(expires, (int, float))
+        and not isinstance(expires, bool)
+        and expires > 0
+    ):
         param["expires"] = float(expires)
     same_site = str(cookie.get("sameSite") or "").strip().capitalize()
     if same_site in {"Strict", "Lax", "None"}:
@@ -144,7 +157,9 @@ def _cookie_param(cookie: dict[str, Any]) -> dict[str, Any]:
     return param
 
 
-def _cdp_call(websocket_connection: Any, message_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+def _cdp_call(
+    websocket_connection: Any, message_id: int, method: str, params: dict[str, Any]
+) -> dict[str, Any]:
     websocket_connection.send(
         json.dumps(
             {"id": message_id, "method": method, "params": params},
@@ -156,7 +171,9 @@ def _cdp_call(websocket_connection: Any, message_id: int, method: str, params: d
         if response.get("id") != message_id:
             continue
         if isinstance(response.get("error"), dict):
-            raise OSError(f"CDP {method} failed: {response['error'].get('message', 'unknown error')}")
+            raise OSError(
+                f"CDP {method} failed: {response['error'].get('message', 'unknown error')}"
+            )
         result = response.get("result")
         return dict(result) if isinstance(result, dict) else {}
 
@@ -232,7 +249,9 @@ def _write_marker(marker_path: str | Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -259,28 +278,40 @@ def process_nas_auth_recovery_once(
 ) -> dict[str, Any]:
     token = load_recovery_token(token_path)
     headers = {"X-Fapai-Recovery-Token": token}
-    if str(node_id or '').strip().lower() == 'pc2':
+    if str(node_id or "").strip().lower() == "pc2":
         heartbeat = poster(
-            _recovery_url(api_base_url, '/heartbeat'),
-            {'protocol_version': 2, 'node_id': 'pc2'}, timeout=10, headers=headers,
+            _recovery_url(api_base_url, "/heartbeat"),
+            {"protocol_version": 2, "node_id": "pc2"},
+            timeout=10,
+            headers=headers,
         )
-        if not isinstance(heartbeat, dict) or heartbeat.get('ok') is not True:
-            return {'action': 'ignored', 'reason': 'heartbeat_rejected'}
+        if not isinstance(heartbeat, dict) or heartbeat.get("ok") is not True:
+            return {"action": "ignored", "reason": "heartbeat_rejected"}
     response = fetcher(_recovery_url(api_base_url), timeout=10, headers=headers)
-    recovery_status = response.get("auth_recovery") if isinstance(response, dict) else None
-    active = recovery_status.get("active") if isinstance(recovery_status, dict) else None
+    recovery_status = (
+        response.get("auth_recovery") if isinstance(response, dict) else None
+    )
+    active = (
+        recovery_status.get("active") if isinstance(recovery_status, dict) else None
+    )
     if not isinstance(active, dict):
         Path(marker_path).unlink(missing_ok=True)
         return {"action": "idle"}
 
     recovery_id = str(active.get("recovery_id") or "").strip()
     status = str(active.get("status") or "").strip()
-    snapshot = active.get("snapshot") if isinstance(active.get("snapshot"), dict) else {}
+    snapshot = (
+        active.get("snapshot") if isinstance(active.get("snapshot"), dict) else {}
+    )
     expected_sha256 = str(snapshot.get("sha256") or "").strip().lower()
     if not recovery_id:
         return {"action": "ignored", "reason": "missing_recovery_id"}
     if str(node_id or "").strip().lower() != "pc2":
-        return {"action": "ignored", "reason": "node_is_not_pc2", "recovery_id": recovery_id}
+        return {
+            "action": "ignored",
+            "reason": "node_is_not_pc2",
+            "recovery_id": recovery_id,
+        }
 
     if status == "snapshot_ready":
         claimed = poster(
@@ -324,15 +355,9 @@ def process_nas_auth_recovery_once(
         )
         if not isinstance(acknowledged, dict) or acknowledged.get("ok") is not True:
             raise OSError("NAS did not acknowledge the PC2 verification phase")
-        if not active.get("scope"):
-            return {
-                "action": "restart_requested",
-                "recovery_id": recovery_id,
-                "cookie_count": imported["cookie_count"],
-            }
-        # Scoped handoffs already imported and verified cookies through CDP.
-        # Validate a fresh page in that browser; restarting it discards useful
-        # session state and can strand the receipt while CDP is unavailable.
+        # Keep the legacy wire phase, but verify in the existing browser.
+        # Restarting after a verified CDP import discards session state and
+        # interrupts the solver and every collection worker sharing that browser.
         status = "restarting"
 
     if status == "restarting" and imported is None:
@@ -375,14 +400,21 @@ def process_nas_auth_recovery_once(
             try:
                 probe = probe_seed_access if scope == "seed" else probe_detail_access
                 authenticated = probe(cdp_endpoint, active.get("target_url", ""))
-                reason = f"{scope}_payload_verified" if authenticated else "stage_probe_failed"
+                reason = (
+                    f"{scope}_payload_verified"
+                    if authenticated
+                    else "stage_probe_failed"
+                )
             except Exception:
                 authenticated = False
                 reason = "stage_probe_unavailable"
             stage_receipt = {
-                "scope": scope, "protocol_version": 2,
-                "snapshot_sha256": expected_sha256, "target_url": active.get("target_url"),
-                "probe_authenticated": authenticated, "success": authenticated,
+                "scope": scope,
+                "protocol_version": 2,
+                "snapshot_sha256": expected_sha256,
+                "target_url": active.get("target_url"),
+                "probe_authenticated": authenticated,
+                "success": authenticated,
                 "reason": reason,
             }
         result = poster(
@@ -391,7 +423,7 @@ def process_nas_auth_recovery_once(
                 "recovery_id": recovery_id,
                 "node_id": "pc2",
                 "success": True,
-                "reason": "cookie_import_verified_after_restart",
+                "reason": "cookie_import_verified",
                 **stage_receipt,
             },
             timeout=15,
@@ -400,14 +432,18 @@ def process_nas_auth_recovery_once(
         if not isinstance(result, dict) or result.get("ok") is not True:
             raise OSError("NAS did not acknowledge the PC2 recovery result")
         if active.get("scope") and result.get("status") == "failed":
-            return {"action": "recovery_failed", "recovery_id": recovery_id, "scope": active["scope"]}
+            return {
+                "action": "recovery_failed",
+                "recovery_id": recovery_id,
+                "scope": active["scope"],
+            }
         if active.get("scope") == "seed" and result.get("status") != "succeeded":
             raise OSError("NAS has not confirmed seed access")
         Path(marker_path).unlink(missing_ok=True)
         return {
             "action": (
                 "recovery_verifying"
-                if active.get("scope") == "detail" and result.get("status") == "verifying"
+                if result.get("status") == "verifying"
                 else "recovery_confirmed"
             ),
             "recovery_id": recovery_id,
@@ -418,4 +454,8 @@ def process_nas_auth_recovery_once(
     if status == "verifying":
         Path(marker_path).unlink(missing_ok=True)
         return {"action": "waiting_for_collection_progress", "recovery_id": recovery_id}
-    return {"action": "ignored", "reason": f"status_{status}", "recovery_id": recovery_id}
+    return {
+        "action": "ignored",
+        "reason": f"status_{status}",
+        "recovery_id": recovery_id,
+    }

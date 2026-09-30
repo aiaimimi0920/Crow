@@ -1,17 +1,23 @@
 """One explicitly enabled host controller for settings and engine restarts."""
+
 import argparse
-import json
 import os
-from pathlib import Path
 import subprocess
 import time
+from pathlib import Path
 
 from .collection_control_lock import operation_lock
 from .controller_receipts import deliver_receipt
-from .pc2_engine_controller import ControllerError, EngineController, MailboxClient, validate_command
+from .pc2_collection_progress_watchdog import CollectionProgressWatchdog
+from .pc2_collection_watchdog import CollectionWatchdog
+from .pc2_engine_controller import (
+    ControllerError,
+    EngineController,
+    MailboxClient,
+    validate_command,
+)
 from .pc2_settings_controller import SettingsClient, SettingsController
 from .pc2_settings_runtime import SettingsRuntime, write_private
-from .pc2_collection_watchdog import CollectionWatchdog
 
 
 class RestartController:
@@ -34,18 +40,33 @@ class RestartController:
         command = self.client.post("poll", {}).get("command")
         if command:
             command = validate_command(command)
-            receipt = {"request_id": command["request_id"], "claim": command["claim"], "result": "controller_interrupted"}
+            receipt = {
+                "request_id": command["request_id"],
+                "claim": command["claim"],
+                "result": "controller_interrupted",
+            }
             self.persist(receipt)
             receipt["result"] = self.engine.restart()
             self.persist(receipt)
 
 
-def step(root, settings, restart, watchdog=None):
+def step(root, settings, restart, watchdog=None, progress_watchdog=None):
     with operation_lock(root):
         if (root / "release-operation.json").exists():
             raise ControllerError("Release result needs reconciliation")
-        if watchdog is not None and not settings.journal.exists() and not restart.journal.exists():
+        if (
+            watchdog is not None
+            and not settings.journal.exists()
+            and not restart.journal.exists()
+        ):
             if watchdog.step() == "restart_requested":
+                return
+        if (
+            progress_watchdog is not None
+            and not settings.journal.exists()
+            and not restart.journal.exists()
+        ):
+            if progress_watchdog.step() == "restart_requested":
                 return
         # An uncertain settings operation must not be followed by a restart.
         settings.step()
@@ -71,15 +92,31 @@ def main():
         compose.extend(["--env-file", str(path.resolve(strict=True))])
     compose.extend(["-f", str(args.compose_file.resolve(strict=True))])
     runtime = SettingsRuntime(args.runtime_root.resolve(), compose)
-    settings = SettingsController(SettingsClient(args.api_base, args.token_file, ca_file=args.ca_file), runtime)
-    restart = RestartController(MailboxClient(args.api_base, args.token_file, ca_file=args.ca_file), EngineController(), runtime.root)
+    settings = SettingsController(
+        SettingsClient(args.api_base, args.token_file, ca_file=args.ca_file), runtime
+    )
+    restart = RestartController(
+        MailboxClient(args.api_base, args.token_file, ca_file=args.ca_file),
+        EngineController(),
+        runtime.root,
+    )
     watchdog = CollectionWatchdog(runtime.root)
+    progress_watchdog = CollectionProgressWatchdog(runtime.root)
     with operation_lock(runtime.root, name="controller.lock"):
         while True:
             try:
-                step(runtime.root, settings, restart, watchdog)
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, ControllerError):
-                print("Collection controller unavailable; no operation replayed", flush=True)
+                step(runtime.root, settings, restart, watchdog, progress_watchdog)
+            except (
+                OSError,
+                ValueError,
+                RuntimeError,
+                subprocess.SubprocessError,
+                ControllerError,
+            ):
+                print(
+                    "Collection controller unavailable; no operation replayed",
+                    flush=True,
+                )
             time.sleep(5)
 
 

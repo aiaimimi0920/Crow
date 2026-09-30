@@ -34,6 +34,12 @@ Stage an immutable source tree under the release directory. Create `runtime.env`
 - `FAPAI_VNC_PASSWORD_FILE=/srv/apps/fapaifang-worker/shared/vnc-password`
 - `FAPAI_DATA_ROOT=/srv/data/fapaifang-worker`
 - `FAPAI_HOST_DATA_GID` set to the numeric primary GID of `mjc` on PC2
+- `FAPAI_API_BASE_URL` and `FAPAI_CENTRAL_API_BASE_URL` set to the NAS HTTPS `/api` URL
+- `FAPAI_API_CA_FILE` pointing to the mounted, verified NAS CA certificate
+- `FAPAI_COLLECTION_WORKER_TOKEN_FILE` pointing to the mounted collection credential,
+  including in `pc2-browser-solver`; challenge and cooldown reports use this role
+- `FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE` pointing to the distinct mounted recovery
+  credential; authentication completion and cooldown resume use this role
 - `FAPAI_WORKER_DB_URL` with NAS address `192.168.15.200:55432`
 - `OPENAI_BASE_URL=http://192.168.15.20:8317/v1`
 - `OPENAI_API_KEY`
@@ -91,3 +97,10 @@ curl -fsS http://127.0.0.1:6080/vnc.html >/dev/null
 ```
 
 Healthy containers prove process readiness, not collection success. Final validation must also show a fresh NAS API status response in DB mode, a collection counter or claimed/completed job delta, and an analysis counter or completed AI result delta. A live challenge is needed before claiming that the automatic slider solve itself has succeeded.
+
+The browser health check validates both outgoing credential roles locally, without
+sending a challenge report. A recovery heartbeat or successful Cookie handoff does
+not validate `/api/report_captcha`. When copying an existing container specification,
+compare both credential paths with the rendered Compose environment; an old spec can
+omit a role that current Compose already supplies. Preserve existing credential files.
+After activation, check real report acknowledgements and cooldown resume events.

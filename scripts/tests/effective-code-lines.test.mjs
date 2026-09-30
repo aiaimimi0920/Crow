@@ -141,7 +141,7 @@ test("soft-limit files require an exact exception once changed or added", () => 
 
 test("exception validation rejects stale, expired, and over-limit records", () => {
   const current = row("src/cohesive.ts", 600, "current");
-  const policyHash = digest(fs.readFileSync(policyPath));
+  const policyHash = digest(decodeUtf8(fs.readFileSync(policyPath), "policy fixture").replace(/\r\n|\r/g, "\n"));
   const validEntry = {
     path: current.path,
     effectiveLines: current.effectiveLines,
