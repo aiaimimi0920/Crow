@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from src.collection.seed_scan_policy import SeedScanPolicy
 
-from .models import FapaiSeedScanJob, FapaiSeedScanProgress
+from .models import CollectionSeedScanJob, CollectionSeedScanProgress
 from .repository_context import _cooldown_active, _lease_reclaimable, _utc_now
 from .seed_scan_candidates import seed_scan_candidates
 
@@ -35,7 +35,7 @@ class RepositorySeedScanPagesMixin:
             now - timedelta(seconds=cooldown_seconds) if cooldown_seconds > 0 else None
         )
 
-        def failure_in_cooldown(row: FapaiSeedScanProgress) -> bool:
+        def failure_in_cooldown(row: CollectionSeedScanProgress) -> bool:
             if cooldown_threshold <= 0 or failure_cooldown_cutoff is None:
                 return False
             if not str(row.last_error or "").strip():
@@ -61,8 +61,8 @@ class RepositorySeedScanPagesMixin:
                 if row.job_key not in locked_job_keys:
                     # Lock the job before its pages so sequential sorts stay ordered.
                     job = session.scalars(
-                        select(FapaiSeedScanJob)
-                        .where(FapaiSeedScanJob.job_key == row.job_key)
+                        select(CollectionSeedScanJob)
+                        .where(CollectionSeedScanJob.job_key == row.job_key)
                         .with_for_update(skip_locked=True)
                         .execution_options(populate_existing=True)
                     ).first()
@@ -74,8 +74,8 @@ class RepositorySeedScanPagesMixin:
                     locked_job_keys.add(row.job_key)
                 # Refresh only this candidate; a job can have many configured sorts.
                 row = session.scalars(
-                    select(FapaiSeedScanProgress)
-                    .where(FapaiSeedScanProgress.progress_key == row.progress_key)
+                    select(CollectionSeedScanProgress)
+                    .where(CollectionSeedScanProgress.progress_key == row.progress_key)
                     .with_for_update()
                     .execution_options(populate_existing=True)
                 ).first()
@@ -107,17 +107,17 @@ class RepositorySeedScanPagesMixin:
 
                 if not parallel_sorts:
                     earlier_sorts = (
-                        select(FapaiSeedScanProgress)
+                        select(CollectionSeedScanProgress)
                         .where(
-                            FapaiSeedScanProgress.job_key == row.job_key,
-                            FapaiSeedScanProgress.sort_order < row.sort_order,
-                            FapaiSeedScanProgress.status.in_(
+                            CollectionSeedScanProgress.job_key == row.job_key,
+                            CollectionSeedScanProgress.sort_order < row.sort_order,
+                            CollectionSeedScanProgress.status.in_(
                                 ("pending", "in_progress")
                             ),
                         )
                         .order_by(
-                            FapaiSeedScanProgress.sort_order,
-                            FapaiSeedScanProgress.progress_key,
+                            CollectionSeedScanProgress.sort_order,
+                            CollectionSeedScanProgress.progress_key,
                         )
                         .with_for_update()
                         .execution_options(populate_existing=True, yield_per=128)
@@ -161,12 +161,12 @@ class RepositorySeedScanPagesMixin:
         active_policy = policy or self.adapter.seed_scan_policy
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedScanProgress, progress_key)
+            row = session.get(CollectionSeedScanProgress, progress_key)
             if row is None:
                 if active_policy.requires_lease_owner:
                     raise ValueError(f"unknown seed scan progress: {progress_key}")
                 return
-            job = session.get(FapaiSeedScanJob, row.job_key)
+            job = session.get(CollectionSeedScanJob, row.job_key)
             normalized_worker = str(worker_id or "").strip()
             if active_policy.requires_lease_owner and (
                 job is None
@@ -211,12 +211,12 @@ class RepositorySeedScanPagesMixin:
         active_policy = policy or self.adapter.seed_scan_policy
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedScanProgress, progress_key)
+            row = session.get(CollectionSeedScanProgress, progress_key)
             if row is None:
                 if active_policy.requires_lease_owner:
                     raise ValueError(f"unknown seed scan progress: {progress_key}")
                 return
-            job = session.get(FapaiSeedScanJob, row.job_key)
+            job = session.get(CollectionSeedScanJob, row.job_key)
             normalized_worker = str(worker_id or "").strip()
             if active_policy.requires_lease_owner and (
                 job is None

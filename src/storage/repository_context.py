@@ -24,11 +24,11 @@ from .canonical_record import (
 )
 from .models import (
     Base,
-    FapaiAnalysisRun,
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
-    FapaiSeedScanProgress,
+    CollectionAnalysisRun,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
+    CollectionSeedScanProgress,
     ManualReviewReceipt,
     ManualReviewReceiptJob,
     ManualReviewReceiptOperation,
@@ -155,7 +155,7 @@ def _seed_claim_cursor_clause(
         and_(
             priority_expr == last_priority,
             sort_first_seen_at == last_first_seen_at,
-            FapaiSeedItem.item_id > last_item_id,
+            CollectionSeedItem.item_id > last_item_id,
         ),
     )
 

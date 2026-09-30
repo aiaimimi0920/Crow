@@ -6,10 +6,10 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from .models import (
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
-    FapaiSeedScanProgress,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
+    CollectionSeedScanProgress,
 )
 from .repository_context import _load_taobao_region_override_filter, _utc_now
 from .repository_seed_scan_jobs import SEED_SCAN_MAINTENANCE_BATCH_SIZE
@@ -20,7 +20,7 @@ class RepositoryObserverRegionsMixin:
         normalized = (stage or "links").strip().lower()
         if normalized == "details":
             return [
-                FapaiSeedItem.status.in_(
+                CollectionSeedItem.status.in_(
                     (
                         "raw_detail_captured",
                         "analysis_in_progress",
@@ -30,30 +30,30 @@ class RepositoryObserverRegionsMixin:
                 )
             ]
         if normalized == "analysis":
-            return [FapaiSeedItem.status == "detail_completed"]
-        return [FapaiSeedItem.status.in_(("pending_detail", "in_progress", "detail_failed", "detail_blocked"))]
+            return [CollectionSeedItem.status == "detail_completed"]
+        return [CollectionSeedItem.status.in_(("pending_detail", "in_progress", "detail_failed", "detail_blocked"))]
 
     def _latest_seed_occurrence_payload(self, session: Session, item_id: str) -> Dict[str, Any] | None:
         occurrence = session.scalars(
-            select(FapaiSeedOccurrence)
-            .join(FapaiSeedScanJob, FapaiSeedOccurrence.job_key == FapaiSeedScanJob.job_key)
+            select(CollectionSeedOccurrence)
+            .join(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
             .where(
-                FapaiSeedOccurrence.item_id == str(item_id),
-                FapaiSeedScanJob.status != "archived",
+                CollectionSeedOccurrence.item_id == str(item_id),
+                CollectionSeedScanJob.status != "archived",
             )
-            .order_by(FapaiSeedOccurrence.seen_at.desc(), FapaiSeedOccurrence.id.desc())
+            .order_by(CollectionSeedOccurrence.seen_at.desc(), CollectionSeedOccurrence.id.desc())
             .limit(1)
         ).first()
         if occurrence is None:
             occurrence = session.scalars(
-                select(FapaiSeedOccurrence)
-                .where(FapaiSeedOccurrence.item_id == str(item_id))
-                .order_by(FapaiSeedOccurrence.seen_at.desc(), FapaiSeedOccurrence.id.desc())
+                select(CollectionSeedOccurrence)
+                .where(CollectionSeedOccurrence.item_id == str(item_id))
+                .order_by(CollectionSeedOccurrence.seen_at.desc(), CollectionSeedOccurrence.id.desc())
                 .limit(1)
             ).first()
         if occurrence is None:
             return None
-        job = session.get(FapaiSeedScanJob, occurrence.job_key)
+        job = session.get(CollectionSeedScanJob, occurrence.job_key)
         return self._seed_occurrence_payload(occurrence, job)
 
     def _latest_seed_occurrence_payloads(self, session: Session, item_ids) -> dict:
@@ -62,23 +62,23 @@ class RepositoryObserverRegionsMixin:
         # Prefer a non-archived job, even when an archived occurrence is newer.
         ranked = (
             select(
-                FapaiSeedOccurrence.id,
+                CollectionSeedOccurrence.id,
                 func.row_number().over(
-                    partition_by=FapaiSeedOccurrence.item_id,
+                    partition_by=CollectionSeedOccurrence.item_id,
                     order_by=(
-                        case((FapaiSeedScanJob.status != "archived", 0), else_=1),
-                        FapaiSeedOccurrence.seen_at.desc(), FapaiSeedOccurrence.id.desc(),
+                        case((CollectionSeedScanJob.status != "archived", 0), else_=1),
+                        CollectionSeedOccurrence.seen_at.desc(), CollectionSeedOccurrence.id.desc(),
                     ),
                 ).label("position"),
             )
-            .outerjoin(FapaiSeedScanJob, FapaiSeedOccurrence.job_key == FapaiSeedScanJob.job_key)
-            .where(FapaiSeedOccurrence.item_id.in_(item_ids))
+            .outerjoin(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
+            .where(CollectionSeedOccurrence.item_id.in_(item_ids))
             .subquery()
         )
         rows = session.execute(
-            select(FapaiSeedOccurrence, FapaiSeedScanJob)
-            .join(ranked, ranked.c.id == FapaiSeedOccurrence.id)
-            .outerjoin(FapaiSeedScanJob, FapaiSeedOccurrence.job_key == FapaiSeedScanJob.job_key)
+            select(CollectionSeedOccurrence, CollectionSeedScanJob)
+            .join(ranked, ranked.c.id == CollectionSeedOccurrence.id)
+            .outerjoin(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
             .where(ranked.c.position == 1)
         ).all()
         return {occurrence.item_id: self._seed_occurrence_payload(occurrence, job) for occurrence, job in rows}
@@ -102,7 +102,7 @@ class RepositoryObserverRegionsMixin:
             "seen_at": self._fmt_dt(occurrence.seen_at),
         }
 
-    def _seed_item_observer_payload(self, session: Session, row: FapaiSeedItem, occurrences: dict | None = None) -> Dict[str, Any]:
+    def _seed_item_observer_payload(self, session: Session, row: CollectionSeedItem, occurrences: dict | None = None) -> Dict[str, Any]:
         return {
             "item_id": row.item_id,
             "source_item_id": row.source_item_id,
@@ -183,18 +183,18 @@ class RepositoryObserverRegionsMixin:
         with self.session_factory() as session:
             region_rows = session.execute(
                 select(
-                    FapaiSeedScanJob.location_code,
-                    func.min(FapaiSeedScanJob.province),
-                    func.min(FapaiSeedScanJob.city),
-                    func.min(FapaiSeedScanJob.district),
+                    CollectionSeedScanJob.location_code,
+                    func.min(CollectionSeedScanJob.province),
+                    func.min(CollectionSeedScanJob.city),
+                    func.min(CollectionSeedScanJob.district),
                 )
-                .where(FapaiSeedScanJob.status != "archived")
-                .group_by(FapaiSeedScanJob.location_code)
+                .where(CollectionSeedScanJob.status != "archived")
+                .group_by(CollectionSeedScanJob.location_code)
                 .order_by(
-                    func.min(FapaiSeedScanJob.province),
-                    func.min(FapaiSeedScanJob.city),
-                    FapaiSeedScanJob.location_code,
-                    func.min(FapaiSeedScanJob.district),
+                    func.min(CollectionSeedScanJob.province),
+                    func.min(CollectionSeedScanJob.city),
+                    CollectionSeedScanJob.location_code,
+                    func.min(CollectionSeedScanJob.district),
                 )
             ).all()
             taobao_override_codes, taobao_replace_admin_provinces = _load_taobao_region_override_filter()
@@ -202,12 +202,12 @@ class RepositoryObserverRegionsMixin:
                 job_counts_by_code: dict[str, dict[str, int]] = {}
                 for location_code, status, count_value in session.execute(
                     select(
-                        FapaiSeedScanJob.location_code,
-                        FapaiSeedScanJob.status,
-                        func.count(FapaiSeedScanJob.job_key),
+                        CollectionSeedScanJob.location_code,
+                        CollectionSeedScanJob.status,
+                        func.count(CollectionSeedScanJob.job_key),
                     )
-                    .where(FapaiSeedScanJob.status != "archived")
-                    .group_by(FapaiSeedScanJob.location_code, FapaiSeedScanJob.status)
+                    .where(CollectionSeedScanJob.status != "archived")
+                    .group_by(CollectionSeedScanJob.location_code, CollectionSeedScanJob.status)
                 ):
                     code = str(location_code or "").strip()
                     if not code:
@@ -217,16 +217,16 @@ class RepositoryObserverRegionsMixin:
                 progress_counts_by_code: dict[str, dict[str, int]] = {}
                 for location_code, status, count_value in session.execute(
                     select(
-                        FapaiSeedScanJob.location_code,
-                        FapaiSeedScanProgress.status,
-                        func.count(FapaiSeedScanProgress.progress_key),
+                        CollectionSeedScanJob.location_code,
+                        CollectionSeedScanProgress.status,
+                        func.count(CollectionSeedScanProgress.progress_key),
                     )
-                    .join(FapaiSeedScanJob, FapaiSeedScanProgress.job_key == FapaiSeedScanJob.job_key)
+                    .join(CollectionSeedScanJob, CollectionSeedScanProgress.job_key == CollectionSeedScanJob.job_key)
                     .where(
-                        FapaiSeedScanJob.status != "archived",
-                        FapaiSeedScanProgress.status != "archived",
+                        CollectionSeedScanJob.status != "archived",
+                        CollectionSeedScanProgress.status != "archived",
                     )
-                    .group_by(FapaiSeedScanJob.location_code, FapaiSeedScanProgress.status)
+                    .group_by(CollectionSeedScanJob.location_code, CollectionSeedScanProgress.status)
                 ):
                     code = str(location_code or "").strip()
                     if not code:
@@ -239,14 +239,14 @@ class RepositoryObserverRegionsMixin:
                 item_status_counts_by_code = {}
                 for location_code, status, count_value in session.execute(
                     select(
-                        FapaiSeedScanJob.location_code,
-                        FapaiSeedItem.status,
-                        func.count(func.distinct(FapaiSeedItem.item_id)),
+                        CollectionSeedScanJob.location_code,
+                        CollectionSeedItem.status,
+                        func.count(func.distinct(CollectionSeedItem.item_id)),
                     )
-                    .join(FapaiSeedOccurrence, FapaiSeedOccurrence.item_id == FapaiSeedItem.item_id)
-                    .join(FapaiSeedScanJob, FapaiSeedOccurrence.job_key == FapaiSeedScanJob.job_key)
-                    .where(FapaiSeedScanJob.status != "archived")
-                    .group_by(FapaiSeedScanJob.location_code, FapaiSeedItem.status)
+                    .join(CollectionSeedOccurrence, CollectionSeedOccurrence.item_id == CollectionSeedItem.item_id)
+                    .join(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
+                    .where(CollectionSeedScanJob.status != "archived")
+                    .group_by(CollectionSeedScanJob.location_code, CollectionSeedItem.status)
                 ):
                     code = str(location_code or "").strip()
                     if not code:
@@ -331,13 +331,13 @@ class RepositoryObserverRegionsMixin:
         with self.session_factory.begin() as session:
             last_job_key: str | None = None
             while True:
-                job_query = select(FapaiSeedScanJob).where(
-                    FapaiSeedScanJob.location_code == safe_location_code
+                job_query = select(CollectionSeedScanJob).where(
+                    CollectionSeedScanJob.location_code == safe_location_code
                 )
                 if last_job_key is not None:
-                    job_query = job_query.where(FapaiSeedScanJob.job_key > last_job_key)
+                    job_query = job_query.where(CollectionSeedScanJob.job_key > last_job_key)
                 jobs = session.scalars(
-                    job_query.order_by(FapaiSeedScanJob.job_key).limit(
+                    job_query.order_by(CollectionSeedScanJob.job_key).limit(
                         SEED_SCAN_MAINTENANCE_BATCH_SIZE
                     )
                 ).all()
@@ -354,16 +354,16 @@ class RepositoryObserverRegionsMixin:
 
                 last_progress_key: str | None = None
                 while job_keys:
-                    progress_query = select(FapaiSeedScanProgress).where(
-                        FapaiSeedScanProgress.job_key.in_(job_keys)
+                    progress_query = select(CollectionSeedScanProgress).where(
+                        CollectionSeedScanProgress.job_key.in_(job_keys)
                     )
                     if last_progress_key is not None:
                         progress_query = progress_query.where(
-                            FapaiSeedScanProgress.progress_key > last_progress_key
+                            CollectionSeedScanProgress.progress_key > last_progress_key
                         )
                     progress_rows = session.scalars(
                         progress_query.order_by(
-                            FapaiSeedScanProgress.progress_key
+                            CollectionSeedScanProgress.progress_key
                         ).limit(SEED_SCAN_MAINTENANCE_BATCH_SIZE)
                     ).all()
                     if not progress_rows:

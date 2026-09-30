@@ -12,10 +12,10 @@ from src.collection.seed_list_parser import normalize_source_item_id
 from src.collection.seed_scan_policy import GenericSeedScanPolicy
 
 from .models import (
-    FapaiAnalysisRun,
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
+    CollectionAnalysisRun,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
     PropertyIngestEvent,
     PropertyListing,
 )
@@ -48,8 +48,8 @@ def occurrence_key(
 
 
 def _occurrence_identity(
-    occurrence: FapaiSeedOccurrence,
-    job: FapaiSeedScanJob | None,
+    occurrence: CollectionSeedOccurrence,
+    job: CollectionSeedScanJob | None,
 ) -> tuple[tuple[str, str] | None, list[str]]:
     raw = occurrence.raw_item if isinstance(occurrence.raw_item, Mapping) else {}
     raw_platform = _text(raw.get("source_platform"))
@@ -68,7 +68,7 @@ def _occurrence_identity(
     return (raw_platform, normalize_source_item_id(raw_source_id)), []
 
 
-def _has_detail_artifacts(row: FapaiSeedItem) -> bool:
+def _has_detail_artifacts(row: CollectionSeedItem) -> bool:
     payload = row.source_payload if isinstance(row.source_payload, Mapping) else {}
     return bool(
         row.final_json_path
@@ -81,8 +81,8 @@ def _downstream_counts(session: Session, item_id: str) -> dict[str, int]:
     return {
         "analysis_runs": int(
             session.scalar(
-                select(func.count()).select_from(FapaiAnalysisRun).where(
-                    FapaiAnalysisRun.item_id == item_id
+                select(func.count()).select_from(CollectionAnalysisRun).where(
+                    CollectionAnalysisRun.item_id == item_id
                 )
             )
             or 0
@@ -117,23 +117,23 @@ def _report_fingerprint(report: Mapping[str, Any]) -> str:
 
 
 def audit_seed_item_collision(session: Session, item_id: str) -> dict[str, Any]:
-    row = session.get(FapaiSeedItem, str(item_id))
+    row = session.get(CollectionSeedItem, str(item_id))
     if row is None:
         raise ValueError(f"seed item not found: {item_id}")
     occurrences = session.scalars(
-        select(FapaiSeedOccurrence)
-        .where(FapaiSeedOccurrence.item_id == row.item_id)
-        .order_by(FapaiSeedOccurrence.id)
+        select(CollectionSeedOccurrence)
+        .where(CollectionSeedOccurrence.item_id == row.item_id)
+        .order_by(CollectionSeedOccurrence.id)
     ).all()
     job_keys = sorted({occurrence.job_key for occurrence in occurrences})
     jobs = {
         job.job_key: job
         for job in session.scalars(
-            select(FapaiSeedScanJob).where(FapaiSeedScanJob.job_key.in_(job_keys))
+            select(CollectionSeedScanJob).where(CollectionSeedScanJob.job_key.in_(job_keys))
         ).all()
     } if job_keys else {}
 
-    grouped: dict[tuple[str, str], list[FapaiSeedOccurrence]] = defaultdict(list)
+    grouped: dict[tuple[str, str], list[CollectionSeedOccurrence]] = defaultdict(list)
     issues: list[str] = []
     for occurrence in occurrences:
         if occurrence.rank is None:
@@ -202,14 +202,14 @@ def audit_seed_item_collision(session: Session, item_id: str) -> dict[str, Any]:
             decision = "manual_review"
         for partition in partitions:
             target_id = partition["target_item_id"]
-            if target_id != row.item_id and session.get(FapaiSeedItem, target_id) is not None:
+            if target_id != row.item_id and session.get(CollectionSeedItem, target_id) is not None:
                 issues.append(f"target_seed_item_exists:{target_id}")
                 decision = "manual_review"
             for move in partition["occurrence_moves"]:
                 existing_key = session.scalars(
-                    select(FapaiSeedOccurrence.id).where(
-                        FapaiSeedOccurrence.occurrence_key == move["new_occurrence_key"],
-                        FapaiSeedOccurrence.id != move["occurrence_id"],
+                    select(CollectionSeedOccurrence.id).where(
+                        CollectionSeedOccurrence.occurrence_key == move["new_occurrence_key"],
+                        CollectionSeedOccurrence.id != move["occurrence_id"],
                     )
                 ).first()
                 if existing_key is not None:
@@ -239,10 +239,10 @@ def audit_seed_item_collision(session: Session, item_id: str) -> dict[str, Any]:
 def collision_candidate_item_ids(session: Session) -> list[str]:
     return list(
         session.scalars(
-            select(FapaiSeedOccurrence.item_id)
-            .group_by(FapaiSeedOccurrence.item_id)
-            .having(func.count(FapaiSeedOccurrence.id) > 1)
-            .order_by(FapaiSeedOccurrence.item_id)
+            select(CollectionSeedOccurrence.item_id)
+            .group_by(CollectionSeedOccurrence.item_id)
+            .having(func.count(CollectionSeedOccurrence.id) > 1)
+            .order_by(CollectionSeedOccurrence.item_id)
         )
     )
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.collection.seed_scan_policy import SeedScanPolicy, resolve_seed_item_policy
 
-from .models import FapaiSeedScanJob, FapaiSeedScanProgress
+from .models import CollectionSeedScanJob, CollectionSeedScanProgress
 from .repository_context import _normalized_seed_text, _utc_now
 from .seed_scan_job_status import apply_job_status, refresh_job_statuses
 
@@ -78,8 +78,8 @@ class RepositorySeedScanJobsMixin:
 
     def _seed_scan_progress_payload(
         self,
-        row: FapaiSeedScanProgress,
-        job: FapaiSeedScanJob,
+        row: CollectionSeedScanProgress,
+        job: CollectionSeedScanJob,
         policy: SeedScanPolicy | None = None,
     ) -> Dict[str, Any]:
         active_policy = policy or self.adapter.seed_scan_policy
@@ -119,7 +119,7 @@ class RepositorySeedScanJobsMixin:
 
     def _seed_scan_scope_order_key(
         self,
-        job: FapaiSeedScanJob | None,
+        job: CollectionSeedScanJob | None,
         policy: SeedScanPolicy | None = None,
     ) -> tuple[Any, ...]:
         if job is None:
@@ -139,13 +139,13 @@ class RepositorySeedScanJobsMixin:
         self, session: Session, job_key: str, now: datetime | None = None
     ) -> None:
         now = now or _utc_now()
-        job = session.get(FapaiSeedScanJob, job_key)
+        job = session.get(CollectionSeedScanJob, job_key)
         if job is None:
             return
         statuses = set(
             session.scalars(
-                select(FapaiSeedScanProgress.status)
-                .where(FapaiSeedScanProgress.job_key == job_key)
+                select(CollectionSeedScanProgress.status)
+                .where(CollectionSeedScanProgress.job_key == job_key)
                 .distinct()
             )
         )
@@ -176,7 +176,7 @@ class RepositorySeedScanJobsMixin:
         now = _utc_now()
         progress_created = 0
 
-        def apply_job_fields(row: FapaiSeedScanJob) -> None:
+        def apply_job_fields(row: CollectionSeedScanJob) -> None:
             row.province = normalized_job.province
             row.city = normalized_job.city
             row.district = normalized_job.district
@@ -189,9 +189,9 @@ class RepositorySeedScanJobsMixin:
             row.metadata_json = normalized_job.metadata
 
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedScanJob, job_key)
+            row = session.get(CollectionSeedScanJob, job_key)
             if row is None:
-                row = FapaiSeedScanJob(job_key=job_key)
+                row = CollectionSeedScanJob(job_key=job_key)
                 apply_job_fields(row)
                 try:
                     with session.begin_nested():
@@ -200,7 +200,7 @@ class RepositorySeedScanJobsMixin:
                     created = True
                 except IntegrityError:
                     created = False
-                    row = session.get(FapaiSeedScanJob, job_key)
+                    row = session.get(CollectionSeedScanJob, job_key)
                     if row is None:
                         raise
             else:
@@ -216,9 +216,9 @@ class RepositorySeedScanJobsMixin:
                 )
                 st_param = _normalized_seed_text(sort_spec.get("st_param")) or sort_key
                 progress_key = self._seed_scan_progress_key(job_key, sort_key)
-                progress = session.get(FapaiSeedScanProgress, progress_key)
+                progress = session.get(CollectionSeedScanProgress, progress_key)
                 if progress is None:
-                    progress = FapaiSeedScanProgress(
+                    progress = CollectionSeedScanProgress(
                         progress_key=progress_key,
                         job_key=job_key,
                         sort_key=sort_key,
@@ -233,12 +233,12 @@ class RepositorySeedScanJobsMixin:
                             session.flush()
                         progress_created += 1
                     except IntegrityError:
-                        progress = session.get(FapaiSeedScanProgress, progress_key)
+                        progress = session.get(CollectionSeedScanProgress, progress_key)
                         if progress is None:
                             progress = session.scalar(
-                                select(FapaiSeedScanProgress).where(
-                                    FapaiSeedScanProgress.job_key == job_key,
-                                    FapaiSeedScanProgress.sort_key == sort_key,
+                                select(CollectionSeedScanProgress).where(
+                                    CollectionSeedScanProgress.job_key == job_key,
+                                    CollectionSeedScanProgress.sort_key == sort_key,
                                 )
                             )
                         if progress is None:
@@ -294,13 +294,13 @@ class RepositorySeedScanJobsMixin:
         with self.session_factory.begin() as session:
             last_job_key: str | None = None
             while True:
-                job_query = select(FapaiSeedScanJob).where(
-                    not_(FapaiSeedScanJob.job_key.in_(normalized_keys))
+                job_query = select(CollectionSeedScanJob).where(
+                    not_(CollectionSeedScanJob.job_key.in_(normalized_keys))
                 )
                 if last_job_key is not None:
-                    job_query = job_query.where(FapaiSeedScanJob.job_key > last_job_key)
+                    job_query = job_query.where(CollectionSeedScanJob.job_key > last_job_key)
                 stale_jobs = session.scalars(
-                    job_query.order_by(FapaiSeedScanJob.job_key).limit(
+                    job_query.order_by(CollectionSeedScanJob.job_key).limit(
                         SEED_SCAN_MAINTENANCE_BATCH_SIZE
                     )
                 ).all()
@@ -324,16 +324,16 @@ class RepositorySeedScanJobsMixin:
 
                 last_progress_key: str | None = None
                 while stale_job_keys:
-                    progress_query = select(FapaiSeedScanProgress).where(
-                        FapaiSeedScanProgress.job_key.in_(stale_job_keys)
+                    progress_query = select(CollectionSeedScanProgress).where(
+                        CollectionSeedScanProgress.job_key.in_(stale_job_keys)
                     )
                     if last_progress_key is not None:
                         progress_query = progress_query.where(
-                            FapaiSeedScanProgress.progress_key > last_progress_key
+                            CollectionSeedScanProgress.progress_key > last_progress_key
                         )
                     stale_progress_rows = session.scalars(
                         progress_query.order_by(
-                            FapaiSeedScanProgress.progress_key
+                            CollectionSeedScanProgress.progress_key
                         ).limit(SEED_SCAN_MAINTENANCE_BATCH_SIZE)
                     ).all()
                     if not stale_progress_rows:
@@ -370,12 +370,12 @@ class RepositorySeedScanJobsMixin:
         with self.session_factory.begin() as session:
             while True:
                 rows = session.scalars(
-                    select(FapaiSeedScanProgress)
+                    select(CollectionSeedScanProgress)
                     .where(
-                        FapaiSeedScanProgress.status == "in_progress",
-                        FapaiSeedScanProgress.leased_by == normalized_worker_id,
+                        CollectionSeedScanProgress.status == "in_progress",
+                        CollectionSeedScanProgress.leased_by == normalized_worker_id,
                     )
-                    .order_by(FapaiSeedScanProgress.progress_key)
+                    .order_by(CollectionSeedScanProgress.progress_key)
                     .limit(SEED_SCAN_MAINTENANCE_BATCH_SIZE)
                 ).all()
                 if not rows:

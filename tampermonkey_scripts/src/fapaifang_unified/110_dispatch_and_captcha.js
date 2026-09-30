@@ -12,7 +12,7 @@
     }
     // --- TAB Identity ---
     const TAB_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    console.log(`[Fapaifang] Init Tab ID: ${TAB_ID}`);
+    console.log(`[Crow] Init Tab ID: ${TAB_ID}`);
 
     // --- Captcha Detector ---
     function initCaptchaDetector() {

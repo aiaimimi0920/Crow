@@ -1,4 +1,4 @@
-# FapaiFang 运维观察台桌面版
+# Crow 运维观察台桌面版
 
 > Data-root compatibility: `CrowData` is the new-install default. Existing populated
 > `FPFData` stays in place and explicit paths keep priority; do not move or copy data.

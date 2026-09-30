@@ -73,5 +73,5 @@ pub fn run() {
             settings_bridge::desktop_settings_action
         ])
         .run(tauri::generate_context!())
-        .expect("error while running FapaiFang collector desktop application");
+        .expect("error while running Crow collector desktop application");
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default desktop capability for the FapaiFang collector observer window.",
+  "description": "Default desktop capability for the Crow collector observer window.",
   "windows": ["main"],
   "permissions": [
     "core:default",

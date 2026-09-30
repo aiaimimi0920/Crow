@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "FapaiFang 运维观察台（PC2 采集）",
+        "title": "Crow 运维观察台（PC2 采集）",
         "width": 1120,
         "height": 760,
         "decorations": false,

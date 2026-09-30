@@ -50,7 +50,7 @@ def page_html(*, dist: Path) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FapaiFang 采集观察台</title>
+  <title>Crow 采集观察台</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232459d6'/%3E%3Cpath d='M18 38h28v6H18zm4-18h20v6H22zm-4 9h28v6H18z' fill='white'/%3E%3C/svg%3E">
   <style>
     :root { color-scheme: light; --bg:#f5f7fb; --panel:#fff; --line:#d9e0ea; --text:#172033; --muted:#667085; --primary:#2459d6; --ok:#047857; --warn:#b45309; --bad:#b42318; }
@@ -98,7 +98,7 @@ def page_html(*, dist: Path) -> str:
 </head>
 <body>
   <header>
-    <h1>FapaiFang 采集观察台</h1>
+    <h1>Crow 采集观察台</h1>
     <p>只读观察采集三段流水：商品链接采集、商品详情页采集、商品详情页 AI 分析。暂不包含房价分析引擎。</p>
   </header>
   <main>

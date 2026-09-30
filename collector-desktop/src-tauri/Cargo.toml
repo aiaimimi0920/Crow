@@ -1,8 +1,8 @@
 [package]
 name = "fapaifang_collector_desktop"
 version = "0.1.0"
-description = "FapaiFang collection observer desktop application"
-authors = ["FapaiFang"]
+description = "Crow collection observer desktop application"
+authors = ["Crow"]
 license = ""
 repository = ""
 edition = "2021"

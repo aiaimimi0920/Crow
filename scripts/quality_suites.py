@@ -1,6 +1,7 @@
 """Explicit small offline suites; do not classify every legacy test as quick."""
 
 UNIT_FILES = (
+    "test_collection_model_names.py",
     "test_project_data_paths.py",
     "test_project_data_path_entrypoints.py",
     "test_detail_commit_recovery.py",

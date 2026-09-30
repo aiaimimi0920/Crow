@@ -8,7 +8,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from src.collection.seed_scan_policy import SeedScanPolicy
 
-from .models import FapaiSeedScanJob, FapaiSeedScanProgress
+from .models import CollectionSeedScanJob, CollectionSeedScanProgress
 
 CANDIDATE_BATCH_SIZE = 128
 
@@ -19,8 +19,8 @@ def seed_scan_candidates(
     *,
     parallel_sorts: bool,
     blocked_job_keys: set[str],
-) -> Iterator[tuple[FapaiSeedScanProgress, FapaiSeedScanJob]]:
-    job, progress = FapaiSeedScanJob, FapaiSeedScanProgress
+) -> Iterator[tuple[CollectionSeedScanProgress, CollectionSeedScanJob]]:
+    job, progress = CollectionSeedScanJob, CollectionSeedScanProgress
     categories = session.scalars(select(job.category).distinct()).all()
     if not categories:
         return

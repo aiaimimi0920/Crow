@@ -13,7 +13,7 @@ if __package__ in (None, ""):
 from sqlalchemy import select
 
 from src.storage.blocked_recovery import requeue_blocked_items
-from src.storage.models import FapaiSeedItem
+from src.storage.models import CollectionSeedItem
 from src.storage.repository import create_repository_from_env
 
 
@@ -36,10 +36,10 @@ def main() -> int:
     if not ids:
         with repository.session_factory() as session:
             ids = list(session.scalars(
-                select(FapaiSeedItem.item_id)
-                .where(FapaiSeedItem.status.in_(("analysis_blocked", "detail_blocked")),
-                       FapaiSeedItem.item_id > args.after_id)
-                .order_by(FapaiSeedItem.item_id)
+                select(CollectionSeedItem.item_id)
+                .where(CollectionSeedItem.status.in_(("analysis_blocked", "detail_blocked")),
+                       CollectionSeedItem.item_id > args.after_id)
+                .order_by(CollectionSeedItem.item_id)
                 .limit(args.limit)
             ))
     results = requeue_blocked_items(repository, ids, recovery_id=args.recovery_id,

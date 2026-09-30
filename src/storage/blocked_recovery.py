@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Iterable
 
 from sqlalchemy import select
 
-from .models import FapaiSeedItem, PropertyAudit, PropertyListing
+from .models import CollectionSeedItem, PropertyAudit, PropertyListing
 from .repository_context import _coerce_naive_utc, _resolve_collection_artifact_path, _utc_now
 
 if TYPE_CHECKING:
@@ -38,8 +38,8 @@ def requeue_blocked_items(
     with repository.session_factory.begin() as session:
         for item_id in ids:
             row = session.scalars(
-                select(FapaiSeedItem)
-                .where(FapaiSeedItem.item_id == item_id)
+                select(CollectionSeedItem)
+                .where(CollectionSeedItem.item_id == item_id)
                 .with_for_update(skip_locked=True)
             ).first()
             result: dict[str, object] = {"item_id": item_id, "applied": False}

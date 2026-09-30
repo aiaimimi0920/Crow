@@ -46,7 +46,7 @@ def test_collector_desktop_is_independent_tauri_application() -> None:
     assert "tauri:dev" in package_json["scripts"]
     assert "tauri:build" in package_json["scripts"]
     assert tauri_config["productName"] == "FapaiFang Collector Console"
-    assert tauri_config["app"]["windows"][0]["title"] == "FapaiFang 运维观察台（PC2 采集）"
+    assert tauri_config["app"]["windows"][0]["title"] == "Crow 运维观察台（PC2 采集）"
     assert tauri_config["build"]["frontendDist"] == "../dist"
     assert tauri_config["bundle"]["icon"] == ["icons/icon.ico"]
     assert 'name = "fapaifang_collector_desktop"' in cargo_toml
@@ -57,7 +57,7 @@ def test_collector_desktop_frontend_uses_collection_observer_api_not_browser_pag
     index_html = (APP_ROOT / "index.html").read_text(encoding="utf-8")
     main_js = _frontend_js()
 
-    assert "FapaiFang 运维观察台（PC2 采集）" in index_html
+    assert "Crow 运维观察台（PC2 采集）" in index_html
     assert "链接采集" in main_js
     assert "商品详情" in main_js
     assert "商品分析" in main_js
@@ -154,7 +154,14 @@ def test_runtime_status_card_exposes_operator_controls_and_auth_challenge_dialog
     bridge = (APP_ROOT / "src-tauri/src/auth_bridge.rs").read_text(encoding="utf-8")
     assert '"-NoProfile"' in bridge
     assert "creation_flags(0x08000000)" in bridge
-    assert "Stdio::null()" in bridge
+    assert "helper_process::run(" in bridge
+    helper = (APP_ROOT / "src-tauri/src/helper_process.rs").read_text(encoding="utf-8")
+    assert "Stdio::null()" in helper
+    assert ".stdout(Stdio::piped())" in helper
+    assert ".stderr(Stdio::piped())" in helper
+    assert "creation_flags(0x08000000)" in helper
+    assert "decode_result(&output.stdout)" in bridge
+    assert "CROW_AUTH_RESULT=" in bridge
     assert "desktop-auth-challenge.ps1" in bridge
     assert "spawn_blocking" in bridge
     assert "CROW_AUTH_RESULT=" in bridge
@@ -399,7 +406,8 @@ def test_collector_desktop_readme_documents_api_dependency_and_commands() -> Non
     readme = (APP_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "Rust + Tauri" in readme
-    assert "http://192.168.15.200:8001" in readme
+    assert "FAPAI_COLLECTOR_API_BASE" in readme
+    assert "crow-desktop.runtime.json" in readme
     assert "npm run tauri:dev" in readme
     assert "npm run tauri:build" in readme
     assert "AI 再分析" in readme

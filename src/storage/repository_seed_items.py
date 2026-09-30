@@ -9,10 +9,10 @@ from src.collection.seed_list_parser import normalize_source_item_id
 from src.collection.seed_scan_policy import SeedScanPolicy
 
 from .models import (
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
-    FapaiSeedScanProgress,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
+    CollectionSeedScanProgress,
 )
 from .repository_context import _normalized_seed_text, _utc_now
 
@@ -54,8 +54,8 @@ class RepositorySeedItemsMixin:
             raise ValueError("seed source platform must be at most 32 characters")
         with self.session_factory.begin() as session:
             if policy is not None or active_policy.requires_lease_owner:
-                job = session.get(FapaiSeedScanJob, job_key)
-                progress = session.get(FapaiSeedScanProgress, progress_key)
+                job = session.get(CollectionSeedScanJob, job_key)
+                progress = session.get(CollectionSeedScanProgress, progress_key)
                 if (
                     job is None
                     or progress is None
@@ -105,13 +105,13 @@ class RepositorySeedItemsMixin:
                 item_payload["source_platform"] = source_platform
                 item_payload.setdefault("url", url)
                 item_payload.setdefault("source_url", url)
-                seed_item = session.get(FapaiSeedItem, item_id, with_for_update=True)
+                seed_item = session.get(CollectionSeedItem, item_id, with_for_update=True)
                 if seed_item is None and item_id != source_item_id:
                     seed_item = session.scalars(
-                        select(FapaiSeedItem)
+                        select(CollectionSeedItem)
                         .where(
-                            FapaiSeedItem.source_item_id == source_item_id,
-                            FapaiSeedItem.source_platform == source_platform,
+                            CollectionSeedItem.source_item_id == source_item_id,
+                            CollectionSeedItem.source_platform == source_platform,
                         )
                         .with_for_update()
                     ).first()
@@ -133,19 +133,19 @@ class RepositorySeedItemsMixin:
                         "detail_attempt_count": 0,
                     }
                     if dialect_name == "postgresql":
-                        insert_stmt = dialect_insert(FapaiSeedItem).values(
+                        insert_stmt = dialect_insert(CollectionSeedItem).values(
                             **insert_values
                         )
                         insert_stmt = insert_stmt.on_conflict_do_nothing(
-                            index_elements=[FapaiSeedItem.item_id]
+                            index_elements=[CollectionSeedItem.item_id]
                         )
-                        insert_stmt = insert_stmt.returning(FapaiSeedItem.item_id)
+                        insert_stmt = insert_stmt.returning(CollectionSeedItem.item_id)
                     elif dialect_name == "sqlite":
-                        insert_stmt = dialect_insert(FapaiSeedItem).values(
+                        insert_stmt = dialect_insert(CollectionSeedItem).values(
                             **insert_values
                         )
                         insert_stmt = insert_stmt.on_conflict_do_nothing(
-                            index_elements=[FapaiSeedItem.item_id]
+                            index_elements=[CollectionSeedItem.item_id]
                         )
                     else:
                         insert_stmt = None
@@ -164,13 +164,13 @@ class RepositorySeedItemsMixin:
                     else:
                         try:
                             with session.begin_nested():
-                                session.add(FapaiSeedItem(**insert_values))
+                                session.add(CollectionSeedItem(**insert_values))
                                 session.flush()
                             new_items += 1
                         except IntegrityError:
                             existing_items += 1
                     seed_item = session.get(
-                        FapaiSeedItem, item_id, with_for_update=True
+                        CollectionSeedItem, item_id, with_for_update=True
                     )
                     if seed_item is None:
                         continue
@@ -224,33 +224,33 @@ class RepositorySeedItemsMixin:
                     "seen_at": now,
                 }
                 if dialect_name == "postgresql":
-                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(
+                    occurrence_stmt = dialect_insert(CollectionSeedOccurrence).values(
                         **occurrence_values
                     )
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
-                        index_elements=[FapaiSeedOccurrence.occurrence_key]
-                    ).returning(FapaiSeedOccurrence.id)
+                        index_elements=[CollectionSeedOccurrence.occurrence_key]
+                    ).returning(CollectionSeedOccurrence.id)
                     occurrence_result = session.execute(occurrence_stmt)
                     if occurrence_result.scalar_one_or_none() is not None:
                         new_occurrences += 1
                 elif dialect_name == "sqlite":
-                    occurrence_stmt = dialect_insert(FapaiSeedOccurrence).values(
+                    occurrence_stmt = dialect_insert(CollectionSeedOccurrence).values(
                         **occurrence_values
                     )
                     occurrence_stmt = occurrence_stmt.on_conflict_do_nothing(
-                        index_elements=[FapaiSeedOccurrence.occurrence_key]
+                        index_elements=[CollectionSeedOccurrence.occurrence_key]
                     )
                     occurrence_result = session.execute(occurrence_stmt)
                     if int(occurrence_result.rowcount or 0) > 0:
                         new_occurrences += 1
                 else:
                     occurrence = session.scalars(
-                        select(FapaiSeedOccurrence).where(
-                            FapaiSeedOccurrence.occurrence_key == occurrence_key
+                        select(CollectionSeedOccurrence).where(
+                            CollectionSeedOccurrence.occurrence_key == occurrence_key
                         )
                     ).first()
                     if occurrence is None:
-                        occurrence = FapaiSeedOccurrence(**occurrence_values)
+                        occurrence = CollectionSeedOccurrence(**occurrence_values)
                         session.add(occurrence)
                         new_occurrences += 1
         return {

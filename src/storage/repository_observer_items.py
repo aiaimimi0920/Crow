@@ -7,10 +7,10 @@ from typing import Any, Dict
 from sqlalchemy import func, select
 
 from .models import (
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
-    FapaiSeedScanProgress,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
+    CollectionSeedScanProgress,
 )
 from .repository_context import _resolve_collection_artifact_path, _utc_now
 
@@ -42,29 +42,29 @@ class RepositoryObserverItemsMixin:
         self.initialize()
         clauses = self._collection_observer_stage_clauses(normalized_stage)
         with self.session_factory() as session:
-            total_stmt = select(func.count()).select_from(FapaiSeedItem)
-            list_stmt = select(FapaiSeedItem)
+            total_stmt = select(func.count()).select_from(CollectionSeedItem)
+            list_stmt = select(CollectionSeedItem)
             for clause in clauses:
                 total_stmt = total_stmt.where(clause)
                 list_stmt = list_stmt.where(clause)
             if safe_location_code:
                 region_item_ids = (
-                    select(FapaiSeedOccurrence.item_id)
-                    .join(FapaiSeedScanJob, FapaiSeedOccurrence.job_key == FapaiSeedScanJob.job_key)
+                    select(CollectionSeedOccurrence.item_id)
+                    .join(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
                     .where(
-                        FapaiSeedScanJob.location_code == safe_location_code,
-                        FapaiSeedScanJob.status != "archived",
+                        CollectionSeedScanJob.location_code == safe_location_code,
+                        CollectionSeedScanJob.status != "archived",
                     )
                     .distinct()
                 )
-                total_stmt = total_stmt.where(FapaiSeedItem.item_id.in_(region_item_ids))
-                list_stmt = list_stmt.where(FapaiSeedItem.item_id.in_(region_item_ids))
+                total_stmt = total_stmt.where(CollectionSeedItem.item_id.in_(region_item_ids))
+                list_stmt = list_stmt.where(CollectionSeedItem.item_id.in_(region_item_ids))
             total = int(session.scalar(total_stmt) or 0)
             rows = session.scalars(
                 list_stmt.order_by(
-                    FapaiSeedItem.last_seen_at.desc(),
-                    FapaiSeedItem.first_seen_at.desc(),
-                    FapaiSeedItem.item_id.asc(),
+                    CollectionSeedItem.last_seen_at.desc(),
+                    CollectionSeedItem.first_seen_at.desc(),
+                    CollectionSeedItem.item_id.asc(),
                 )
                 .offset(safe_offset)
                 .limit(safe_limit)
@@ -121,7 +121,7 @@ class RepositoryObserverItemsMixin:
             return {"found": False, "item_id": safe_item_id, "item": None, "occurrences": [], "artifacts": {}}
         self.initialize()
         with self.session_factory() as session:
-            row = session.get(FapaiSeedItem, safe_item_id)
+            row = session.get(CollectionSeedItem, safe_item_id)
             if row is None:
                 return {"found": False, "item_id": safe_item_id, "item": None, "occurrences": [], "artifacts": {}}
             item_payload = self._seed_item_observer_payload(session, row)
@@ -141,9 +141,9 @@ class RepositoryObserverItemsMixin:
                     "seen_at": self._fmt_dt(occurrence.seen_at),
                 }
                 for occurrence in session.scalars(
-                    select(FapaiSeedOccurrence)
-                    .where(FapaiSeedOccurrence.item_id == safe_item_id)
-                    .order_by(FapaiSeedOccurrence.seen_at.desc(), FapaiSeedOccurrence.id.desc())
+                    select(CollectionSeedOccurrence)
+                    .where(CollectionSeedOccurrence.item_id == safe_item_id)
+                    .order_by(CollectionSeedOccurrence.seen_at.desc(), CollectionSeedOccurrence.id.desc())
                     .limit(100)
                 ).all()
             ]
@@ -174,7 +174,7 @@ class RepositoryObserverItemsMixin:
         self.initialize()
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedItem, safe_item_id)
+            row = session.get(CollectionSeedItem, safe_item_id)
             if row is None:
                 return {"ok": False, "item_id": safe_item_id, "error": "item not found"}
             artifacts = self._seed_artifacts_from_row(row)
@@ -271,22 +271,22 @@ class RepositoryObserverItemsMixin:
         self.initialize()
         with self.session_factory() as session:
             for status, count_value in session.execute(
-                select(FapaiSeedScanJob.status, func.count(FapaiSeedScanJob.job_key)).group_by(FapaiSeedScanJob.status)
+                select(CollectionSeedScanJob.status, func.count(CollectionSeedScanJob.job_key)).group_by(CollectionSeedScanJob.status)
             ):
                 key = f"seed_scan_job_{status}"
                 if key in counts:
                     counts[key] = int(count_value or 0)
             for status, count_value in session.execute(
-                select(FapaiSeedScanProgress.status, func.count(FapaiSeedScanProgress.progress_key)).group_by(FapaiSeedScanProgress.status)
+                select(CollectionSeedScanProgress.status, func.count(CollectionSeedScanProgress.progress_key)).group_by(CollectionSeedScanProgress.status)
             ):
                 key = f"seed_scan_progress_{status}"
                 if key in counts:
                     counts[key] = int(count_value or 0)
             for status, count_value in session.execute(
-                select(FapaiSeedItem.status, func.count(FapaiSeedItem.item_id)).group_by(FapaiSeedItem.status)
+                select(CollectionSeedItem.status, func.count(CollectionSeedItem.item_id)).group_by(CollectionSeedItem.status)
             ):
                 key = f"seed_item_{status}"
                 if key in counts:
                     counts[key] = int(count_value or 0)
-            counts["seed_occurrence_total"] = int(session.scalar(select(func.count()).select_from(FapaiSeedOccurrence)) or 0)
+            counts["seed_occurrence_total"] = int(session.scalar(select(func.count()).select_from(CollectionSeedOccurrence)) or 0)
         return counts
