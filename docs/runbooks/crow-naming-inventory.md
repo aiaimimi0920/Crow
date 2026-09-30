@@ -172,6 +172,15 @@ script bodies are not executed. Windows CI covers copied desktop bundles and
 temporary installation-configuration fixtures. Existing static assertions now
 look for canonical getter calls while retaining protocol/security assertions.
 
-Remaining scope includes env-file writers, Compose templates, independent ops
+The eighth cohort adds a read-only Compose environment adapter and completes the
+Docker entrypoint's injected mapping reader. It delegates env-file parsing to
+Docker's config-only JSON renderer, validates logical alias groups before an
+operational command, and passes matching legacy inputs to existing templates.
+The templates' volume/service/image names remain compatibility identities, not
+rename targets. The required Linux CI integration uses synthetic env files and
+only `docker compose config`; local Docker absence is recorded as a skip.
+See [Crow Compose compatibility](crow-compose-compatibility.md).
+
+Remaining scope includes integrating env-file writers, Compose templates, independent ops
 bundles, embedded remote helper interfaces, HTTP headers and safe build/CLI names;
 none of the direct-reader counts imply these remaining boundaries are finished.

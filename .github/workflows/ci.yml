@@ -182,6 +182,10 @@ jobs:
       - run: python -m ruff check --select I,F401,F403,F405,F821,E9,E722,F63,F7,B tools/test/test_search_claim_streaming.py
       - run: python -m ruff format --check tools/test/test_search_claim_streaming.py
       - run: python -m mypy --strict --follow-imports skip src/captcha_budget.py src/llm_evidence_prompt.py scripts/quality_suites.py src/server_routes.py src/storage/seed_scan_candidates.py
+      - run: docker compose version
+      - run: python -m pytest -q tools/test/test_compose_cli_compatibility.py
+        env:
+          CROW_TEST_COMPOSE: "1"
       - run: python scripts/run_quality_tests.py --suite fast
       - run: python scripts/run_quality_tests.py --suite security
       - run: python scripts/run_quality_tests.py --suite captcha
@@ -225,7 +229,7 @@ jobs:
           python-version: '3.10'
       - run: python -m pip install --require-hashes -r requirements-dev.lock
         working-directory: .
-      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py tools/test/test_project_environment_injected.py tools/test/test_desktop_environment_aliases.py tools/test/test_powershell_environment_aliases.py tools/test/test_project_environment_compose.py tools/test/test_desktop_api_configuration.py
+      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py tools/test/test_project_environment_injected.py tools/test/test_desktop_environment_aliases.py tools/test/test_powershell_environment_aliases.py tools/test/test_project_environment_compose.py tools/test/test_desktop_api_configuration.py tools/test/test_compose_environment.py tools/test/test_compose_arguments.py
         working-directory: .
   desktop-smoke:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

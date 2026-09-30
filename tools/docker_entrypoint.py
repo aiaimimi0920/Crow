@@ -13,6 +13,11 @@ from sqlalchemy.exc import SAWarning
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.project_environment import getenv as project_getenv
+
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 CAPTCHA_SOLVER_ENV_KEYS = (
     "FAPAI_CAPTCHA_SOLVER_ENABLED",
@@ -32,8 +37,8 @@ def _normalize_node_id(value: str | None) -> str | None:
 
 def _node_scoped_output_dir(env: Mapping[str, str], output_dir: str | None, default: str) -> str:
     raw_output_dir = str(output_dir or default)
-    node_id = _normalize_node_id(env_text(env, "FAPAI_NODE_ID"))
-    if not node_id or env_flag(env, "FAPAI_DISABLE_NODE_OUTPUT_SCOPE", False):
+    node_id = _normalize_node_id(env_text(env, "CROW_NODE_ID"))
+    if not node_id or env_flag(env, "CROW_DISABLE_NODE_OUTPUT_SCOPE", False):
         return raw_output_dir
 
     normalized = raw_output_dir.replace("\\", "/").rstrip("/")
@@ -53,10 +58,10 @@ def _node_scoped_worker_id(
     default_without_node: str | None = None,
 ) -> str | None:
     raw_worker_id = env_text({"value": worker_id or ""}, "value", default_without_node)
-    node_id = _normalize_node_id(env_text(env, "FAPAI_NODE_ID"))
+    node_id = _normalize_node_id(env_text(env, "CROW_NODE_ID"))
     if not raw_worker_id:
         return None
-    if not node_id or env_flag(env, "FAPAI_DISABLE_NODE_WORKER_SCOPE", False):
+    if not node_id or env_flag(env, "CROW_DISABLE_NODE_WORKER_SCOPE", False):
         return raw_worker_id
     if raw_worker_id == node_id or raw_worker_id.startswith(f"{node_id}-"):
         return raw_worker_id
@@ -64,7 +69,7 @@ def _node_scoped_worker_id(
 
 
 def env_text(env: Mapping[str, str], key: str, default: str | None = None) -> str | None:
-    value = env.get(key)
+    value = project_getenv(key, reader=env.get)
     if value is None:
         return default
     normalized = str(value).strip()
@@ -92,9 +97,9 @@ def append_option(command: list[str], option: str, value: str | None) -> None:
 
 
 def build_live_command(env: Mapping[str, str]) -> list[str]:
-    run_mode = (env_text(env, "FAPAI_RUN_MODE", "live-loop") or "live-loop").lower()
-    output_dir = _node_scoped_output_dir(env, env_text(env, "FAPAI_OUTPUT_DIR", "/data/output/live_batch_smoke"), "/data/output/live_batch_smoke")
-    resume_state = env_text(env, "FAPAI_RESUME_STATE", f"{output_dir}/resume_state.json")
+    run_mode = (env_text(env, "CROW_RUN_MODE", "live-loop") or "live-loop").lower()
+    output_dir = _node_scoped_output_dir(env, env_text(env, "CROW_OUTPUT_DIR", "/data/output/live_batch_smoke"), "/data/output/live_batch_smoke")
+    resume_state = env_text(env, "CROW_RESUME_STATE", f"{output_dir}/resume_state.json")
 
     command = [
         sys.executable,
@@ -102,58 +107,58 @@ def build_live_command(env: Mapping[str, str]) -> list[str]:
         "--output-dir",
         str(output_dir),
         "--cdp-endpoint",
-        env_text(env, "FAPAI_CDP_ENDPOINT", "http://host.docker.internal:9223") or "http://host.docker.internal:9223",
+        env_text(env, "CROW_CDP_ENDPOINT", "http://host.docker.internal:9223") or "http://host.docker.internal:9223",
         "--url",
-        env_text(env, "FAPAI_TARGET_URL", "https://sf.taobao.com/list/50025969__2.htm?location_code=110101&st_param=2&auction_start_seg=-1&page=1")
+        env_text(env, "CROW_TARGET_URL", "https://sf.taobao.com/list/50025969__2.htm?location_code=110101&st_param=2&auction_start_seg=-1&page=1")
         or "",
         "--target-success",
-        env_text(env, "FAPAI_TARGET_SUCCESS", "5") or "5",
+        env_text(env, "CROW_TARGET_SUCCESS", "5") or "5",
         "--max-attempts",
-        env_text(env, "FAPAI_MAX_ATTEMPTS", "50") or "50",
+        env_text(env, "CROW_MAX_ATTEMPTS", "50") or "50",
     ]
 
-    if env_flag(env, "FAPAI_ENABLE_RISK", False):
+    if env_flag(env, "CROW_ENABLE_RISK", False):
         command.append("--risk")
-    live_raw_only = env_flag(env, "LIVE_BATCH_RAW_ONLY", env_flag(env, "FAPAI_DETAIL_RAW_ONLY", False))
+    live_raw_only = env_flag(env, "LIVE_BATCH_RAW_ONLY", env_flag(env, "CROW_DETAIL_RAW_ONLY", False))
     if live_raw_only:
         command.append("--raw-only")
-    if env_flag(env, "FAPAI_DISABLE_RESUME", False):
+    if env_flag(env, "CROW_DISABLE_RESUME", False):
         command.append("--no-resume")
     else:
         append_option(command, "--resume-state", resume_state)
 
-    append_option(command, "--list-st-params", env_text(env, "FAPAI_LIST_ST_PARAMS", "2,1,0,3,4,5"))
-    append_option(command, "--list-location-codes", env_text(env, "FAPAI_LIST_LOCATION_CODES"))
-    append_option(command, "--list-categories", env_text(env, "FAPAI_LIST_CATEGORIES"))
-    append_option(command, "--list-max-pages", env_text(env, "FAPAI_LIST_MAX_PAGES", "83"))
-    if not env_flag(env, "FAPAI_LIST_STOP_ON_EMPTY", True):
+    append_option(command, "--list-st-params", env_text(env, "CROW_LIST_ST_PARAMS", "2,1,0,3,4,5"))
+    append_option(command, "--list-location-codes", env_text(env, "CROW_LIST_LOCATION_CODES"))
+    append_option(command, "--list-categories", env_text(env, "CROW_LIST_CATEGORIES"))
+    append_option(command, "--list-max-pages", env_text(env, "CROW_LIST_MAX_PAGES", "83"))
+    if not env_flag(env, "CROW_LIST_STOP_ON_EMPTY", True):
         command.append("--no-list-stop-on-empty")
-    if env_flag(env, "FAPAI_LLM_PREFLIGHT", True) and not live_raw_only:
+    if env_flag(env, "CROW_LLM_PREFLIGHT", True) and not live_raw_only:
         command.append("--llm-preflight")
-        append_option(command, "--llm-preflight-timeout-seconds", env_text(env, "FAPAI_LLM_PREFLIGHT_TIMEOUT_SECONDS", "15"))
+        append_option(command, "--llm-preflight-timeout-seconds", env_text(env, "CROW_LLM_PREFLIGHT_TIMEOUT_SECONDS", "15"))
 
     if run_mode == "live-loop":
         command.append("--loop")
-        append_option(command, "--loop-interval-seconds", env_text(env, "FAPAI_LOOP_INTERVAL_SECONDS", "300"))
-        append_option(command, "--max-runs", env_text(env, "FAPAI_MAX_RUNS"))
+        append_option(command, "--loop-interval-seconds", env_text(env, "CROW_LOOP_INTERVAL_SECONDS", "300"))
+        append_option(command, "--max-runs", env_text(env, "CROW_MAX_RUNS"))
     return command
 
 
 def build_api_command(env: Mapping[str, str]) -> list[str]:
-    cert_file = env_text(env, "FAPAI_API_TLS_CERT_FILE")
-    key_file = env_text(env, "FAPAI_API_TLS_KEY_FILE")
+    cert_file = env_text(env, "CROW_API_TLS_CERT_FILE")
+    key_file = env_text(env, "CROW_API_TLS_KEY_FILE")
     if bool(cert_file) != bool(key_file):
         raise ValueError("Collection API TLS requires both certificate and key files")
     command = [
         sys.executable,
         "tools/run_isolated_collection_api.py",
         "--port",
-        env_text(env, "FAPAI_API_PORT", "8001") or "8001",
+        env_text(env, "CROW_API_PORT", "8001") or "8001",
     ]
-    append_option(command, "--db-url", env_text(env, "FAPAI_DB_URL"))
+    append_option(command, "--db-url", env_text(env, "CROW_DB_URL"))
     append_option(command, "--tls-cert-file", cert_file)
     append_option(command, "--tls-key-file", key_file)
-    raw_codes = env_text(env, "FAPAI_SEED_LOCATION_CODES")
+    raw_codes = env_text(env, "CROW_SEED_LOCATION_CODES")
     if raw_codes:
         for code in raw_codes.replace(";", ",").split(","):
             normalized = code.strip()
@@ -163,136 +168,136 @@ def build_api_command(env: Mapping[str, str]) -> list[str]:
 
 
 def build_area_followup_command(env: Mapping[str, str]) -> list[str]:
-    output_dir = _node_scoped_output_dir(env, env_text(env, "FAPAI_OUTPUT_DIR", "/data/output/live_batch_smoke"), "/data/output/live_batch_smoke")
+    output_dir = _node_scoped_output_dir(env, env_text(env, "CROW_OUTPUT_DIR", "/data/output/live_batch_smoke"), "/data/output/live_batch_smoke")
     command = [
         sys.executable,
         "tools/area_followup_runner.py",
         "--queue",
-        env_text(env, "FAPAI_AREA_QUEUE", f"{output_dir}/area_followup_queue.json") or "",
+        env_text(env, "CROW_AREA_QUEUE", f"{output_dir}/area_followup_queue.json") or "",
         "--output-dir",
         str(output_dir),
     ]
-    append_option(command, "--cdp-endpoint", env_text(env, "FAPAI_CDP_ENDPOINT"))
-    if env_flag(env, "FAPAI_AREA_APPLY_PATCHES", False):
+    append_option(command, "--cdp-endpoint", env_text(env, "CROW_CDP_ENDPOINT"))
+    if env_flag(env, "CROW_AREA_APPLY_PATCHES", False):
         command.append("--apply-patches")
-    append_option(command, "--push-area-result", env_text(env, "FAPAI_AREA_PUSH_URL"))
+    append_option(command, "--push-area-result", env_text(env, "CROW_AREA_PUSH_URL"))
     return command
 
 
 def build_seed_collector_command(env: Mapping[str, str]) -> list[str]:
     output_dir = _node_scoped_output_dir(
         env,
-        env_text(env, "FAPAI_OUTPUT_DIR", "/data/output/seed_collector"),
+        env_text(env, "CROW_OUTPUT_DIR", "/data/output/seed_collector"),
         "/data/output/seed_collector",
     )
-    worker_id = _node_scoped_worker_id(env, env_text(env, "FAPAI_SEED_WORKER_ID"), "seed-1" if env_text(env, "FAPAI_NODE_ID") else None)
+    worker_id = _node_scoped_worker_id(env, env_text(env, "CROW_SEED_WORKER_ID"), "seed-1" if env_text(env, "CROW_NODE_ID") else None)
     command = [
         sys.executable,
         "tools/seed_collector.py",
         "--output-dir",
         output_dir,
         "--cdp-endpoint",
-        env_text(env, "FAPAI_CDP_ENDPOINT", "http://host.docker.internal:9223") or "http://host.docker.internal:9223",
+        env_text(env, "CROW_CDP_ENDPOINT", "http://host.docker.internal:9223") or "http://host.docker.internal:9223",
         "--job-key",
-        env_text(env, "FAPAI_SEED_JOB_KEY", "guangdong-guangzhou-nansha-50025969") or "guangdong-guangzhou-nansha-50025969",
+        env_text(env, "CROW_SEED_JOB_KEY", "guangdong-guangzhou-nansha-50025969") or "guangdong-guangzhou-nansha-50025969",
         "--province",
-        env_text(env, "FAPAI_SEED_PROVINCE", "广东省") or "广东省",
+        env_text(env, "CROW_SEED_PROVINCE", "广东省") or "广东省",
         "--city",
-        env_text(env, "FAPAI_SEED_CITY", "广州市") or "广州市",
+        env_text(env, "CROW_SEED_CITY", "广州市") or "广州市",
         "--district",
-        env_text(env, "FAPAI_SEED_DISTRICT", "南沙区") or "南沙区",
+        env_text(env, "CROW_SEED_DISTRICT", "南沙区") or "南沙区",
         "--location-code",
-        env_text(env, "FAPAI_SEED_LOCATION_CODE", "440115") or "440115",
+        env_text(env, "CROW_SEED_LOCATION_CODE", "440115") or "440115",
         "--category",
-        env_text(env, "FAPAI_SEED_CATEGORY", "50025969") or "50025969",
+        env_text(env, "CROW_SEED_CATEGORY", "50025969") or "50025969",
         "--sorts",
         env_text(
             env,
-            "FAPAI_SEED_SORTS",
+            "CROW_SEED_SORTS",
             "sort_0:0:默认排序,sort_3:3:价格由高到低,bid_desc:2:出价次数由高到低,end_time_soon:1:结拍时间由近到远,sort_4:4:排序4,sort_5:5:排序5",
         )
         or "",
         "--max-page",
-        env_text(env, "FAPAI_SEED_MAX_PAGE", env_text(env, "FAPAI_LIST_MAX_PAGES", "83")) or "83",
+        env_text(env, "CROW_SEED_MAX_PAGE", env_text(env, "CROW_LIST_MAX_PAGES", "83")) or "83",
     ]
     append_option(command, "--worker-id", worker_id)
-    append_option(command, "--lease-seconds", env_text(env, "FAPAI_SEED_LEASE_SECONDS"))
-    append_option(command, "--pages-per-run", env_text(env, "FAPAI_SEED_PAGES_PER_RUN", "10"))
-    append_option(command, "--api-base-url", env_text(env, "FAPAI_API_BASE_URL"))
-    append_option(command, "--jobs-file", env_text(env, "FAPAI_SEED_JOBS_FILE"))
-    append_option(command, "--jobs-json", env_text(env, "FAPAI_SEED_JOBS_JSON"))
-    append_option(command, "--failure-cooldown-threshold", env_text(env, "FAPAI_SEED_FAILURE_COOLDOWN_THRESHOLD"))
-    append_option(command, "--failure-cooldown-seconds", env_text(env, "FAPAI_SEED_FAILURE_COOLDOWN_SECONDS"))
-    if env_flag(env, "FAPAI_SEED_PARALLEL_SORTS", False):
+    append_option(command, "--lease-seconds", env_text(env, "CROW_SEED_LEASE_SECONDS"))
+    append_option(command, "--pages-per-run", env_text(env, "CROW_SEED_PAGES_PER_RUN", "10"))
+    append_option(command, "--api-base-url", env_text(env, "CROW_API_BASE_URL"))
+    append_option(command, "--jobs-file", env_text(env, "CROW_SEED_JOBS_FILE"))
+    append_option(command, "--jobs-json", env_text(env, "CROW_SEED_JOBS_JSON"))
+    append_option(command, "--failure-cooldown-threshold", env_text(env, "CROW_SEED_FAILURE_COOLDOWN_THRESHOLD"))
+    append_option(command, "--failure-cooldown-seconds", env_text(env, "CROW_SEED_FAILURE_COOLDOWN_SECONDS"))
+    if env_flag(env, "CROW_SEED_PARALLEL_SORTS", False):
         command.append("--parallel-sorts")
     if any_env_flag(env, SEED_CAPTCHA_SOLVER_ENV_KEYS, False):
         command.append("--solver-enabled")
-    if (env_text(env, "FAPAI_RUN_MODE", "seed-collector") or "").lower() == "seed-collector":
+    if (env_text(env, "CROW_RUN_MODE", "seed-collector") or "").lower() == "seed-collector":
         command.append("--loop")
-        loop_interval_seconds = env_text(env, "FAPAI_SEED_LOOP_INTERVAL_SECONDS", env_text(env, "FAPAI_LOOP_INTERVAL_SECONDS", "1800"))
+        loop_interval_seconds = env_text(env, "CROW_SEED_LOOP_INTERVAL_SECONDS", env_text(env, "CROW_LOOP_INTERVAL_SECONDS", "1800"))
         active_loop_interval_seconds = env_text(
             env,
-            "FAPAI_SEED_ACTIVE_LOOP_INTERVAL_SECONDS",
-            env_text(env, "FAPAI_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
+            "CROW_SEED_ACTIVE_LOOP_INTERVAL_SECONDS",
+            env_text(env, "CROW_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
         )
         append_option(command, "--loop-interval-seconds", loop_interval_seconds)
         append_option(command, "--active-loop-interval-seconds", active_loop_interval_seconds)
-        append_option(command, "--max-runs", env_text(env, "FAPAI_SEED_MAX_RUNS"))
+        append_option(command, "--max-runs", env_text(env, "CROW_SEED_MAX_RUNS"))
     return command
 
 
 def build_detail_worker_command(env: Mapping[str, str]) -> list[str]:
-    run_mode = (env_text(env, "FAPAI_RUN_MODE", "detail-worker") or "detail-worker").lower()
+    run_mode = (env_text(env, "CROW_RUN_MODE", "detail-worker") or "detail-worker").lower()
     analysis_only = run_mode in {"detail-analysis-worker", "detail-analysis-batch"} or env_flag(
-        env, "FAPAI_DETAIL_ANALYSIS_ONLY", False
+        env, "CROW_DETAIL_ANALYSIS_ONLY", False
     )
-    target_success = env_text(env, "FAPAI_DETAIL_TARGET_SUCCESS", env_text(env, "FAPAI_TARGET_SUCCESS", "5"))
-    max_attempts = env_text(env, "FAPAI_DETAIL_MAX_ATTEMPTS", env_text(env, "FAPAI_MAX_ATTEMPTS", "20"))
-    item_max_attempts = env_text(env, "FAPAI_DETAIL_ITEM_MAX_ATTEMPTS", "3")
-    loop_interval_seconds = env_text(env, "FAPAI_DETAIL_LOOP_INTERVAL_SECONDS", env_text(env, "FAPAI_LOOP_INTERVAL_SECONDS", "900"))
+    target_success = env_text(env, "CROW_DETAIL_TARGET_SUCCESS", env_text(env, "CROW_TARGET_SUCCESS", "5"))
+    max_attempts = env_text(env, "CROW_DETAIL_MAX_ATTEMPTS", env_text(env, "CROW_MAX_ATTEMPTS", "20"))
+    item_max_attempts = env_text(env, "CROW_DETAIL_ITEM_MAX_ATTEMPTS", "3")
+    loop_interval_seconds = env_text(env, "CROW_DETAIL_LOOP_INTERVAL_SECONDS", env_text(env, "CROW_LOOP_INTERVAL_SECONDS", "900"))
     active_loop_interval_seconds = env_text(
         env,
-        "FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS",
-        env_text(env, "FAPAI_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
+        "CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS",
+        env_text(env, "CROW_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
     )
-    max_runs = env_text(env, "FAPAI_DETAIL_MAX_RUNS")
-    llm_preflight = env_flag(env, "FAPAI_LLM_PREFLIGHT", True)
-    llm_preflight_timeout_seconds = env_text(env, "FAPAI_LLM_PREFLIGHT_TIMEOUT_SECONDS", "15")
+    max_runs = env_text(env, "CROW_DETAIL_MAX_RUNS")
+    llm_preflight = env_flag(env, "CROW_LLM_PREFLIGHT", True)
+    llm_preflight_timeout_seconds = env_text(env, "CROW_LLM_PREFLIGHT_TIMEOUT_SECONDS", "15")
     if analysis_only:
-        target_success = env_text(env, "FAPAI_DETAIL_ANALYSIS_TARGET_SUCCESS", target_success)
-        max_attempts = env_text(env, "FAPAI_DETAIL_ANALYSIS_MAX_ATTEMPTS", max_attempts)
-        item_max_attempts = env_text(env, "FAPAI_DETAIL_ANALYSIS_ITEM_MAX_ATTEMPTS", item_max_attempts)
-        loop_interval_seconds = env_text(env, "FAPAI_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS", loop_interval_seconds)
+        target_success = env_text(env, "CROW_DETAIL_ANALYSIS_TARGET_SUCCESS", target_success)
+        max_attempts = env_text(env, "CROW_DETAIL_ANALYSIS_MAX_ATTEMPTS", max_attempts)
+        item_max_attempts = env_text(env, "CROW_DETAIL_ANALYSIS_ITEM_MAX_ATTEMPTS", item_max_attempts)
+        loop_interval_seconds = env_text(env, "CROW_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS", loop_interval_seconds)
         active_loop_interval_seconds = env_text(
             env,
-            "FAPAI_DETAIL_ANALYSIS_ACTIVE_LOOP_INTERVAL_SECONDS",
+            "CROW_DETAIL_ANALYSIS_ACTIVE_LOOP_INTERVAL_SECONDS",
             env_text(
                 env,
-                "FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS",
-                env_text(env, "FAPAI_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
+                "CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS",
+                env_text(env, "CROW_ACTIVE_LOOP_INTERVAL_SECONDS", loop_interval_seconds),
             ),
         )
-        max_runs = env_text(env, "FAPAI_DETAIL_ANALYSIS_MAX_RUNS", max_runs)
-        llm_preflight = env_flag(env, "FAPAI_ANALYSIS_LLM_PREFLIGHT", llm_preflight)
+        max_runs = env_text(env, "CROW_DETAIL_ANALYSIS_MAX_RUNS", max_runs)
+        llm_preflight = env_flag(env, "CROW_ANALYSIS_LLM_PREFLIGHT", llm_preflight)
         llm_preflight_timeout_seconds = env_text(
             env,
-            "FAPAI_ANALYSIS_LLM_PREFLIGHT_TIMEOUT_SECONDS",
+            "CROW_ANALYSIS_LLM_PREFLIGHT_TIMEOUT_SECONDS",
             llm_preflight_timeout_seconds,
         )
     output_dir = _node_scoped_output_dir(
         env,
-        env_text(env, "FAPAI_OUTPUT_DIR", "/data/output/detail_worker"),
+        env_text(env, "CROW_OUTPUT_DIR", "/data/output/detail_worker"),
         "/data/output/detail_worker",
     )
     default_worker_id = "analysis-1" if analysis_only else "detail-1"
     worker_id = _node_scoped_worker_id(
         env,
-        env_text(env, "FAPAI_DETAIL_WORKER_ID"),
-        default_worker_id if env_text(env, "FAPAI_NODE_ID") else None,
+        env_text(env, "CROW_DETAIL_WORKER_ID"),
+        default_worker_id if env_text(env, "CROW_NODE_ID") else None,
     )
     detail_cdp_endpoint = (
-        env_text(env, "FAPAI_DETAIL_CDP_ENDPOINT")
-        or env_text(env, "FAPAI_CDP_ENDPOINT", "http://host.docker.internal:9223")
+        env_text(env, "CROW_DETAIL_CDP_ENDPOINT")
+        or env_text(env, "CROW_CDP_ENDPOINT", "http://host.docker.internal:9223")
         or "http://host.docker.internal:9223"
     )
     command = [
@@ -310,18 +315,18 @@ def build_detail_worker_command(env: Mapping[str, str]) -> list[str]:
         item_max_attempts or "3",
     ]
     append_option(command, "--worker-id", worker_id)
-    append_option(command, "--lease-seconds", env_text(env, "FAPAI_DETAIL_LEASE_SECONDS"))
-    append_option(command, "--failure-cooldown-seconds", env_text(env, "FAPAI_DETAIL_FAILURE_COOLDOWN_SECONDS"))
-    append_option(command, "--api-base-url", env_text(env, "FAPAI_API_BASE_URL"))
-    append_option(command, "--detail-archive-root", env_text(env, "FAPAI_DETAIL_ARCHIVE_ROOT"))
-    raw_only = False if analysis_only else env_flag(env, "FAPAI_DETAIL_RAW_ONLY", False)
+    append_option(command, "--lease-seconds", env_text(env, "CROW_DETAIL_LEASE_SECONDS"))
+    append_option(command, "--failure-cooldown-seconds", env_text(env, "CROW_DETAIL_FAILURE_COOLDOWN_SECONDS"))
+    append_option(command, "--api-base-url", env_text(env, "CROW_API_BASE_URL"))
+    append_option(command, "--detail-archive-root", env_text(env, "CROW_DETAIL_ARCHIVE_ROOT"))
+    raw_only = False if analysis_only else env_flag(env, "CROW_DETAIL_RAW_ONLY", False)
     if analysis_only:
         command.append("--analysis-only")
     if raw_only:
         command.append("--raw-only")
     if any_env_flag(env, DETAIL_CAPTCHA_SOLVER_ENV_KEYS, False) and not analysis_only:
         command.append("--solver-enabled")
-    if env_flag(env, "FAPAI_ENABLE_RISK", False):
+    if env_flag(env, "CROW_ENABLE_RISK", False):
         command.append("--risk")
     if llm_preflight and not raw_only:
         command.append("--llm-preflight")
@@ -335,7 +340,7 @@ def build_detail_worker_command(env: Mapping[str, str]) -> list[str]:
 
 
 def build_command(env: Mapping[str, str]) -> list[str]:
-    mode = (env_text(env, "FAPAI_RUN_MODE", "live-loop") or "live-loop").lower()
+    mode = (env_text(env, "CROW_RUN_MODE", "live-loop") or "live-loop").lower()
     if mode in {"api", "server"}:
         return build_api_command(env)
     if mode == "area-followup":
@@ -348,7 +353,7 @@ def build_command(env: Mapping[str, str]) -> list[str]:
         return build_live_command(env)
     if mode == "sleep":
         return ["sleep", "infinity"]
-    raise ValueError(f"Unsupported FAPAI_RUN_MODE: {mode}")
+    raise ValueError(f"Unsupported CROW_RUN_MODE: {mode}")
 
 
 def _load_storage_model_metadata():
@@ -408,11 +413,11 @@ def _format_schema_gaps(missing_tables: list[str], missing_columns: dict[str, li
 
 
 def guard_database_schema(env: Mapping[str, str]) -> None:
-    if not env_flag(env, "FAPAI_DB_ENABLED", True):
+    if not env_flag(env, "CROW_DB_ENABLED", True):
         return
-    if not env_flag(env, "FAPAI_DB_SCHEMA_GUARD", True):
+    if not env_flag(env, "CROW_DB_SCHEMA_GUARD", True):
         return
-    db_url = env_text(env, "FAPAI_DB_URL")
+    db_url = env_text(env, "CROW_DB_URL")
     if not db_url:
         return
 
