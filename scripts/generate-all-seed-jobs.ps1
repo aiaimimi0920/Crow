@@ -77,4 +77,4 @@ finally {
 
 Write-Output "Generated FapaiFang full seed jobs: $OutputPath"
 Write-Output "Docker worker path: /data/jobs/seed_jobs_all.json"
-Write-Output "Set FAPAI_SEED_JOBS_FILE=/data/jobs/seed_jobs_all.json"
+Write-Output "Set CROW_SEED_JOBS_FILE=/data/jobs/seed_jobs_all.json"

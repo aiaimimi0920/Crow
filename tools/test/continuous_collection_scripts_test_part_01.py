@@ -7,10 +7,10 @@ def test_generate_all_seed_jobs_script_writes_host_jobs_file_safely() -> None:
     script = _script("generate-all-seed-jobs.ps1")
 
     assert "tools\\generate_seed_jobs.py" in script
-    assert "FAPAI_DATA_ROOT_HOST" in script
+    assert "CROW_DATA_ROOT_HOST" in script
     assert "seed_jobs_all.json" in script
     assert "datas\\all_locations.json" in script
-    assert "FAPAI_SEED_JOBS_FILE" in script
+    assert "CROW_SEED_JOBS_FILE" in script
     assert ".ProviderPath" in script
     assert "PYTHONPATH" in script
 
@@ -50,7 +50,7 @@ def test_taobao_login_watchdog_can_trigger_captcha_solver() -> None:
     script = _script("taobao-login-watchdog.ps1")
 
     assert "[switch]$TriggerCaptchaSolver" in script
-    assert "FAPAI_CAPTCHA_SOLVER_ENABLED" in script
+    assert "CROW_CAPTCHA_SOLVER_ENABLED" in script
     assert '"-TriggerCaptchaSolver"' in script
 
 
@@ -255,7 +255,7 @@ def test_desktop_runtime_config_pins_python_with_requests_preflight() -> None:
 
     assert "resolve-pc1-auth-python.ps1" in script
     assert "Resolve-Pc1AuthPython" in script
-    assert "FAPAI_DESKTOP_PYTHON_PATH = $resolvedPython" in script
+    assert "CROW_DESKTOP_PYTHON_PATH = $resolvedPython" in script
 
 
 def test_deploy_pc2_llm_helper_hotfix_uses_ssh_hash_verification_and_optional_analysis_restart() -> None:
@@ -316,27 +316,27 @@ def test_start_continuous_collection_generates_jobs_checks_login_and_starts_work
     assert "fapaifang-detail-analysis-worker-3" in script
     assert '"--profile", "api"' in script
     assert '"--profile", "analysis"' in script
-    assert "FAPAI_SEED_JOBS_FILE=/data/jobs/seed_jobs_all.json" in script
-    assert "FAPAI_COOKIE_SNAPSHOT=/data/secrets/taobao-cookies.json" in script
-    assert "FAPAI_SEED_PAGES_PER_RUN=20" in script
-    assert "FAPAI_SEED_LOOP_INTERVAL_SECONDS=60" in script
-    assert "FAPAI_SEED_PARALLEL_SORTS=1" in script
-    assert "FAPAI_DETAIL_TARGET_SUCCESS=10" in script
-    assert "FAPAI_DETAIL_MAX_ATTEMPTS=30" in script
-    assert "FAPAI_DETAIL_LOOP_INTERVAL_SECONDS=30" in script
-    assert "FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS=0" in script
-    assert "FAPAI_DETAIL_ANALYSIS_TARGET_SUCCESS=10" in script
-    assert "FAPAI_DETAIL_ANALYSIS_MAX_ATTEMPTS=20" in script
-    assert "FAPAI_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS=30" in script
-    assert "FAPAI_DETAIL_ANALYSIS_ACTIVE_LOOP_INTERVAL_SECONDS=0" in script
-    assert "FAPAI_SEED_RESCAN_INTERVAL_SECONDS=900" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_THRESHOLD=3" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_SECONDS=1800" in script
-    assert "FAPAI_DETAIL_FAILURE_COOLDOWN_THRESHOLD=3" in script
-    assert "FAPAI_DETAIL_FAILURE_COOLDOWN_SECONDS=1800" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_RESTART" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_2_RESTART" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART" in script
+    assert "CROW_SEED_JOBS_FILE=/data/jobs/seed_jobs_all.json" in script
+    assert "CROW_COOKIE_SNAPSHOT=/data/secrets/taobao-cookies.json" in script
+    assert "CROW_SEED_PAGES_PER_RUN=20" in script
+    assert "CROW_SEED_LOOP_INTERVAL_SECONDS=60" in script
+    assert "CROW_SEED_PARALLEL_SORTS=1" in script
+    assert "CROW_DETAIL_TARGET_SUCCESS=10" in script
+    assert "CROW_DETAIL_MAX_ATTEMPTS=30" in script
+    assert "CROW_DETAIL_LOOP_INTERVAL_SECONDS=30" in script
+    assert "CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS=0" in script
+    assert "CROW_DETAIL_ANALYSIS_TARGET_SUCCESS=10" in script
+    assert "CROW_DETAIL_ANALYSIS_MAX_ATTEMPTS=20" in script
+    assert "CROW_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS=30" in script
+    assert "CROW_DETAIL_ANALYSIS_ACTIVE_LOOP_INTERVAL_SECONDS=0" in script
+    assert "CROW_SEED_RESCAN_INTERVAL_SECONDS=900" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_THRESHOLD=3" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_SECONDS=1800" in script
+    assert "CROW_DETAIL_FAILURE_COOLDOWN_THRESHOLD=3" in script
+    assert "CROW_DETAIL_FAILURE_COOLDOWN_SECONDS=1800" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_RESTART" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_2_RESTART" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_3_RESTART" in script
     assert "-SampleUrl" in script
     assert "200782003__1.htm" in script
     assert "--remove-orphans" not in script

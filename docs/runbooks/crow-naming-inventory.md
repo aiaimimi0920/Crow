@@ -181,6 +181,13 @@ rename targets. The required Linux CI integration uses synthetic env files and
 only `docker compose config`; local Docker absence is recorded as a skip.
 See [Crow Compose compatibility](crow-compose-compatibility.md).
 
-Remaining scope includes integrating env-file writers, Compose templates, independent ops
-bundles, embedded remote helper interfaces, HTTP headers and safe build/CLI names;
+The ninth cohort integrates the three collection-mode PowerShell entrypoints
+with the validated Compose adapter and a scoped dual-name env-file writer.
+Explicit settings synchronize aliases; defaults preserve any existing alias,
+including blanks, and unrelated settings stay intact. Seed/detail configuration
+checks precede restart-policy changes. Validation executes only pure writers on
+temporary files and source parsing; no operational entrypoint is run.
+
+Remaining scope includes independent Compose/ops entrypoints and bundles,
+embedded remote helper interfaces, HTTP headers and safe build/CLI names;
 none of the direct-reader counts imply these remaining boundaries are finished.

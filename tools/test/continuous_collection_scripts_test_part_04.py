@@ -69,17 +69,17 @@ def test_start_seed_scan_only_starts_seed_pool_without_detail_workers() -> None:
     assert "stop" in script
     assert "docker update" in script
     assert "--restart=no" in script
-    assert "FAPAI_SEED_PAGES_PER_RUN" in script
-    assert "FAPAI_SEED_LOOP_INTERVAL_SECONDS=60" in script
-    assert "FAPAI_SEED_PARALLEL_SORTS=1" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_THRESHOLD=10" in script
-    assert "FAPAI_SEED_FAILURE_COOLDOWN_SECONDS=120" in script
-    assert "FAPAI_LIST_HTTP_TIMEOUT_SECONDS=8" in script
-    assert "FAPAI_LIST_BROWSER_FALLBACK=0" in script
-    assert "FAPAI_DETAIL_WORKER_RESTART=no" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_RESTART=no" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_2_RESTART=no" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART=no" in script
+    assert "CROW_SEED_PAGES_PER_RUN" in script
+    assert "CROW_SEED_LOOP_INTERVAL_SECONDS=60" in script
+    assert "CROW_SEED_PARALLEL_SORTS=1" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_THRESHOLD=10" in script
+    assert "CROW_SEED_FAILURE_COOLDOWN_SECONDS=120" in script
+    assert "CROW_LIST_HTTP_TIMEOUT_SECONDS=8" in script
+    assert "CROW_LIST_BROWSER_FALLBACK=0" in script
+    assert "CROW_DETAIL_WORKER_RESTART=no" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_RESTART=no" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_2_RESTART=no" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_3_RESTART=no" in script
     assert "--profile analysis" in script
     assert "Cookie snapshot export failed" in script
     assert "--remove-orphans" not in script
@@ -100,12 +100,12 @@ def test_start_detail_analysis_only_starts_detail_and_analysis_pools_without_see
     assert "stop" in script
     assert "docker update" in script
     assert "--restart=no" in script
-    assert "FAPAI_SEED_COLLECTOR_RESTART=no" in script
-    assert "FAPAI_DETAIL_TARGET_SUCCESS" in script
-    assert "FAPAI_DETAIL_ANALYSIS_TARGET_SUCCESS" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_RESTART=unless-stopped" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_2_RESTART=unless-stopped" in script
-    assert "FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART=unless-stopped" in script
+    assert "CROW_SEED_COLLECTOR_RESTART=no" in script
+    assert "CROW_DETAIL_TARGET_SUCCESS" in script
+    assert "CROW_DETAIL_ANALYSIS_TARGET_SUCCESS" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_RESTART=unless-stopped" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_2_RESTART=unless-stopped" in script
+    assert "CROW_DETAIL_ANALYSIS_WORKER_3_RESTART=unless-stopped" in script
     assert "Cookie snapshot export failed" in script
     assert "--remove-orphans" not in script
     assert "docker-compose.postgres" not in script

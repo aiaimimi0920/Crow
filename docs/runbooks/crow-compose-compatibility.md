@@ -63,3 +63,20 @@ skip that integration gate; `CROW_TEST_COMPOSE=1` makes missing Compose a failur
 The saved configuration, public Python reader tests and original entrypoint tests
 continue to exercise legacy keys. See [the naming inventory](crow-naming-inventory.md)
 for remaining independent operator-script and protocol boundaries.
+
+## Collection mode entrypoints
+
+The continuous-collection, seed-only and detail-analysis-only PowerShell scripts
+now call this adapter for Compose operations. Seed/detail modes validate the
+selected environment before changing Docker restart policies. Their explicit
+`DataRoot` parameter remains the management-root override.
+
+Their existing `Set-EnvLine` / `Ensure-EnvLine` interfaces use a shared scoped
+writer. Explicit settings update both aliases together; defaults leave either
+existing spelling untouched, including empty values. Conflicting existing aliases
+are not resolved by inserting a default: adapter validation rejects them.
+Unrelated lines and existing file permissions are retained. The writer accepts
+literal single-line mode settings; unsupported quoting/interpolation or multiline
+target definitions fail with key names only. It does not rewrite other settings
+or create a second deployment configuration. Tests use temporary synthetic files
+and extracted writer functions, never execute the operational script bodies.

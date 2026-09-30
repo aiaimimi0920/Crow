@@ -1,6 +1,7 @@
 """Explicit small offline suites; do not classify every legacy test as quick."""
 
 UNIT_FILES = (
+    "test_compose_environment_file.py",
     "test_compose_arguments.py",
     "test_compose_environment.py",
     "test_project_environment_compose.py",

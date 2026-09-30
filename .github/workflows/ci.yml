@@ -229,7 +229,7 @@ jobs:
           python-version: '3.10'
       - run: python -m pip install --require-hashes -r requirements-dev.lock
         working-directory: .
-      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py tools/test/test_project_environment_injected.py tools/test/test_desktop_environment_aliases.py tools/test/test_powershell_environment_aliases.py tools/test/test_project_environment_compose.py tools/test/test_desktop_api_configuration.py tools/test/test_compose_environment.py tools/test/test_compose_arguments.py
+      - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py tools/test/test_project_environment_injected.py tools/test/test_desktop_environment_aliases.py tools/test/test_powershell_environment_aliases.py tools/test/test_project_environment_compose.py tools/test/test_desktop_api_configuration.py tools/test/test_compose_environment.py tools/test/test_compose_arguments.py tools/test/test_compose_environment_file.py
         working-directory: .
   desktop-smoke:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
