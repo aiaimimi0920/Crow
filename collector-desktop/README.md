@@ -49,7 +49,7 @@ python tools/test/collector_ui_preview.py --port 1436
 
 ## 依赖
 
-- Rust / Cargo
+- Rust / Cargo 1.90 或以上；Windows CI 使用 1.90.0 验证提交的完整锁文件
 - Node.js / npm
 - 正在运行的 `crow-api`
   - 默认地址：`http://127.0.0.1:8001`（桌面端；Web 预览仍使用当前页面地址）
