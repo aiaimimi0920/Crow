@@ -51,7 +51,7 @@ def test_http_status_can_surface_open_unresolved_escalation_window_duration(tmp_
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_unresolved_escalation_window_summary"]
         assert summary["window_open"] is True
@@ -138,7 +138,7 @@ def test_http_status_can_surface_escalated_lifecycle_state_summary(tmp_path: Pat
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_lifecycle_state_summary"]
         assert summary["available"] is True
@@ -278,7 +278,7 @@ def test_http_status_can_surface_retrial_window_lifecycle_state_summary(tmp_path
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_lifecycle_state_summary"]
         assert summary["available"] is True

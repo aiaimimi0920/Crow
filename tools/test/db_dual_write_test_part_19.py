@@ -89,7 +89,7 @@ def test_http_status_can_surface_steady_lifecycle_state_summary(tmp_path: Path, 
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_lifecycle_state_summary"]
         assert summary["available"] is True
@@ -209,7 +209,7 @@ def test_http_status_can_surface_aligned_hybrid_collection_action_hint_consisten
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_action_hint_consistency_summary"]
         assert summary["available"] is True
@@ -305,7 +305,7 @@ def test_http_status_can_surface_lifecycle_only_hybrid_collection_action_hint_co
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_action_hint_consistency_summary"]
         assert summary["available"] is True

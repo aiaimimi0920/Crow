@@ -43,7 +43,7 @@ def test_http_status_can_surface_persistent_hybrid_collection_operator_escalatio
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_operator_escalation_event_stability_summary"]
         assert summary["available"] is True
@@ -108,7 +108,7 @@ def test_http_status_can_surface_hybrid_collection_operator_escalation_recovery_
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_operator_escalation_recovery_event_summary"]
         assert summary["available"] is True
@@ -279,7 +279,7 @@ def test_http_status_can_surface_open_unresolved_escalation_window_summary(tmp_p
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_unresolved_escalation_window_summary"]
         assert summary["available"] is True
@@ -351,7 +351,7 @@ def test_http_status_can_surface_closed_unresolved_escalation_window_summary(tmp
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_unresolved_escalation_window_summary"]
         assert summary["available"] is True

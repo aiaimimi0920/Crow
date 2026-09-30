@@ -105,6 +105,10 @@ def test_http_status_exposes_collection_stage_snapshot_from_database(tmp_path: P
             body = json.loads(resp.read().decode("utf-8"))
         assert body["collection_stage"]["seed_stage"]["stored"] >= 1
         assert body["collection_stage"]["search_tasks"]["search_pending"] == 1
+        assert "analysis_blockers" not in body["collection_stage"]
+        assert "recommended_actions" not in body["collection_stage"]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
+            body = json.loads(resp.read().decode("utf-8"))
         assert "analysis_blockers" in body["collection_stage"]
         assert "recommended_actions" in body["collection_stage"]
     finally:
@@ -141,7 +145,7 @@ def test_http_status_recommended_actions_can_reflect_persisted_action_effectiven
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         recommended = body["collection_stage"]["recommended_actions"]
         assert "fetch_archives" in recommended["deprioritized_actions"]
@@ -188,7 +192,7 @@ def test_http_status_recommended_actions_can_surface_manual_review_fallback(tmp_
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         recommended = body["collection_stage"]["recommended_actions"]
         assert recommended["manual_review_candidate"] is True
@@ -254,7 +258,7 @@ def test_http_status_can_surface_recoverability_summary_and_manual_review_reason
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         recoverability = body["collection_stage"]["recoverability_summary"]
         assert recoverability["future_fixable"] == 0
@@ -367,7 +371,7 @@ def test_http_status_can_surface_manual_review_receipt_ready_state(tmp_path: Pat
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         receipt_summary = body["collection_stage"]["manual_review_receipt_summary"]
         assert receipt_summary["top_matched_ready_signal"] == "location_artifacts_complete"
