@@ -18,6 +18,7 @@ from .pc2_engine_controller import (
 )
 from .pc2_settings_controller import SettingsClient, SettingsController
 from .pc2_settings_runtime import SettingsRuntime, write_private
+from .pc2_worker_watchdog import WorkerWatchdog
 
 
 class RestartController:
@@ -50,24 +51,34 @@ class RestartController:
             self.persist(receipt)
 
 
-def step(root, settings, restart, watchdog=None, progress_watchdog=None):
+def step(
+    root, settings, restart, watchdog=None, progress_watchdog=None, worker_watchdog=None
+):
     with operation_lock(root):
         if (root / "release-operation.json").exists():
             raise ControllerError("Release result needs reconciliation")
         if (
+            worker_watchdog is not None
+            and not settings.journal.exists()
+            and not restart.journal.exists()
+            and worker_watchdog.step()
+            in {"restart_requested", "reconciliation_required"}
+        ):
+            return
+        if (
             watchdog is not None
             and not settings.journal.exists()
             and not restart.journal.exists()
+            and watchdog.step() == "restart_requested"
         ):
-            if watchdog.step() == "restart_requested":
-                return
+            return
         if (
             progress_watchdog is not None
             and not settings.journal.exists()
             and not restart.journal.exists()
+            and progress_watchdog.step() == "restart_requested"
         ):
-            if progress_watchdog.step() == "restart_requested":
-                return
+            return
         # An uncertain settings operation must not be followed by a restart.
         settings.step()
         if settings.journal.exists():
@@ -102,10 +113,18 @@ def main():
     )
     watchdog = CollectionWatchdog(runtime.root)
     progress_watchdog = CollectionProgressWatchdog(runtime.root)
+    worker_watchdog = WorkerWatchdog(runtime.root)
     with operation_lock(runtime.root, name="controller.lock"):
         while True:
             try:
-                step(runtime.root, settings, restart, watchdog, progress_watchdog)
+                step(
+                    runtime.root,
+                    settings,
+                    restart,
+                    watchdog,
+                    progress_watchdog,
+                    worker_watchdog,
+                )
             except (
                 OSError,
                 ValueError,
