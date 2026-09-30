@@ -191,7 +191,7 @@ def test_http_status_can_surface_hybrid_collection_action_hint_trend_summary(tmp
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         trend_summary = body["collection_stage"]["hybrid_collection_action_hint_trend_summary"]
         assert trend_summary["available"] is True

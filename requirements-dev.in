@@ -1,6 +1,6 @@
 -r requirements.txt
 alembic>=1.16.0
-pytest>=8.0,<9
+pytest>=9.0.3,<10
 cryptography>=46.0.5
 ruff>=0.15.0
 mypy>=1.19.0

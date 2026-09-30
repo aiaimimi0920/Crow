@@ -1,0 +1,36 @@
+name: Security Policy
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '45 18 * * 0'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  policy:
+    name: Security configuration regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: node --test scripts/tests/security-policy.test.mjs scripts/tests/game-entry.test.mjs
+      - run: git diff --check
+  secrets:
+    name: Scan tracked files for secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash scripts/scan-secrets.sh

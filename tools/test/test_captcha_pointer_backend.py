@@ -210,3 +210,19 @@ def test_wait_stop_releases_button_and_reaches_budget_cleanup(monkeypatch, reaso
     assert closed == ["ws", "tabs"]
     assert not solver.lock.locked()
     assert solver._solve_budget is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="non-Windows boundary")
+def test_win32_uninjected_backend_rejects_non_windows_without_device_access():
+    backend = Win32PointerBackend()
+    assert backend._api is None
+    with pytest.raises(OSError, match="requires Windows"):
+        _ = backend.api
+    assert backend._api is None
+
+
+def test_win32_injected_backend_does_not_require_platform_loader():
+    api = FakeWin32()
+    backend = Win32PointerBackend(api)
+    assert backend.api is api
+    assert backend.position() == (12.0, 34.0)

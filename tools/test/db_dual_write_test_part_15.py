@@ -108,7 +108,7 @@ def test_http_status_can_surface_hybrid_collection_mode_switch_event_summary(tmp
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         switch_summary = body["collection_stage"]["hybrid_collection_mode_switch_event_summary"]
         assert switch_summary["available"] is True
@@ -283,7 +283,7 @@ def test_http_status_can_surface_hybrid_collection_recovery_policy(tmp_path: Pat
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         policy = body["collection_stage"]["hybrid_collection_recovery_policy"]
         assert policy["policy_status"] == "pin_browser_mode_temporarily"
@@ -351,7 +351,7 @@ def test_http_status_can_surface_hybrid_collection_recovery_policy_event_summary
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_recovery_policy_event_summary"]
         assert summary["available"] is True

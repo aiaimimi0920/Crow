@@ -1,0 +1,82 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
+const workflows = fs.readdirSync(path.join(root, ".github/workflows"))
+  .filter((name) => /\.ya?ml$/.test(name))
+  .map((name) => [name, read(`.github/workflows/${name}`)]);
+const lockfiles = [
+  "requirements.lock", "requirements-dev.lock", "collector-desktop/package-lock.json",
+  "collector-desktop/src-tauri/Cargo.lock", "game/web-app/package-lock.json",
+];
+
+test("workflow actions are immutable and checks do not run privileged PR code", () => {
+  for (const [name, text] of workflows) {
+    assert.doesNotMatch(text, /pull_request_target\s*:/, name);
+    assert.doesNotMatch(text, /continue-on-error:\s*true/, name);
+    assert.doesNotMatch(text, /secrets:\s*inherit/, name);
+    assert.match(text, /permissions:\n  contents: read/, name);
+    for (const [, target] of text.matchAll(/\buses:\s*([^\s#]+)/g)) {
+      if (!target.startsWith("./")) assert.match(target, /^[\w./-]+@[a-f0-9]{40}$/, name);
+    }
+    const checkouts = text.split(/uses: actions\/checkout@/).slice(1);
+    for (const checkout of checkouts) {
+      assert.match(checkout.split(/\n      - /)[0], /persist-credentials: false/, name);
+    }
+  }
+});
+
+test("OSV explicitly scans all production and development lockfiles and fails closed", () => {
+  const text = read(".github/workflows/dependency-security.yml");
+  const scanned = [...text.matchAll(/--lockfile=(?:requirements\.txt:)?\.\/([^\s]+)/g)]
+    .map((match) => match[1]).sort();
+  assert.deepEqual(scanned, [...lockfiles].sort());
+  for (const file of lockfiles) assert.ok(fs.statSync(path.join(root, file)).isFile(), file);
+  assert.match(text, /fail-on-vuln: true/);
+  assert.match(text, /upload-sarif: true/);
+  assert.doesNotMatch(text, /--config|--ignore|--experimental/);
+  assert.equal((text.match(/--lockfile=requirements\.txt:/g) || []).length, 2);
+});
+
+test("CodeQL covers every code ecosystem with explicit no-build analysis", () => {
+  const text = read(".github/workflows/codeql.yml");
+  assert.match(text, /language: \[python, javascript-typescript, rust, actions\]/);
+  assert.match(text, /build-mode: none/);
+  assert.match(text, /queries: security-extended/);
+  assert.match(text, /security-events: write/);
+  assert.match(text, /branches: \[master\]/);
+});
+
+test("Dependabot covers both npm apps, Rust, Python and CI actions", () => {
+  const text = read(".github/dependabot.yml");
+  for (const ecosystem of ["github-actions", "pip", "npm", "cargo"])
+    assert.match(text, new RegExp(`package-ecosystem: ${ecosystem}\\n`));
+  for (const directory of ["/collector-desktop", "/game/web-app", "/collector-desktop/src-tauri"])
+    assert.ok(text.includes(directory), directory);
+  assert.doesNotMatch(text, /ignore:\s*\n/);
+});
+
+test("secret scanning verifies its binary and never prints raw findings", () => {
+  const text = read("scripts/scan-secrets.sh");
+  assert.match(text, /sha256=[a-f0-9]{64}/);
+  assert.match(text, /sha256sum --check --status/);
+  assert.match(text, /--redact=100/);
+  assert.match(text, /--exit-code=1/);
+  assert.match(text, /git -C "\$root" ls-files -z/);
+  assert.doesNotMatch(text, /--exit-code=0|\|\| true/);
+});
+
+test("reviewed secret false positives remain exact values scoped to one detector", () => {
+  const text = read(".gitleaks.toml");
+  assert.match(text, /useDefault = true/);
+  assert.match(text, /targetRules = \["generic-api-key"\]/);
+  assert.match(text, /regexTarget = "secret"/);
+  const expressions = [...text.matchAll(/'''\^([^\n]+)\$'''/g)];
+  assert.equal(expressions.length, 7);
+  assert.doesNotMatch(text, /paths\s*=|stopwords\s*=|\.\*/);
+  assert.match(read("scripts/scan-secrets.sh"), /test-secret-scan\.sh/);
+});

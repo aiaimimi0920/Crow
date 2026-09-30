@@ -1,5 +1,6 @@
 """OS pointer adapters. Importing this module never opens an input device."""
 
+import sys
 from collections.abc import Callable
 from typing import Protocol, cast
 
@@ -62,6 +63,8 @@ class Win32PointerBackend:
     @property
     def api(self) -> Win32API:
         if self._api is None:
+            if sys.platform != "win32":
+                raise OSError("Win32 pointer backend requires Windows")
             import ctypes
 
             self._api = cast(Win32API, ctypes.windll.user32)

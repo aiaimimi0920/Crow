@@ -1,0 +1,18 @@
+title = "Crow secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed public job/stage/test IDs and design asset digests; see security/README.md"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  '''^429ec802b45b095ad081f8995edacb5cb96daf49ac3761da7eb78c9ab34ef42f$''',
+  '''^7877d0140684ec6cdc39be2732f26310381843aa4880671d3a885bc7ed99b43d$''',
+  '''^guangdong\-guangzhou\-nansha\-50025969$''',
+  '''^pc2\-completion\-stale$''',
+  '''^pc2_stage_verifying$''',
+  '''^shanghai\-shanghai\-fengxian\-50025969$''',
+  '''^shanghai\-taobao\-chongming\-50025969$''',
+]

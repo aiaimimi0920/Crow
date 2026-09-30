@@ -85,7 +85,7 @@ def test_http_status_can_surface_hybrid_collection_escalation_priority_mix_trend
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         summary = body["collection_stage"]["hybrid_collection_escalation_priority_mix_trend_summary"]
         assert summary["available"] is True
@@ -345,7 +345,7 @@ def test_http_status_can_surface_re_pin_browser_mode_temporarily_after_failed_re
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         policy = body["collection_stage"]["hybrid_collection_recovery_policy"]
         assert policy["policy_status"] == "re_pin_browser_mode_temporarily"

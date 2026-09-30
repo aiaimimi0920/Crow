@@ -47,7 +47,7 @@ def test_http_status_can_surface_incomplete_manual_review_receipt(tmp_path: Path
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             body = json.loads(resp.read().decode("utf-8"))
         receipt_summary = body["collection_stage"]["manual_review_receipt_summary"]
         assert receipt_summary["top_receipt_status"] == "receipt_incomplete"
@@ -131,7 +131,7 @@ def test_http_receipt_control_plane_can_feed_status_summary_end_to_end(tmp_path:
         )
         assert job["status"] == "completed", job
 
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status") as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/avm/health") as resp:
             status_body = json.loads(resp.read().decode("utf-8"))
         receipt_summary = status_body["collection_stage"]["manual_review_receipt_summary"]
         assert receipt_summary["top_matched_ready_signal"] == "location_artifacts_complete"
