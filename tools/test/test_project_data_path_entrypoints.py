@@ -123,14 +123,15 @@ def test_both_runtime_roots_are_ignored_by_git_and_docker():
         for root in ("FPFData", "CrowData", "fpfdata", "crowdata")
     ]
     result = subprocess.run(
-        ["git", "check-ignore", "--stdin"],
-        input="\n".join(candidates),
+        ["git", "check-ignore", "--stdin", "-z"],
+        input=b"\0".join(path.encode("utf-8") for path in candidates) + b"\0",
         capture_output=True,
-        text=True,
         cwd=ROOT,
         check=True,
     )
-    assert result.stdout.splitlines() == candidates
+    assert result.stdout.split(b"\0") == [
+        path.encode("utf-8") for path in candidates
+    ] + [b""]
     ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
     assert "[Cc][Rr][Oo][Ww][Dd][Aa][Tt][Aa]/" in ignore
     assert "[Ff][Pp][Ff][Dd][Aa][Tt][Aa]/" in ignore
