@@ -7,6 +7,8 @@ import re
 import subprocess
 import time
 
+from src.project_environment import getenv as project_getenv
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,7 +16,7 @@ class CaptchaOSWindowsMixin:
     def _os_mouse_enabled(self):
         if self._is_local_mock_slider_target():
             return False
-        raw = os.getenv("FAPAI_SOLVER_OS_MOUSE", "")
+        raw = project_getenv("CROW_SOLVER_OS_MOUSE", "")
         return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
     def _window_metrics(self):

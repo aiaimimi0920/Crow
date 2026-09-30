@@ -265,6 +265,8 @@ SUITES = {
     "unit": UNIT_FILES,
     "security": SECURITY_FILES,
     "captcha": (
+        "test_project_environment_captcha.py",
+        "test_cdp_cookie_transport.py",
         "test_captcha_native_imports.py",
         "test_captcha_solver.py",
         "test_captcha_solver_improvements.py",

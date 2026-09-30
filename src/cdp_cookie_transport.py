@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
@@ -13,6 +12,9 @@ from urllib.parse import urlparse, urlsplit, urlunsplit
 
 import requests
 import websocket
+
+from src.project_environment import EnvironmentAliasConflict
+from src.project_environment import getenv as project_getenv
 
 if TYPE_CHECKING:
     from playwright.sync_api import Playwright
@@ -116,8 +118,8 @@ def cdp_endpoint_is_healthy(cdp_endpoint: str, *, timeout_seconds: float = 3.0) 
 
 
 def _cdp_reconnect_attempts() -> int:
-    raw = os.environ.get(
-        "FAPAI_CDP_RECONNECT_ATTEMPTS", str(DEFAULT_CDP_RECONNECT_ATTEMPTS)
+    raw = project_getenv(
+        "CROW_CDP_RECONNECT_ATTEMPTS", str(DEFAULT_CDP_RECONNECT_ATTEMPTS)
     )
     try:
         value = int(str(raw or "").strip())
@@ -127,8 +129,8 @@ def _cdp_reconnect_attempts() -> int:
 
 
 def _cdp_reconnect_backoff_seconds() -> float:
-    raw = os.environ.get(
-        "FAPAI_CDP_RECONNECT_BACKOFF_SECONDS",
+    raw = project_getenv(
+        "CROW_CDP_RECONNECT_BACKOFF_SECONDS",
         str(DEFAULT_CDP_RECONNECT_BACKOFF_SECONDS),
     )
     try:
@@ -163,10 +165,14 @@ def export_cdp_cookies(
             continue
         try:
             return websocket_export(cdp_endpoint, origin_list)
+        except EnvironmentAliasConflict:
+            raise
         except Exception as error:  # noqa: BLE001 - transport boundary retains fallback
             last_error = error
         try:
             return playwright_export(cdp_endpoint, origin_list)
+        except EnvironmentAliasConflict:
+            raise
         except Exception as error:  # noqa: BLE001 - retain the final transport cause
             last_error = error
         if attempt < attempts and backoff > 0:
@@ -177,10 +183,10 @@ def export_cdp_cookies(
 
 
 def _cdp_websocket_cache_path() -> Path | None:
-    explicit = str(os.environ.get("FAPAI_CDP_WEBSOCKET_CACHE_PATH") or "").strip()
+    explicit = str(project_getenv("CROW_CDP_WEBSOCKET_CACHE_PATH") or "").strip()
     if explicit:
         return Path(explicit)
-    snapshot_path = str(os.environ.get("FAPAI_COOKIE_SNAPSHOT") or "").strip()
+    snapshot_path = str(project_getenv("CROW_COOKIE_SNAPSHOT") or "").strip()
     if snapshot_path:
         snapshot = Path(snapshot_path)
         return snapshot.with_name("cdp-websocket-cache.json")
@@ -277,6 +283,8 @@ def _resolve_cdp_websocket_for_cookie_export(
         if websocket_url:
             _write_cached_cdp_websocket(cdp_endpoint, websocket_url)
             return websocket_url
+    except EnvironmentAliasConflict:
+        raise
     except Exception:  # noqa: BLE001, S110 - target discovery falls back to /json
         pass
     try:

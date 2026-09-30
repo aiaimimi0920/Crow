@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from urllib.parse import quote
 
 import requests
 import websocket
+
+from src.project_environment import getenv as project_getenv
 
 from .captcha_context import browser_identity_init_script, build_user_agent_override
 
@@ -50,6 +51,16 @@ class CaptchaCDPMixin:
         return None
 
     def _connect_to_target(self, target_ws, target_title):
+        # Resolve configuration before opening or closing a socket. Alias conflicts
+        # are configuration errors, not recoverable transport failures.
+        configured_user_agent = str(project_getenv("CROW_BROWSER_USER_AGENT") or "").strip()
+        configured_full_version = (
+            str(project_getenv("CROW_BROWSER_IDENTITY_FULL_VERSION") or "").strip()
+            if configured_user_agent else ""
+        )
+        disable_stealth = project_getenv("CROW_SOLVER_DISABLE_STEALTH", "0").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         try:
             if self.ws:
                 try:
@@ -76,11 +87,7 @@ class CaptchaCDPMixin:
             if connection_probe is None:
                 raise RuntimeError("CDP target websocket probe failed")
 
-            configured_user_agent = str(os.getenv("FAPAI_BROWSER_USER_AGENT") or "").strip()
             if configured_user_agent:
-                configured_full_version = str(
-                    os.getenv("FAPAI_BROWSER_IDENTITY_FULL_VERSION") or ""
-                ).strip()
                 if not configured_full_version:
                     version_match = re.search(
                         r"(?:Chrome|Chromium)/(\d+(?:\.\d+){1,3})",
@@ -107,9 +114,6 @@ class CaptchaCDPMixin:
 
             # CDP Stealth Injection: Hide automation fingerprints
             stealth_js = browser_identity_init_script()
-            disable_stealth = os.getenv("FAPAI_SOLVER_DISABLE_STEALTH", "0").strip().lower() in {
-                "1", "true", "yes", "on"
-            }
             if not disable_stealth:
                 self._send_cdp("Page.addScriptToEvaluateOnNewDocument", {"source": stealth_js})
                 # The challenge page is already loaded; also patch the current document.

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import requests
+
+from src.project_environment import getenv as project_getenv
 
 from .captcha_context import DEFAULT_CDP_PAGE_TARGET_LIMIT
 from .captcha_pointer_backend import OSPointerBackend
@@ -21,7 +22,7 @@ class CaptchaTargetMixin:
     def __init__(self, port=9222, target_url=None, cdp_endpoint=None, cancel_checker=None,
                  *, pointer_backend: OSPointerBackend | None = None):
         self._pointer_backend_override = pointer_backend
-        configured_endpoint = (cdp_endpoint or os.getenv("FAPAI_CDP_ENDPOINT") or "").strip()
+        configured_endpoint = (cdp_endpoint or project_getenv("CROW_CDP_ENDPOINT") or "").strip()
         if configured_endpoint:
             self.cdp_endpoint = configured_endpoint.rstrip("/")
             parsed = urlsplit(self.cdp_endpoint)
@@ -133,7 +134,7 @@ class CaptchaTargetMixin:
         return None
 
     def _page_target_limit(self):
-        raw_limit = os.getenv("FAPAI_CDP_MAX_PAGE_TARGETS", str(DEFAULT_CDP_PAGE_TARGET_LIMIT)).strip()
+        raw_limit = project_getenv("CROW_CDP_MAX_PAGE_TARGETS", str(DEFAULT_CDP_PAGE_TARGET_LIMIT)).strip()
         try:
             limit = int(raw_limit)
         except ValueError:

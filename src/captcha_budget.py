@@ -4,10 +4,11 @@ from __future__ import annotations
 from _thread import LockType
 from contextlib import contextmanager
 import math
-import os
 from threading import Event
 import time
 from typing import Callable, Iterator, Protocol
+
+from src.project_environment import getenv as project_getenv
 
 
 class SolveStopped(Exception):
@@ -29,8 +30,9 @@ class SolveBudget:
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.clock = clock
         if deadline is None:
+            raw_seconds = project_getenv("CROW_SOLVER_MAX_RUNTIME_SECONDS", "180")
             try:
-                seconds = float(os.getenv("FAPAI_SOLVER_MAX_RUNTIME_SECONDS", "180"))
+                seconds = float(raw_seconds)
             except ValueError:
                 seconds = 180.0
             if not math.isfinite(seconds) or seconds <= 0:

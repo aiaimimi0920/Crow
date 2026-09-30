@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlunsplit
+
+from src.project_environment import getenv as project_getenv
 
 from .captcha_context import LOCAL_MOCK_VERIFY_MODES
 from .captcha_dom import eval_in_all_frames
@@ -274,7 +275,7 @@ class CaptchaPreflightMixin:
         }
 
     def _headed_playwright_enabled(self):
-        raw = os.getenv("FAPAI_SOLVER_ENABLE_HEADED_PLAYWRIGHT")
+        raw = project_getenv("CROW_SOLVER_ENABLE_HEADED_PLAYWRIGHT")
         if raw is not None:
             return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
         return False

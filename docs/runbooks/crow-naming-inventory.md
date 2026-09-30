@@ -101,5 +101,12 @@ revision files, schema metadata and SQL identifiers are unchanged.
 Quality runs clear canonical counterparts of their forced isolated settings,
 then run the original legacy-environment suites plus explicit new-name mirrors.
 This prevents inherited Crow settings from redirecting tests to real data.
-Worker/captcha readers, injected desktop settings, PowerShell/Compose and HTTP
-header aliases remain later cohorts until their own compatibility tests pass.
+The second cohort covers solver/CDP settings: endpoint, retry/deadline limits,
+flags, browser identity and cookie-cache paths. Old/new/same-value dual inputs
+are tested without a real browser, network or pointer. Invalid numeric settings
+retain their old defaults, but alias conflicts are not swallowed as parse or
+transport failures. Connection configuration is validated before socket changes;
+cookie discovery/export never retries with another transport after a conflict.
+
+Worker readers, injected desktop settings, PowerShell/Compose and HTTP header
+aliases remain later cohorts until their own compatibility tests pass.

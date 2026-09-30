@@ -6,6 +6,8 @@ import os
 import random
 import time
 
+from src.project_environment import getenv as project_getenv
+
 from .collection.adapters.taobao_auth_target import canonical_auth_target
 from .captcha_dom import eval_in_all_frames
 
@@ -294,7 +296,7 @@ class CaptchaNCRetryMixin:
         return False
 
     def _nc_retry_replay_limit(self):
-        raw = os.getenv("FAPAI_SOLVER_NC_RETRY_REPLAYS", "2")
+        raw = project_getenv("CROW_SOLVER_NC_RETRY_REPLAYS", "2")
         try:
             return max(int(str(raw or "").strip() or "0"), 0)
         except ValueError:
@@ -344,7 +346,7 @@ class CaptchaNCRetryMixin:
     def _login_wait_seconds(self):
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return 0
-        raw = os.getenv("FAPAI_SOLVER_LOGIN_WAIT_SECONDS", "120")
+        raw = project_getenv("CROW_SOLVER_LOGIN_WAIT_SECONDS", "120")
         try:
             return max(int(str(raw or "").strip() or "0"), 0)
         except ValueError:
