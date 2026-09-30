@@ -7,6 +7,7 @@ from typing import ClassVar
 
 from . import auth_completion_store
 from .auth_cleanup_journal import completion_is_pending
+from .project_environment import getenv as project_getenv
 from .runtime_state import RuntimeState
 from .solver_recovery_state import SolverRecoveryState
 
@@ -34,7 +35,9 @@ class AuthCompletionReceipts:
         return auth_completion_store.normalize_completion_id(value)
 
     def _auth_completion_confirmation_path(self) -> Path:
-        state_dir = str(self.env("FAPAI_SOLVER_STATE_DIR") or self.data_dir()).strip()
+        state_dir = str(
+            project_getenv("CROW_SOLVER_STATE_DIR", reader=self.env) or self.data_dir()
+        ).strip()
         return Path(state_dir or self.data_dir()) / "auth-completion-confirmations.json"
 
     def _read_auth_completion_confirmations(self) -> dict[str, float]:

@@ -12,6 +12,7 @@ def test_standalone_bundle_imports_and_sanitizes_missing_config(tmp_path):
     names = [
         "tools/desktop_settings_client.py",
         "tools/desktop_runtime_config.py",
+        "tools/desktop_environment.py",
         "tools/pc1_desktop_recovery.py",
         "src/auth_recovery_codes.py",
         "src/auth_snapshot_contract.py",

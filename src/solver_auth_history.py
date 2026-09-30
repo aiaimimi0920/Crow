@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from .collection_control_state import CHALLENGE_SCOPES
+from .project_environment import EnvironmentAliasConflict
+from .project_environment import getenv as project_getenv
 
 if TYPE_CHECKING:
     from .runtime_state import RuntimeState
@@ -50,7 +51,7 @@ class SolverAuthHistory:
 
     def _solver_challenge_state_path(self) -> Path:
         state_dir = (
-            str(os.getenv("FAPAI_SOLVER_STATE_DIR") or self.data_dir()).strip()
+            str(project_getenv("CROW_SOLVER_STATE_DIR") or self.data_dir()).strip()
             or self.data_dir()
         )
         return Path(state_dir) / "solver-challenge-state.json"
@@ -58,6 +59,8 @@ class SolverAuthHistory:
     def _read_solver_challenge_state(self) -> dict[str, object]:
         try:
             payload = json.loads(self.state_path().read_text(encoding="utf-8"))
+        except EnvironmentAliasConflict:
+            raise
         except Exception:  # noqa: BLE001 - unreadable legacy receipts are absent
             return {}
         if not isinstance(payload, dict) or payload.get("active") is not True:

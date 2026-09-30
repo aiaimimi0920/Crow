@@ -6,6 +6,7 @@ from typing import ClassVar, Protocol, cast
 
 from .auth_cookie_paths import EnvironmentReader
 from .auth_cookie_snapshot_state import AuthCookieSnapshotState
+from .project_environment import getenv as project_getenv
 from .runtime_state import RuntimeState
 from .solver_captcha_reports import PayloadFlag
 
@@ -98,7 +99,9 @@ class AuthCookieSnapshot:
                 self.runtime().recovery.snapshot().last_request.get("cdp_endpoint")
             )
         cdp_endpoint = self.normalize_endpoint(
-            request_cdp_endpoint or self.env("FAPAI_CDP_ENDPOINT") or ""
+            request_cdp_endpoint
+            or project_getenv("CROW_CDP_ENDPOINT", reader=self.env)
+            or ""
         )
         if not cdp_endpoint:
             return {
@@ -143,7 +146,7 @@ class AuthCookieSnapshot:
     def _auth_cookie_snapshot_retry_attempts(
         self,
     ) -> int:
-        raw = self.env("FAPAI_AUTH_COOKIE_RETRY_ATTEMPTS", "3")
+        raw = project_getenv("CROW_AUTH_COOKIE_RETRY_ATTEMPTS", "3", reader=self.env)
         try:
             value = int(str(raw or "").strip())
         except ValueError:
@@ -153,7 +156,9 @@ class AuthCookieSnapshot:
     def _auth_cookie_snapshot_retry_backoff_seconds(
         self,
     ) -> float:
-        raw = self.env("FAPAI_AUTH_COOKIE_RETRY_BACKOFF_SECONDS", "2")
+        raw = project_getenv(
+            "CROW_AUTH_COOKIE_RETRY_BACKOFF_SECONDS", "2", reader=self.env
+        )
         try:
             value = float(str(raw or "").strip())
         except ValueError:

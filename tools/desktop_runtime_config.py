@@ -5,25 +5,9 @@ import os
 from pathlib import Path
 
 from tools.pc1_desktop_recovery import RecoveryError
+from tools.desktop_environment import ALLOWED_KEYS, PATH_KEYS, aliases, environment_value
 
 CONFIG_NAME = "crow-desktop.runtime.json"
-PATH_KEYS = {
-    "CROW_DATA_ROOT_HOST",
-    "FAPAI_DATA_ROOT_HOST",
-    "FAPAI_COOKIE_SNAPSHOT",
-    "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE",
-    "FAPAI_AUTH_BROWSER_PROFILE_DIR",
-    "FAPAI_AUTH_BROWSER_PATH",
-    "FAPAI_SETTINGS_CA_FILE",
-    "FAPAI_ENGINE_OPERATOR_TOKEN_FILE",
-    "FAPAI_API_CA_FILE",
-    "FAPAI_DESKTOP_PYTHON_PATH",
-}
-ALLOWED_KEYS = PATH_KEYS | {
-    "FAPAI_COLLECTOR_API_BASE",
-    "FAPAI_AUTH_LOCAL_CDP_PORT",
-    "FAPAI_SETTINGS_API_BASE",
-}
 
 
 def load_runtime_environment(root, environ=None):
@@ -51,8 +35,7 @@ def load_runtime_environment(root, environ=None):
         values = config["environment"]
         if not isinstance(values, dict) or set(values) - ALLOWED_KEYS:
             raise ValueError("fields")
-        management_keys = {"CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST"}
-        process_management_root = any(environment.get(key) for key in management_keys)
+        configured = {}
         for key, value in values.items():
             if (
                 not isinstance(value, str)
@@ -63,11 +46,15 @@ def load_runtime_environment(root, environ=None):
             if key in PATH_KEYS:
                 candidate = Path(value)
                 value = str(candidate if candidate.is_absolute() else root / candidate)
-            if key in management_keys and process_management_root:
+            configured[key] = value
+        for canonical in {aliases(key)[0] for key in configured}:
+            if environment_value(canonical, environment=environment, root=root):
                 continue
-            if not environment.get(key):
-                environment[key] = value
-        port = int(environment.get("FAPAI_AUTH_LOCAL_CDP_PORT") or 9225)
+            value = environment_value(canonical, environment=configured, root=root)
+            if value is not None:
+                for key in aliases(canonical):
+                    environment[key] = value
+        port = int(environment_value("CROW_AUTH_LOCAL_CDP_PORT", environment=environment, root=root) or 9225)
         if not 1024 <= port <= 65535:
             raise ValueError("port")
     except (ValueError, TypeError) as error:

@@ -129,5 +129,20 @@ working directory. No watchdog, service or remote process is started by tests.
 The existing heartbeat filenames and service/process matching identities remain
 compatible; this input-alias batch does not rename runtime files.
 
-Other worker/maintenance readers, injected desktop settings, PowerShell/Compose
-and HTTP header aliases remain later cohorts until their compatibility tests pass.
+The fifth cohort covers injected authentication receipt/cookie readers and
+scoped desktop settings. Injected readers never fall back to global process
+settings. Desktop CROW/FAPAI path aliases compare lexically without following
+links, allowing equivalent trailing separators and native Windows case/UNC
+spellings. Two different explicit paths fail closed without values in errors.
+
+Process settings override saved desktop settings as a logical alias group;
+original empty-process-value fallback to saved settings is preserved. Saved
+relative paths remain relative to the selected bundle, while relative process
+paths keep their existing current-directory interpretation. Configuration files
+are only read, never rewritten. Old JSON version/keys remain supported and no
+origin, TLS, token, browser-profile or cookie containment boundary is relaxed.
+The standalone desktop bundle includes the new scoped reader. Linux fixture and
+Windows CI coverage verify both namespace spellings and injected isolation.
+
+Other worker/maintenance readers, PowerShell/Compose and HTTP header aliases
+remain later cohorts until their compatibility tests pass.

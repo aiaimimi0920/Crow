@@ -14,6 +14,8 @@ from tools import taobao_inplace_auth_handoff as handoff
 from tools.pc1_desktop_recovery import RecoveryClient, RecoveryError, recovery_phase
 from tools.manual_auth_snapshot import completion_lock, publish_snapshot
 from tools.desktop_runtime_config import load_runtime_environment
+from tools.desktop_environment import environment_value
+from src.project_environment import EnvironmentAliasConflict
 from src.project_data_paths import resolve_project_data_root
 from src.auth_recovery_codes import CHALLENGE_CHANGED_CODE
 
@@ -48,17 +50,18 @@ def find_target(endpoint, url, target_id=""):
 def open_challenge(url, endpoint, port, data_root, *, environment=None):
     environment = os.environ if environment is None else environment
     target_identity(url)
+    profile = environment_value("CROW_AUTH_BROWSER_PROFILE_DIR", environment=environment, root=ROOT) or str(data_root / "chrome-cdp-profile-pc1-human-clean")
+    browser_path = environment_value("CROW_AUTH_BROWSER_PATH", environment=environment, root=ROOT)
     try:
         previous_ids = {tab.get("id") for tab in handoff.taobao_login_health.list_cdp_targets(endpoint)}
     except (RuntimeError, OSError):
         previous_ids = set()
-    profile = environment.get("FAPAI_AUTH_BROWSER_PROFILE_DIR") or str(data_root / "chrome-cdp-profile-pc1-human-clean")
     command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                str(ROOT / "scripts" / "start-taobao-cdp-browser.ps1"), "-Port", str(port),
                "-StartUrl", url, "-DataRoot", str(data_root), "-ProfileDir", profile,
                "-DebuggingAddress", "127.0.0.1", "-HumanAuthMode"]
-    if environment.get("FAPAI_AUTH_BROWSER_PATH"):
-        command += ["-BrowserPath", environment["FAPAI_AUTH_BROWSER_PATH"]]
+    if browser_path:
+        command += ["-BrowserPath", browser_path]
     result = subprocess.run(command, capture_output=True, timeout=75,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if result.returncode:
@@ -161,13 +164,13 @@ def main(argv=None):
     try:
         environment = load_runtime_environment(ROOT)
         data_root = resolve_project_data_root(ROOT, env=environment)
-        port = int(environment.get("FAPAI_AUTH_LOCAL_CDP_PORT") or 9225)
+        port = int(environment_value("CROW_AUTH_LOCAL_CDP_PORT", environment=environment, root=ROOT) or 9225)
         endpoint = f"http://127.0.0.1:{port}"
         if args.action == "open":
             result = open_challenge(args.target_url, endpoint, port, data_root, environment=environment)
         else:
             client = RecoveryClient(args.api_base, data_root, environment=environment)
-            output = Path(environment.get("FAPAI_COOKIE_SNAPSHOT") or data_root / "secrets" / "nodes" / "pc2" / "taobao-cookies.json")
+            output = Path(environment_value("CROW_COOKIE_SNAPSHOT", environment=environment, root=ROOT) or data_root / "secrets" / "nodes" / "pc2" / "taobao-cookies.json")
             if args.peer_url or args.recovery_id.startswith("shared-auth-"):
                 from tools.pc1_shared_auth import shared_challenge
                 result = shared_challenge(client, output=output,
@@ -180,6 +183,8 @@ def main(argv=None):
             else:
                 result = complete_challenge(client, endpoint=endpoint, output_path=output, request_id=args.request_id,
                                             challenge_id=args.challenge_id, url=args.target_url, target_id=args.target_id, scope=args.scope)
+    except EnvironmentAliasConflict:
+        result = {"phase": "unavailable", "code": "runtime_config_invalid"}
     except RecoveryError as error:
         result = {"phase": "failed" if str(error) == CHALLENGE_CHANGED_CODE else "unavailable", "code": str(error)}
     except Exception:

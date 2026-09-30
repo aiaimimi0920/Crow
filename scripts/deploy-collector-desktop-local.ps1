@@ -357,6 +357,7 @@ foreach ($relativePath in @(
         "tools\pc1_recovery_request.py",
         "tools\background_task_launcher.py",
         "tools\desktop_runtime_config.py",
+        "tools\desktop_environment.py",
         "tools\desktop_settings_client.py",
         "src\auth_recovery_codes.py",
         "src\project_data_paths.py",

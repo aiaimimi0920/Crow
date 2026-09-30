@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import ClassVar, Protocol
 
 from .project_data_paths import resolve_project_data_root
+from .project_environment import getenv as project_getenv
 
 
 class EnvironmentReader(Protocol):
@@ -37,7 +38,7 @@ class AuthCookiePaths:
             if urls:
                 return urls
 
-        env_raw = self.env("FAPAI_COOKIE_SNAPSHOT_SAMPLE_URLS")
+        env_raw = project_getenv("CROW_COOKIE_SNAPSHOT_SAMPLE_URLS", reader=self.env)
         if env_raw:
             urls = [part.strip() for part in re.split(r"[;,]", env_raw) if part.strip()]
             if urls:
@@ -76,8 +77,8 @@ class AuthCookiePaths:
             seen.add(key)
             candidates.append(resolved)
 
-        _add(self.env("FAPAI_COOKIE_SNAPSHOT_ROOT"))
-        _add(self.env("FAPAI_SHARED_DATA_ROOT_HOST"))
+        _add(project_getenv("CROW_COOKIE_SNAPSHOT_ROOT", reader=self.env))
+        _add(project_getenv("CROW_SHARED_DATA_ROOT_HOST", reader=self.env))
 
         data_root = Path(self.data_dir()).expanduser()
         try:
@@ -97,7 +98,9 @@ class AuthCookiePaths:
 
     def _resolve_auth_cookie_snapshot_path(self, payload: dict[str, object]) -> str:
         explicit_path = str(payload.get("cookie_snapshot_path") or "").strip()
-        env_path = str(self.env("FAPAI_COOKIE_SNAPSHOT") or "").strip()
+        env_path = str(
+            project_getenv("CROW_COOKIE_SNAPSHOT", reader=self.env) or ""
+        ).strip()
         if env_path:
             configured = Path(env_path).expanduser().resolve()
             if (
@@ -108,7 +111,7 @@ class AuthCookiePaths:
             return str(configured)
 
         node_id = self.normalize_node(
-            payload.get("node_id") or self.env("FAPAI_NODE_ID")
+            payload.get("node_id") or project_getenv("CROW_NODE_ID", reader=self.env)
         )
         if not node_id:
             return ""

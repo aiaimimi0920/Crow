@@ -16,6 +16,7 @@ from src.auth_recovery_codes import (
 )
 from src.auth_snapshot_contract import RecoveryError
 from src.collection_api_credentials import secure_api_origin
+from tools.desktop_environment import environment_value
 
 
 def api_origin(value):
@@ -33,8 +34,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class RecoveryClient:
     def __init__(self, api_base, data_root, *, environment=None):
         environment = os.environ if environment is None else environment
-        configured = environment.get("FAPAI_COLLECTOR_API_BASE") or environment.get(
-            "FAPAI_API_BASE_URL"
+        configured = environment_value(
+            "CROW_COLLECTOR_API_BASE", environment=environment, root=Path(data_root)
+        ) or environment_value(
+            "CROW_API_BASE_URL", environment=environment, root=Path(data_root)
         )
         if not configured or api_origin(api_base) != api_origin(configured):
             raise RecoveryError("api_not_configured")
@@ -42,12 +45,19 @@ class RecoveryClient:
         self.url = self.origin + "/api/collection/auth/recovery"
         try:
             context = ssl.create_default_context(
-                cafile=environment.get("FAPAI_API_CA_FILE") or None
+                cafile=environment_value(
+                    "CROW_API_CA_FILE", environment=environment, root=Path(data_root)
+                )
+                or None
             )
         except (OSError, ValueError) as error:
             raise RecoveryError("ca_unavailable") from error
         self.token_path = Path(
-            environment.get("FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE")
+            environment_value(
+                "CROW_NAS_AUTH_RECOVERY_TOKEN_FILE",
+                environment=environment,
+                root=Path(data_root),
+            )
             or data_root / "secrets" / "nas-auth-recovery.token"
         )
         self.opener = urllib.request.build_opener(

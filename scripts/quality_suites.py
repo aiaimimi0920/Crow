@@ -1,6 +1,8 @@
 """Explicit small offline suites; do not classify every legacy test as quick."""
 
 UNIT_FILES = (
+    "test_project_environment_injected.py",
+    "test_desktop_environment_aliases.py",
     "test_project_environment.py",
     "test_project_environment_runtime.py",
     "test_collection_model_names.py",
