@@ -13,6 +13,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $files = @(
+  'crow-environment.ps1',
+  'runtime\project-environment.ps1',
+  'runtime\compose-environment-file.ps1',
   'apply-worker-concurrency-env.ps1',
   'launch-host-direct-workers.ps1',
   'start-host-direct-analysis-worker.ps1',
@@ -86,6 +89,7 @@ foreach ($name in $files) {
 try {
   foreach ($name in $files) {
     $destinationPath = Join-Path $InstallDir $name
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destinationPath) | Out-Null
     Copy-Item -LiteralPath (Join-Path $StagingDir $name) -Destination $destinationPath -Force
     Test-PowerShellFile -Path $destinationPath
   }

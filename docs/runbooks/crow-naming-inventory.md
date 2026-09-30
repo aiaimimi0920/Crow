@@ -220,3 +220,18 @@ explicit Cargo binary target and default-run keep
 stable for existing shortcuts, process detection and installer upgrades. The lock
 changes affect only the root package names; dependency versions and checksums
 remain identical. Source build names are not a migration of installed identity.
+
+The standalone PC2 operator bundle loads the shared PowerShell environment
+helpers through `ops/pc2-host/crow-environment.ps1`. A checkout resolves the
+repository `scripts/` directory; a flat staged bundle carries identical helper
+sources under `runtime/`. Both installer file lists include that dependency
+closure for validation, backup, copying and rollback. Staging must include
+`crow-environment.ps1`, `runtime/project-environment.ps1` and
+`runtime/compose-environment-file.ps1`; copying only a changed caller is incomplete.
+
+The concurrency and cookie-only env-file writers synchronize canonical and legacy
+keys in their existing single file-write operation. Other lines, default paths,
+scheduled-task identities and mode behavior retain their previous meaning.
+Tests load helper-only temporary bundles in both layouts and extract only writer
+blocks; no operator loader, installer, task, cookie or network operation is run.
+Further operator process-read/write integration is tracked separately below.

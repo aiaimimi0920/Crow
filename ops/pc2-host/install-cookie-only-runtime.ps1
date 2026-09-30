@@ -11,6 +11,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $files = @(
+  'crow-environment.ps1',
+  'runtime\project-environment.ps1',
+  'runtime\compose-environment-file.ps1',
   'apply-cookie-only-worker-env.ps1',
   'import-host-direct-analysis-env.ps1',
   'launch-host-direct-workers.ps1',

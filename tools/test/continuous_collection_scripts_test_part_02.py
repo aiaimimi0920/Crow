@@ -54,17 +54,19 @@ def test_pc2_cookie_only_env_cutover_preserves_unrelated_settings_and_requires_s
     assert "ReadAllLines" in script
     assert "WriteAllLines" in script
     assert "UTF8Encoding($false)" in script
-    assert "FAPAI_LIST_BROWSER_FALLBACK = '0'" in script
-    assert "FAPAI_DETAIL_BROWSER_FALLBACK = '0'" in script
-    assert "FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'" in script
-    assert "FAPAI_COOKIE_SNAPSHOT_PREFER = '1'" in script
-    assert "FAPAI_CAPTCHA_SOLVER_ENABLED = '0'" in script
-    assert "FAPAI_HOST_DETAIL_WORKER_COUNT = '4'" in script
-    assert "FAPAI_HOST_ANALYSIS_WORKER_COUNT = '4'" in script
+    assert "CROW_LIST_BROWSER_FALLBACK = '0'" in script
+    assert "CROW_DETAIL_BROWSER_FALLBACK = '0'" in script
+    assert "CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'" in script
+    assert "CROW_COOKIE_SNAPSHOT_PREFER = '1'" in script
+    assert "CROW_CAPTCHA_SOLVER_ENABLED = '0'" in script
+    assert "CROW_HOST_DETAIL_WORKER_COUNT = '4'" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_COUNT = '4'" in script
     assert "detail_worker_count = 4" in script
     assert "analysis_worker_count = 4" in script
     assert "$null = & $nasLoader" in script
     assert "if (-not (Test-Path -LiteralPath $SnapshotPath))" in script
+
+    assert "Get-CrowEnvironmentNames -Name $entry.Key" in script
 
 
 def test_pc2_cookie_only_install_script_backs_up_validates_and_restarts_watchdog() -> None:
@@ -92,14 +94,16 @@ def test_pc2_concurrency_env_only_updates_bounded_worker_counts() -> None:
 
     assert "[ValidateRange(3, 8)][int]$DetailWorkerCount = 4" in script
     assert "[ValidateRange(3, 8)][int]$AnalysisWorkerCount = 4" in script
-    assert "FAPAI_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount" in script
-    assert "FAPAI_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount" in script
+    assert "CROW_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount" in script
     assert "ReadAllLines" in script
     assert "WriteAllLines" in script
     assert "UTF8Encoding($false)" in script
     assert "unrelated_settings_preserved = $true" in script
-    assert "FAPAI_CAPTCHA_SOLVER_ENABLED" not in script
+    assert "CROW_CAPTCHA_SOLVER_ENABLED" not in script
     assert "OPENAI_MODEL" not in script
+
+    assert "Get-CrowEnvironmentNames -Name $entry.Key" in script
 
 
 def test_pc2_concurrency_installer_backs_up_and_preserves_auth_and_model_settings() -> None:

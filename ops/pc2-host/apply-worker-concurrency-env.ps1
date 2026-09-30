@@ -6,15 +6,23 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 
 if (-not (Test-Path -LiteralPath $EnvFile)) {
   throw "PC2 worker environment file does not exist: $EnvFile"
 }
 
 $required = [ordered]@{
-  FAPAI_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount
-  FAPAI_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount
+  CROW_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount
+  CROW_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount
 }
+$compatibleRequired = [ordered]@{}
+foreach ($entry in $required.GetEnumerator()) {
+  foreach ($name in @(Get-CrowEnvironmentNames -Name $entry.Key)) {
+    $compatibleRequired[$name] = $entry.Value
+  }
+}
+$required = $compatibleRequired
 $seen = @{}
 $lines = foreach ($line in [System.IO.File]::ReadAllLines($EnvFile, [System.Text.Encoding]::UTF8)) {
   $separator = $line.IndexOf('=')
