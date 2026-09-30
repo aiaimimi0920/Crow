@@ -1,9 +1,9 @@
-import ctypes
 import subprocess
 import sys
 import time
 
 from src import captcha_solver
+from src.captcha_pointer_backend import Win32PointerBackend
 from tools.test.captcha_solver_test_context import set_solver_platform
 
 
@@ -291,7 +291,7 @@ def test_linux_window_focus_requires_display(monkeypatch) -> None:
 
     assert solver._focus_linux_window() is False
 
-def test_set_os_cursor_position_falls_back_to_absolute_mouse_event(monkeypatch) -> None:
+def test_set_os_cursor_position_falls_back_to_absolute_mouse_event() -> None:
     events: list[tuple[object, ...]] = []
 
     class FakeUser32:
@@ -308,12 +308,9 @@ def test_set_os_cursor_position_falls_back_to_absolute_mouse_event(monkeypatch) 
         def mouse_event(flags, x, y, data, extra_info):
             events.append(("mouse_event", flags, x, y, data, extra_info))
 
-    class FakeWindll:
-        user32 = FakeUser32()
-
-    solver = captcha_solver.CaptchaSolver(port=9223)
-    monkeypatch.setattr(solver, "_native_os_input_enabled", lambda: True)
-    monkeypatch.setattr(ctypes, "windll", FakeWindll(), raising=False)
+    solver = captcha_solver.CaptchaSolver(
+        port=9223, pointer_backend=Win32PointerBackend(FakeUser32())
+    )
 
     solver._set_os_cursor_position(object(), 960, 540)
 
