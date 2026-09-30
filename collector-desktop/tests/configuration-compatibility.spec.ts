@@ -25,6 +25,8 @@ test("native alias conflict blocks initial and timed HTTP until explicit apply",
   expect(requests).toBe(0);
   await page.clock.fastForward(600_001);
   expect(requests).toBe(0);
+  await expect(page.locator("#apiBase")).toHaveValue("");
+  await page.locator("#openSettings").click();
   await page.locator("#apiBase").fill(baseURL!);
   await page.locator("#applyApiBase").click();
   await expect.poll(() => requests).toBeGreaterThan(0);
