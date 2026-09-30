@@ -14,6 +14,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 function Get-CdpEndpointProbe {
     param(
@@ -103,13 +104,7 @@ function Get-CdpEndpointProbe {
 }
 
 function Resolve-DataRoot {
-    if ($DataRoot) {
-        return $DataRoot
-    }
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        return $env:FAPAI_DATA_ROOT_HOST
-    }
-    return (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData")
+    return Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 }
 
 function Resolve-SshExecutable {
@@ -175,7 +170,7 @@ $resolvedProfileDir = if ($ProfileDir) {
 } elseif ($env:FAPAI_AUTH_BROWSER_PROFILE_DIR) {
     $env:FAPAI_AUTH_BROWSER_PROFILE_DIR
 } else {
-    Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData\chrome-cdp-profile-pc1-human-clean"
+    Join-Path (Resolve-DataRoot) "chrome-cdp-profile-pc1-human-clean"
 }
 $resolvedBrowserPath = if ($BrowserPath) {
     $BrowserPath

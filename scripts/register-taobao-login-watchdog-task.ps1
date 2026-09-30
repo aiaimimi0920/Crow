@@ -1,6 +1,6 @@
 param(
     [string]$TaskName = "FapaiFangTaobaoLoginWatchdog",
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [string]$OutputPath = "",
     [string]$AlertWebhookUrl = "",
     [int]$WaitSeconds = 600,
@@ -12,6 +12,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function Convert-DataRootForScheduledTask {
     param([Parameter(Mandatory = $true)][string]$Path)

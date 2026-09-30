@@ -173,6 +173,7 @@ def _shared_data_root_candidates() -> list[Path]:
     for env_name in (
         "FAPAI_SHARED_ARTIFACT_ROOT",
         "FAPAI_SHARED_DATA_ROOT_HOST",
+        "CROW_DATA_ROOT_HOST",
         "FAPAI_DATA_ROOT_HOST",
         "FAPAI_SHARED_DATA_ROOT",
         "FAPAI_DATA_ROOT",
@@ -190,18 +191,18 @@ def _shared_data_root_candidates() -> list[Path]:
 
 
 def _shared_artifact_relative_path(path_value: str) -> str | None:
-    """Extract a relative path from a Windows/UNC FPFData artifact path.
+    """Extract a relative path from a Windows/UNC CrowData or legacy FPFData artifact path.
 
     Workers may run on Windows and persist their host path in the central DB.
-    The API runs in Linux, so only the portion below the shared FPFData root is
+    The API runs in Linux, so only the portion below the shared management root is
     portable. Reject traversal rather than resolving arbitrary host paths.
     """
     normalized = path_value.replace("\\", "/")
     lowered = normalized.lower()
-    marker = "/fpfdata/"
-    marker_index = lowered.find(marker)
-    if marker_index < 0:
+    markers = [(lowered.find(marker), marker) for marker in ("/fpfdata/", "/crowdata/") if marker in lowered]
+    if not markers:
         return None
+    marker_index, marker = min(markers)
     relative = normalized[marker_index + len(marker) :].lstrip("/")
     if not relative:
         return None

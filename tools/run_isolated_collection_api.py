@@ -12,6 +12,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from src.project_data_paths import resolve_project_data_root
+
+
 class RuntimeConfig(TypedDict):
     repo_root: Path
     data_dir: Path
@@ -35,7 +38,9 @@ def build_runtime_config(
 ) -> RuntimeConfig:
     return {
         "repo_root": repo_root,
-        "data_dir": Path(data_root) if data_root else repo_root / "FPFData" / "datas",
+        "data_dir": Path(data_root)
+        if data_root
+        else resolve_project_data_root(repo_root) / "datas",
         "port": port,
         "tls_cert_file": tls_cert_file,
         "tls_key_file": tls_key_file,

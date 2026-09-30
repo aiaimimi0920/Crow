@@ -32,8 +32,8 @@ def test_worker_artifact_sync_script_uses_checkout_relative_source_and_explicit_
     script = SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert "$PSScriptRoot" in script
-    assert '"FPFData"' in script
-    assert "FAPAI_DATA_ROOT_HOST" in script
+    assert 'Resolve-CrowProjectDataRoot' in script
+    assert 'project-data-root.ps1' in script
     assert "FAPAI_ARTIFACT_SYNC_TARGET_ROOT" in script
     assert r"C:\Users\Public\nas_home\AI\FPFData" not in script
     assert r"\\192.168.15.200\docker\fapaifang" not in script

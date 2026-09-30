@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
 $pythonResolver = Join-Path $PSScriptRoot "resolve-pc1-auth-python.ps1"
 if (-not (Test-Path -LiteralPath $pythonResolver -PathType Leaf)) {
@@ -19,14 +21,6 @@ $Python = Resolve-Pc1AuthPython -Requested $Python
 $helper = Join-Path $repoRoot "tools\taobao_inplace_auth_handoff.py"
 if (-not (Test-Path -LiteralPath $helper)) {
     throw "Missing in-place Taobao authentication helper."
-}
-if (-not $DataRoot) {
-    $DataRoot = if ($env:FAPAI_DATA_ROOT_HOST) {
-        $env:FAPAI_DATA_ROOT_HOST
-    }
-    else {
-        Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData"
-    }
 }
 if (-not $OutputPath) {
     $OutputPath = if ($env:FAPAI_COOKIE_SNAPSHOT) {

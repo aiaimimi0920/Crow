@@ -1,5 +1,9 @@
 # Operator-requested PC2 engine restart
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](crow-data-root-compatibility.md).
+
 ## Scope and activation boundary
 
 This is an opt-in control channel, separate from authentication recovery.
@@ -63,7 +67,7 @@ NAS environment:
 | --- | --- |
 | `FAPAI_ENGINE_OPERATOR_TOKEN_FILE` | File containing the desktop operator token |
 | `FAPAI_ENGINE_AGENT_TOKEN_FILE` | File containing the different PC2 controller token |
-| `FAPAI_ENGINE_CONTROL_ROOT` | Optional durable runtime root; default is repository-local `FPFData/` |
+| `FAPAI_ENGINE_CONTROL_ROOT` | Optional durable runtime root; default is repository-local `CrowData/` |
 
 For a containerized NAS, explicitly point the control root at a persistent
 writable data mount. The mailbox is `<root>/control/pc2-engine-restart.sqlite3`.

@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function ConvertTo-ProcessArgument {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Argument)
@@ -95,25 +97,6 @@ function Invoke-DockerCommand {
     finally {
         $process.Dispose()
     }
-}
-
-if (-not $DataRoot) {
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        $DataRoot = $env:FAPAI_DATA_ROOT_HOST
-    }
-    else {
-        $localEnvPath = Join-Path $PSScriptRoot "..\docker.local.env"
-        if (Test-Path -LiteralPath $localEnvPath) {
-            $configuredRoot = Select-String -LiteralPath $localEnvPath -Pattern "^FAPAI_DATA_ROOT_HOST=(.+)$" | Select-Object -First 1
-            if ($configuredRoot) {
-                $DataRoot = $configuredRoot.Matches[0].Groups[1].Value.Trim()
-            }
-        }
-    }
-}
-
-if (-not $DataRoot) {
-    $DataRoot = Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData"
 }
 
 if ($KeepLast -lt 1) {

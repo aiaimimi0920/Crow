@@ -24,6 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 function Write-Utf8NoBomFile {
     param(
@@ -281,11 +282,17 @@ if ($SettingsApiBase -or $SettingsCaFile -or $OperatorTokenFile) {
         throw 'Settings operator token file is unavailable; deployment was not started.'
     }
 }
-if (-not $DataRoot -and $previousEnvironment.FAPAI_DATA_ROOT_HOST) {
-    $DataRoot = [string]$previousEnvironment.FAPAI_DATA_ROOT_HOST
+if (-not $DataRoot) {
+    $previousCrowRoot = [string]$previousEnvironment.CROW_DATA_ROOT_HOST
+    $previousLegacyRoot = [string]$previousEnvironment.FAPAI_DATA_ROOT_HOST
+    if ($previousCrowRoot -and $previousLegacyRoot -and
+        -not [string]::Equals([IO.Path]::GetFullPath($previousCrowRoot), [IO.Path]::GetFullPath($previousLegacyRoot), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Installed desktop has conflicting Crow/legacy data roots; select -DataRoot explicitly."
+    }
+    $DataRoot = if ($previousCrowRoot) { $previousCrowRoot } else { $previousLegacyRoot }
 }
 if (-not $DataRoot) {
-    $DataRoot = Join-Path $repoRoot "FPFData"
+    $DataRoot = Resolve-CrowProjectDataRoot -RepoRoot $repoRoot
 }
 if (-not $CookieSnapshotPath -and $previousEnvironment.FAPAI_COOKIE_SNAPSHOT) {
     $CookieSnapshotPath = [string]$previousEnvironment.FAPAI_COOKIE_SNAPSHOT
@@ -328,6 +335,7 @@ foreach ($relativePath in @(
         "scripts\watch-pc1-auth-auto-resume.ps1",
         "scripts\watch-pc1-nas-auth-recovery.ps1",
         "scripts\collection-api-origin.ps1",
+        "scripts\project-data-root.ps1",
         "scripts\pc1-recovery-http.ps1",
         "scripts\pc1-auth-recovery-policy.ps1",
         "scripts\register-pc1-nas-auth-recovery-task.ps1",
@@ -351,6 +359,7 @@ foreach ($relativePath in @(
         "tools\desktop_runtime_config.py",
         "tools\desktop_settings_client.py",
         "src\auth_recovery_codes.py",
+        "src\project_data_paths.py",
         "src\auth_snapshot_contract.py",
         "src\cdp_cookie_transport.py",
         "src\cookie_snapshot_metadata.py",

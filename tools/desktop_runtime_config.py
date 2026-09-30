@@ -8,6 +8,7 @@ from tools.pc1_desktop_recovery import RecoveryError
 
 CONFIG_NAME = "crow-desktop.runtime.json"
 PATH_KEYS = {
+    "CROW_DATA_ROOT_HOST",
     "FAPAI_DATA_ROOT_HOST",
     "FAPAI_COOKIE_SNAPSHOT",
     "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE",
@@ -50,6 +51,8 @@ def load_runtime_environment(root, environ=None):
         values = config["environment"]
         if not isinstance(values, dict) or set(values) - ALLOWED_KEYS:
             raise ValueError("fields")
+        management_keys = {"CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST"}
+        process_management_root = any(environment.get(key) for key in management_keys)
         for key, value in values.items():
             if (
                 not isinstance(value, str)
@@ -60,6 +63,8 @@ def load_runtime_environment(root, environ=None):
             if key in PATH_KEYS:
                 candidate = Path(value)
                 value = str(candidate if candidate.is_absolute() else root / candidate)
+            if key in management_keys and process_management_root:
+                continue
             if not environment.get(key):
                 environment[key] = value
         port = int(environment.get("FAPAI_AUTH_LOCAL_CDP_PORT") or 9225)

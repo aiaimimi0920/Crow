@@ -17,7 +17,7 @@ def _browser_script() -> str:
 def test_start_taobao_cdp_browser_script_opens_visible_cdp_browser_when_missing() -> None:
     script = _browser_script()
 
-    assert "FAPAI_DATA_ROOT_HOST" in script
+    assert "Resolve-CrowProjectDataRoot" in script
     assert "docker.local.env" in script
     assert "PSScriptRoot" in script
     assert '"FPFData"' in script
@@ -261,7 +261,7 @@ def test_operator_docs_include_cdp_browser_startup_helper() -> None:
     readme = REPO_ROOT.joinpath("README.md").read_text(encoding="utf-8")
 
     assert "start-taobao-cdp-browser.ps1" in readme
-    assert ".\\FPFData\\edge-cdp-profile" in readme
+    assert ".\\CrowData\\edge-cdp-profile" in readme
     assert "http://192.168.65.254:9223" in readme
 
 
@@ -357,7 +357,7 @@ def test_export_taobao_cookie_snapshot_script_starts_browser_and_does_not_print_
     assert "start-taobao-cdp-browser.ps1" in script
     assert "browserless_seed_probe.py" in script
     assert "--write-cookie-snapshot" in script
-    assert "FAPAI_DATA_ROOT_HOST" in script
+    assert "Resolve-CrowProjectDataRoot" in script
     assert "taobao-cookies.json" in script
     assert "FAPAI_AUTH_LOCAL_CDP_PORT" in script
     assert "http://127.0.0.1:$resolvedPort" in script

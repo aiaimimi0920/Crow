@@ -28,6 +28,7 @@ from .collection_control_state import CHALLENGE_SCOPES
 from .collection_index_loader import load_collection_index
 from .detail_artifacts import extract_detail_artifacts, get_detail_archive_path
 from .nas_auth_recovery import NasAuthRecoveryCoordinator
+from .project_data_paths import resolve_collection_data_dir
 from .runtime_json import load_json_file
 from .runtime_state import RuntimeState
 from .solver_request_payload import (
@@ -58,9 +59,7 @@ def create_collection_host(
     adapter: CollectionAdapter | None = None,
 ) -> ModuleType:
     root = Path(__file__).resolve().parents[1]
-    data = Path(
-        data_root or os.getenv("FAPAI_DATA_ROOT") or root / "FPFData" / "datas"
-    ).resolve()
+    data = resolve_collection_data_dir(root, data_root)
     selected = adapter or (
         repository.adapter
         if repository is not None

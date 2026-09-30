@@ -49,3 +49,7 @@ docker.env
 docker.local.env
 env.nas.local
 env.worker.local
+
+# Runtime roots may contain credentials and databases; never send to builds.
+[Cc][Rr][Oo][Ww][Dd][Aa][Tt][Aa]/
+[Ff][Pp][Ff][Dd][Aa][Tt][Aa]/

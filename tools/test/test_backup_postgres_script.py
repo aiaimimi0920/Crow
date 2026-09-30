@@ -8,16 +8,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _assert_project_relative_data_root(text: str) -> None:
     assert "PSScriptRoot" in text
-    assert '"FPFData"' in text
-    assert "C:\\Users\\Public\\nas_home\\AI\\FPFData" not in text
-    assert "Z:\\project\\project\\FPFData" not in text
+    assert 'Resolve-CrowProjectDataRoot' in text
+    assert 'project-data-root.ps1' in text
+    assert "C:\\Users\\Public\\nas_home\\AI\\CrowData" not in text
+    assert "Z:\\project\\project\\CrowData" not in text
 
 
 def test_backup_postgres_script_writes_verified_dump_with_retention() -> None:
     script = REPO_ROOT.joinpath("scripts", "backup-postgres-to-host.ps1").read_text(encoding="utf-8")
 
     _assert_project_relative_data_root(script)
-    assert "FAPAI_DATA_ROOT_HOST" in script
+    assert "Resolve-CrowProjectDataRoot" in script
     assert "postgres\\backups" in script
     assert "pg_dump" in script
     assert "-Fc" in script
@@ -25,8 +26,8 @@ def test_backup_postgres_script_writes_verified_dump_with_retention() -> None:
     assert "-l" in script
     assert "docker cp" in script
     assert "KeepLast" in script
-    assert "Get-ChildItem" in script
-    assert "Remove-Item" in script
+    assert "Remove-Item" not in script
+    assert "KeepLast no longer deletes backups" in script
     assert "verifyPath" in script
     assert "copied host dump" in script
 
@@ -66,8 +67,8 @@ def test_operator_docs_include_postgres_backup_task_and_restore_probe() -> None:
     readme = REPO_ROOT.joinpath("README.md").read_text(encoding="utf-8")
     runbook = REPO_ROOT.joinpath("docs", "runbooks", "docker-schema-guard.md").read_text(encoding="utf-8")
 
-    assert ".\\FPFData" in readme
-    assert ".\\FPFData" in runbook
+    assert ".\\CrowData" in readme
+    assert ".\\CrowData" in runbook
     assert "backup-postgres-to-host.ps1" in readme
     assert "register-postgres-backup-task.ps1" in readme
     assert "check-postgres-backup-health.ps1" in readme

@@ -6,6 +6,8 @@ The browser solver, Docker daemon, NAS, data volumes and images are not mutated.
 
 from __future__ import annotations
 
+from src.project_data_paths import resolve_project_data_root
+
 import argparse
 import json
 import os
@@ -186,10 +188,12 @@ def main():
     parser.add_argument("--api-base", required=True)
     parser.add_argument("--token-file", type=Path, required=True)
     parser.add_argument("--ca-file", type=Path)
-    parser.add_argument("--runtime-root", type=Path, default=Path(os.getenv("FAPAI_COLLECTION_CONTROL_ROOT") or Path(__file__).resolve().parents[1] / "FPFData" / "settings-controller"))
+    parser.add_argument("--runtime-root", type=Path, default=None)
     parser.add_argument("--run", action="store_true", help="Explicitly enable polling and remote restart execution")
     parser.add_argument("--allow-insecure-http", action="store_true", help="Allow tokens over plaintext HTTP on an explicitly trusted isolated LAN")
     args = parser.parse_args()
+    if args.runtime_root is None:
+        args.runtime_root = Path(os.getenv("FAPAI_COLLECTION_CONTROL_ROOT") or resolve_project_data_root(Path(__file__).resolve().parents[1]) / "settings-controller")
     if not args.run:
         parser.error("--run is required; starting this controller enables remote engine restarts")
     run_loop(MailboxClient(args.api_base, args.token_file, allow_insecure_http=args.allow_insecure_http, ca_file=args.ca_file), EngineController(), runtime_root=args.runtime_root)

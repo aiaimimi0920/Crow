@@ -10,6 +10,8 @@ import secrets
 import sqlite3
 import time
 
+from .project_data_paths import resolve_project_data_root
+
 PREFIX = "/api/collection/control/restart"
 ROUTES = {PREFIX, f"{PREFIX}/poll", f"{PREFIX}/result"}
 ACTIVE = ("requested", "restarting")
@@ -39,7 +41,7 @@ def configured() -> bool:
 
 def runtime_root() -> Path:
     override = os.getenv("FAPAI_ENGINE_CONTROL_ROOT", "").strip()
-    return Path(override).resolve() if override else Path(__file__).resolve().parents[1] / "FPFData"
+    return Path(override).resolve() if override else resolve_project_data_root(Path(__file__).resolve().parents[1])
 
 
 def authorize(headers, role: str) -> None:

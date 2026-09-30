@@ -1,4 +1,6 @@
 """App-scoped TLS control endpoint. No business database or Docker access."""
+from src.project_data_paths import resolve_project_data_root
+
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -108,8 +110,10 @@ def main():
     parser.add_argument("--port", type=int, default=18443)
     parser.add_argument("--cert-file", required=True, type=Path)
     parser.add_argument("--key-file", required=True, type=Path)
-    parser.add_argument("--runtime-root", type=Path, default=Path(__file__).resolve().parents[1] / "FPFData")
+    parser.add_argument("--runtime-root", type=Path, default=None)
     args = parser.parse_args()
+    if args.runtime_root is None:
+        args.runtime_root = resolve_project_data_root(Path(__file__).resolve().parents[1])
     if not configured():
         parser.error("Two distinct operator/agent token files are required")
     os.umask(0o077)

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Protocol
 
+from .project_data_paths import resolve_project_data_root
+
 
 class EnvironmentReader(Protocol):
     def __call__(self, name: str, default: str | None = None) -> str | None: ...
@@ -76,7 +78,6 @@ class AuthCookiePaths:
 
         _add(self.env("FAPAI_COOKIE_SNAPSHOT_ROOT"))
         _add(self.env("FAPAI_SHARED_DATA_ROOT_HOST"))
-        _add(self.repo_root() / "FPFData")
 
         data_root = Path(self.data_dir()).expanduser()
         try:
@@ -85,6 +86,13 @@ class AuthCookiePaths:
             pass
         if data_root.name.lower() == "datas":
             _add(data_root.parent)
+        if not candidates:
+            management_env = {
+                key: self.env(key) or ""
+                for key in ("CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST")
+            }
+            _add(resolve_project_data_root(self.repo_root(), env=management_env))
+
         return candidates
 
     def _resolve_auth_cookie_snapshot_path(self, payload: dict[str, object]) -> str:

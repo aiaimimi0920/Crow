@@ -1,5 +1,9 @@
 # Docker DB schema guard
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](crow-data-root-compatibility.md).
+
 The Docker entrypoint runs a read-only database schema guard before starting seed,
 detail, API, or legacy collection workers.
 
@@ -105,7 +109,7 @@ docker compose --env-file docker.local.env -f docker-compose.collection.yml run 
 Use the host data root for operator-owned PostgreSQL dumps:
 
 ```text
-.\FPFData
+.\CrowData
 ```
 
 Create a verified custom-format dump and keep recent copies:

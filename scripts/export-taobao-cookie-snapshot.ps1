@@ -15,26 +15,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 $script:manualAuthStartUrl = ""
 
 function Resolve-FapaiDataRoot {
-    if ($DataRoot) {
-        return $DataRoot
-    }
-
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        return $env:FAPAI_DATA_ROOT_HOST
-    }
-
-    $localEnvPath = Join-Path $PSScriptRoot "..\docker.local.env"
-    if (Test-Path -LiteralPath $localEnvPath) {
-        $configuredRoot = Select-String -LiteralPath $localEnvPath -Pattern "^FAPAI_DATA_ROOT_HOST=(.+)$" | Select-Object -First 1
-        if ($configuredRoot) {
-            return $configuredRoot.Matches[0].Groups[1].Value.Trim()
-        }
-    }
-
-    return (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData")
+    return Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 }
 
 function Test-CdpEndpoint {

@@ -30,6 +30,7 @@ def main():
             "FAPAI_SOLVER_STATE_DIR": runtime,
             "FAPAI_DATA_ROOT": runtime,
             "FAPAI_DATA_ROOT_HOST": runtime,
+            "CROW_DATA_ROOT_HOST": runtime,
             "FAPAI_NAS_AUTH_RECOVERY_ENABLED": "0",
             "FAPAI_SOLVER_OS_MOUSE": "0",
             "FAPAI_COLLECTION_WORKER_TOKEN_FILE": "",

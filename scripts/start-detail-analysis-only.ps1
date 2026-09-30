@@ -1,5 +1,5 @@
 param(
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [int]$Port = 9223,
     [string]$Python = "python",
     [int]$DetailTargetSuccess = 10,
@@ -14,6 +14,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function Set-EnvLine {
     param(

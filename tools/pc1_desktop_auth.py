@@ -14,6 +14,7 @@ from tools import taobao_inplace_auth_handoff as handoff
 from tools.pc1_desktop_recovery import RecoveryClient, RecoveryError, recovery_phase
 from tools.manual_auth_snapshot import completion_lock, publish_snapshot
 from tools.desktop_runtime_config import load_runtime_environment
+from src.project_data_paths import resolve_project_data_root
 from src.auth_recovery_codes import CHALLENGE_CHANGED_CODE
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,7 +160,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         environment = load_runtime_environment(ROOT)
-        data_root = Path(environment.get("FAPAI_DATA_ROOT_HOST") or ROOT / "FPFData")
+        data_root = resolve_project_data_root(ROOT, env=environment)
         port = int(environment.get("FAPAI_AUTH_LOCAL_CDP_PORT") or 9225)
         endpoint = f"http://127.0.0.1:{port}"
         if args.action == "open":

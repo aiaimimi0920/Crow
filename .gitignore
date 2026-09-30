@@ -62,3 +62,11 @@ collector-desktop/src-tauri/gen/
 .playwright-cli/
 graphify-out/
 src/graphify-out/
+
+# Case variants of runtime roots must not expose secrets on case-sensitive hosts.
+/[Cc][Rr][Oo][Ww][Dd][Aa][Tt][Aa]/*
+/[Ff][Pp][Ff][Dd][Aa][Tt][Aa]/*
+!/CrowData/.gitignore
+!/CrowData/README.md
+!/FPFData/.gitignore
+!/FPFData/README.md

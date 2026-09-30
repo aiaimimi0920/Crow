@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
 $previous = @{
     PYTHONPATH = $env:PYTHONPATH
@@ -26,7 +27,7 @@ function Write-LaunchFailure {
     param([string]$Kind, [int]$Code)
     # Persist only bounded metadata, never stderr, URLs, cookies or credentials.
     try {
-        $directory = Join-Path $root "FPFData\desktop-auth"
+        $directory = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot $root) "desktop-auth"
         [IO.Directory]::CreateDirectory($directory) | Out-Null
         $receipt = [ordered]@{
             version = 1

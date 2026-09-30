@@ -1,5 +1,9 @@
 # FapaiFang 运维观察台桌面版
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](../docs/runbooks/crow-data-root-compatibility.md).
+
 这是一个 **Rust + Tauri** 独立桌面应用，用来观察和少量修正当前采集模块的实际数据。
 它不在 PC1 运行 seed/detail/analysis worker；PC1 只承担人工认证，采集和分析 worker 均部署在 PC2。
 
@@ -156,7 +160,7 @@ SHA-256，保存后核验目标、工作目录和图标。当前安装的快捷�
 部署验收必须在安装版窗口中确认状态、地区和商品列表加载成功，并点击“刷新数据”复核；
 仅检查 API 返回 200、EXE 哈希、进程或快捷方式不足以证明桌面连接正常。
 
-认证启动脚本使用 `FAPAI_DESKTOP_PYTHON_PATH` 指定的绝对解释器路径，不依赖桌面进程的 `PATH`；仅未配置解释器的旧安装或开发环境允许从 `PATH` 查找。模块工作目录和 `PYTHONPATH` 固定为当前 bundle。启动失败会在该 bundle 的 `FPFData/desktop-auth/last-launch-failure.json` 留下最近一次失败的时间、操作、分类和退出码，不保存原始错误输出、URL、Cookie 或凭据；历史失败记录不代表当前认证状态。
+认证启动脚本使用 `FAPAI_DESKTOP_PYTHON_PATH` 指定的绝对解释器路径，不依赖桌面进程的 `PATH`；仅未配置解释器的旧安装或开发环境允许从 `PATH` 查找。模块工作目录和 `PYTHONPATH` 固定为当前 bundle。启动失败会在该 bundle 的 `CrowData/desktop-auth/last-launch-failure.json` 留下最近一次失败的时间、操作、分类和退出码，不保存原始错误输出、URL、Cookie 或凭据；历史失败记录不代表当前认证状态。
 
 完整安装必须包含 `browserless_seed_probe` 和 `taobao_login_health` 的全部拆分模块，以及 `start-taobao-cdp-browser` 的两个 PowerShell 子模块，不能只复制入口文件。`tools/test/test_desktop_auth_bundle.py` 按部署脚本的实际清单构造独立安装目录，验证真实认证模块在隔离解释器及非仓库工作目录下可加载；测试不启动浏览器或提交线上认证任务。
 

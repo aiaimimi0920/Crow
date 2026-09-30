@@ -2,12 +2,12 @@ param(
     [string]$TaskName = "FapaiFangNasAuthRecovery",
     [string]$TaskPath = "\FapaiFang\",
     [string]$ApiBase = "",
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [string]$OutputPath = "",
     [string]$TokenPath = "",
     [string]$ApiCaFile = "",
     [string]$Python = "",
-    [string]$ProfileDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData\chrome-cdp-profile-pc1-human-clean"),
+    [string]$ProfileDir = "",
     [string]$BrowserPath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     [int]$Port = 9225,
     [int]$IntervalMinutes = 1,
@@ -19,6 +19,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+if (-not $ProfileDir) { $ProfileDir = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot) "chrome-cdp-profile-pc1-human-clean" }
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 . (Join-Path $PSScriptRoot "collection-api-origin.ps1")
 if (-not $ApiBase) {
     $ApiBase = if ($env:FAPAI_COLLECTOR_API_BASE) { $env:FAPAI_COLLECTOR_API_BASE } else { $env:FAPAI_API_BASE_URL }
@@ -83,7 +86,7 @@ if ($LauncherMode -eq "NoConsole") {
             throw "No-console task launcher dependency is unavailable: $required"
         }
     }
-    $statusPath = Join-Path $repoRoot "FPFData\runtime\pc1-nas-auth-task.json"
+    $statusPath = Join-Path $DataRoot "runtime\pc1-nas-auth-task.json"
     $arguments = @(
         "-I", "`"$launcher`"", "--status-path", "`"$statusPath`"",
         "--", "`"$executable`""

@@ -1,4 +1,6 @@
 """Explicit opt-in settings controller. Development tests must use fake Docker/API."""
+from src.project_data_paths import resolve_project_data_root
+
 import argparse
 import json
 import os
@@ -80,9 +82,11 @@ def main():
     parser.add_argument("--ca-file", type=Path)
     parser.add_argument("--compose-file", required=True, type=Path)
     parser.add_argument("--env-file", action="append", type=Path, default=[])
-    parser.add_argument("--runtime-root", type=Path, default=Path(__file__).resolve().parents[1] / "FPFData" / "settings-controller")
+    parser.add_argument("--runtime-root", type=Path, default=None)
     parser.add_argument("--run", action="store_true")
     args = parser.parse_args()
+    if args.runtime_root is None:
+        args.runtime_root = resolve_project_data_root(Path(__file__).resolve().parents[1]) / "settings-controller"
     if not args.run:
         parser.error("--run is required; this enables remote configuration and container recreation")
     if os.name != "posix":
