@@ -1,3 +1,4 @@
+function crowSource_10_sniff_collection() {
     function startSniffing() {
         if (modeParam === 'SNIFF_WORKER') {
             startSniffWorker();
@@ -207,3 +208,4 @@
              if (onDone) onDone(false, true); // No script means empty
         }
     }
+}

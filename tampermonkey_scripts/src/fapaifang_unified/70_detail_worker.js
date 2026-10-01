@@ -1,3 +1,4 @@
+function crowSource_70_detail_worker() {
     // ==========================================
     // MODULE 4: WORKER (Detail Page - Automatic)
     // ==========================================
@@ -108,3 +109,4 @@
         GM_setValue('uni_signal_slot_free', Date.now());
     }
 
+}

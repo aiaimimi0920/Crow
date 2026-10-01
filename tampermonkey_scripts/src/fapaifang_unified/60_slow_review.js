@@ -1,3 +1,4 @@
+function crowSource_60_slow_review() {
     // ==========================================
     // MODULE 3: SLOW REVIEW (Master Page - Tab Manager)
     // ==========================================
@@ -126,3 +127,4 @@
              }
          }, 5000); // Check every 5s
     }
+}

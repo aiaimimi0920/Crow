@@ -43,10 +43,30 @@ function normalizeLineEndings(content) {
 }
 
 
+export function loadUserscriptParts(root = REPO_ROOT) {
+  return PART_RELATIVE_PATHS.map((partPath, index) => {
+    const source = normalizeLineEndings(fs.readFileSync(path.join(root, partPath), "utf8"));
+    const name = path.basename(partPath, ".js");
+    const opening = `function crowSource_${name}() {\n`;
+    const start = source.indexOf(opening);
+    assert.ok(start >= 0 && source.endsWith("\n}\n"), `Invalid source unit: ${partPath}`);
+    const metadata = source.slice(0, start);
+    assert.ok(index === 0 ? metadata.startsWith("// ==UserScript==\n") &&
+      metadata.trimEnd().endsWith("// ==/UserScript==") &&
+      metadata.split("\n").every((line) => !line.trim() || line.startsWith("//")) :
+      metadata === "", `Unexpected code outside source unit: ${partPath}`);
+    return { source, metadata, body: source.slice(start + opening.length, -2) };
+  });
+}
+
+
 export function buildUserscriptSource(root = REPO_ROOT) {
-  return PART_RELATIVE_PATHS.map((partPath) =>
-    normalizeLineEndings(fs.readFileSync(path.join(root, partPath), "utf8")),
-  ).join("");
+  // Source units are valid JavaScript function bodies, not executed modules.
+  // Splicing their complete bodies into one IIFE preserves shared bindings and
+  // early returns. Both these units and the installable program remain scanned.
+  const parts = loadUserscriptParts(root);
+  return parts[0].metadata + "(function() {\n" +
+    parts.map((part) => part.body).join("") + "})();\n";
 }
 
 
@@ -58,13 +78,15 @@ export function checkUserscriptOutput(root = REPO_ROOT) {
     expected,
     "Tampermonkey output is stale; run node scripts/build-userscript.mjs --write",
   );
-  const syntax = spawnSync(process.execPath, ["--check", "--input-type=commonjs"], {
-    input: actual,
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 30_000,
-  });
-  assert.equal(syntax.status, 0, `Tampermonkey syntax check failed: ${syntax.error?.message || syntax.stderr}`);
+  for (const source of [...loadUserscriptParts(root).map((part) => part.source), actual]) {
+    const syntax = spawnSync(process.execPath, ["--check", "--input-type=commonjs"], {
+      input: source,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 30_000,
+    });
+    assert.equal(syntax.status, 0, `Tampermonkey syntax check failed: ${syntax.error?.message || syntax.stderr}`);
+  }
 }
 
 

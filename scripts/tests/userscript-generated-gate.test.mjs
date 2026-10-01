@@ -28,7 +28,9 @@ function fixture({ missing, suffix = "", stale = false } = {}) {
     fs.copyFileSync(path.join(repoRoot, relative), destination);
   }
   if (suffix) {
-    fs.appendFileSync(path.join(root, PART_RELATIVE_PATHS.at(-1)), suffix, "utf8");
+    const lastPart = path.join(root, PART_RELATIVE_PATHS.at(-1));
+    const source = fs.readFileSync(lastPart, "utf8");
+    fs.writeFileSync(lastPart, source.slice(0, -2) + suffix + "}\n", "utf8");
     if (!stale) fs.writeFileSync(path.join(root, OUTPUT_RELATIVE_PATH), buildUserscriptSource(root), "utf8");
   }
   return root;
@@ -67,6 +69,16 @@ test("stale output and hand-edited output both fail", () => {
 test("matching generation cannot exempt syntactically invalid JavaScript", () => {
   const root = fixture({ suffix: "\nconst = ;\n" });
   assert.throws(() => verify(root), /syntax check failed/);
+});
+
+test("source-unit wrappers cannot silently discard executable preambles or suffixes", () => {
+  for (const side of ["before", "after"]) {
+    const root = fixture();
+    const part = path.join(root, PART_RELATIVE_PATHS[1]);
+    const source = fs.readFileSync(part, "utf8");
+    fs.writeFileSync(part, side === "before" ? "void 0;\n" + source : source + "void 0;\n");
+    assert.throws(() => buildUserscriptSource(root), /source unit/);
+  }
 });
 
 test("excluding a maintained fragment fails even with a matching install file", () => {

@@ -1,3 +1,4 @@
+function crowSource_50_fast_review_item() {
     function processItemFast(task) {
         fastReviewState.stats.fetched++;
         
@@ -231,3 +232,4 @@
         }, 5000); // Check every 5s
     }
 
+}

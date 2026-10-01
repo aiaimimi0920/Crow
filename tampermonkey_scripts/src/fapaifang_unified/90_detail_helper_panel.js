@@ -1,3 +1,98 @@
+function crowSource_90_detail_helper_panel() {
+    // ==========================================
+    // MODULE 5: HELPER (Detail Page - Manual UI)
+    // ==========================================
+    function initHelper() {
+        if (!isDetail) return;
+        // Avoid double loading
+        if (document.getElementById('detail-helper-panel')) return;
+
+        log('加载详情助手 UI (完整版)...', 'info');
+        
+        // --- Helper Config & State ---
+        const IS_AUTO_MODE = new URLSearchParams(window.location.search).get('auto_fix') === '1';
+        let isPanelMinimized = GM_getValue('dh_panel_minimized', false);
+
+        // Data Fields Config
+        const FIELDS = [
+            { key: 'id', label: 'ID', type: 'number', readonly: true },
+            { key: '市场评估价', label: '市场评估价', type: 'number' },
+            { key: '起拍价格', label: '起拍价格', type: 'number' },
+            { key: '成交价格', label: '成交价格', type: 'number' },
+            { key: '保证金', label: '保证金', type: 'number' },
+            { key: '交易时间', label: '交易时间', type: 'text' }, // yyyy/MM/dd HH:mm:ss
+            { key: '开拍时间', label: '开拍时间', type: 'text' },
+            { key: '原始网站', label: '原始网站', type: 'text', readonly: true },
+            { key: '是否成交', label: '是否成交', type: 'checkbox' },
+            { key: '竞拍人数', label: '竞拍人数', type: 'number' },
+            { key: '出价次数', label: '出价次数', type: 'number' },
+            { key: '出价人数', label: '出价人数', type: 'number' },
+            { key: '围观人数', label: '围观人数', type: 'number' },
+            { key: '提醒人数', label: '提醒人数', type: 'number' },
+            { key: '浏览次数', label: '浏览次数', type: 'number' },
+            { key: '地点', label: '地点', type: 'text' },
+            { key: '完整地址', label: '完整地址', type: 'text' },
+            { key: '所属小区', label: '所属小区', type: 'text' },
+            { key: '省份', label: '省份', type: 'text' },
+            { key: '城市', label: '城市', type: 'text' },
+            { key: '区', label: '区', type: 'text' },
+            { key: '最靠近商圈', label: '最靠近商圈', type: 'text' },
+            { key: '建筑面积', label: '建筑面积', type: 'number', step: 0.01 },
+            { key: '产权建筑面积', label: '产权建筑面积', type: 'number', step: 0.01 },
+            { key: '产权份额比例', label: '产权份额比例', type: 'number', step: 0.0001 },
+            { key: '法院名称', label: '法院名称', type: 'text' },
+            { key: '案号', label: '案号', type: 'text' },
+            { key: '单价', label: '单价', type: 'number', readonly: true }, // Auto-calculated
+        ];
+
+        // --- Core Logic Helpers ---
+
+        // --- Data Loading ---
+        async function loadDataWithPriority(forcePage = false) {
+            updateStatus('正在加载数据...');
+            
+            // 1. Local Backend (Highest)
+            const itemIdMatch = window.location.href.match(/[?&]id=(\d+)/) || window.location.pathname.match(/\/(\d+)\.htm/);
+            const id = itemIdMatch ? itemIdMatch[1] : null;
+            
+            if (id) {
+                try {
+                    const response = await new Promise(resolve => {
+                         fetchApi(`/get_item?id=${id}`, {}, resolve, () => resolve({error: true}));
+                    });
+                    if (response && !response.error && Object.keys(response).length > 0) {
+                        log('Loaded Local Data', 'success');
+                        updateStatus('✅ 已加载本地存档数据 (独占模式)');
+                        return response;
+                    }
+                } catch(e) {}
+            }
+            
+            // 2. URL Params (Middle)
+            const urlParams = new URLSearchParams(window.location.search);
+            let urlData = {};
+            let hasUrlData = false;
+            FIELDS.forEach(field => {
+                const paramVal = urlParams.get(field.key);
+                if (paramVal !== null && paramVal !== undefined && paramVal !== '') {
+                     hasUrlData = true;
+                     if (field.type === 'number') urlData[field.key] = parseFloat(paramVal);
+                     else if (field.type === 'checkbox') urlData[field.key] = (paramVal === 'true' || paramVal === '1');
+                     else urlData[field.key] = decodeURIComponent(paramVal);
+                }
+            });
+            if (hasUrlData) {
+                if (!urlData['id']) urlData['id'] = id || 'unknown';
+                updateStatus('⚠️ 使用URL传入数据 (独占模式)');
+                return urlData;
+            }
+            
+            // 3. Page Extraction (Lowest)
+            updateStatus('⚠️ 使用页面抓取数据');
+            return extractDetailPageData();
+        }
+
+        // --- UI Construction ---
         function createPanel() {
             let panel = document.getElementById('detail-helper-panel');
             if (!panel) {
@@ -202,7 +297,7 @@
             data.url = url;
             data.title = document.title;
             data.source_title = document.title;
-            data.context = getCleanContext();
+            data.context = getCleanDetailContext();
             
             FIELDS.forEach(field => {
                 const input = document.getElementById(`dh-input-${field.key}`);
@@ -279,3 +374,56 @@
             if (forceNext) {
                  setTimeout(() => {
                      updateStatus('🔄 获取下一任务...', '#2196f3');
+                     fetchApi('/collection/details/next_task', {}, (task) => {
+                         if (task && task.url) {
+                             let nextUrl = task.url;
+                             let separator = nextUrl.includes('?') ? '&' : '?';
+                             if (!nextUrl.includes('auto_fix=1')) {
+                                 nextUrl += separator + 'auto_fix=1';
+                                 separator = '&';
+                             }
+                             // Persist uni_port if present in current URL
+                             const currentPort = new URLSearchParams(window.location.search).get('uni_port');
+                             if (currentPort && !nextUrl.includes('uni_port=')) {
+                                 nextUrl += separator + 'uni_port=' + currentPort;
+                             }
+                             window.location.href = nextUrl;
+                         } else {
+                             updateStatus('🏁 完成', '#ff9800');
+                             setTimeout(() => window.close(), 3000);
+                         }
+                     });
+                 }, 500);
+                 return;
+            }
+            
+            // Auto-submit to AI Queue
+            const data = collectFormData();
+            if(data.id) {
+                updateStatus('🤖 提交AI校验...', '#9c27b0');
+                fetchApi('/area_result', data, () => {
+                     updateStatus('✅ AI校验提交成功', '#4caf50');
+                     setTimeout(() => checkAutoSubmit(true), 500);
+                }, () => updateStatus('❌ AI提交失败', '#f44336'));
+            }
+        }
+        
+        function updateStatus(msg, color = '#666') {
+            const el = document.getElementById('dh-status');
+            if (el) { el.textContent = msg; el.style.color = color; }
+        }
+
+        // --- Init ---
+        if (IS_AUTO_MODE) {
+            log('自动模式 - 预滚动...', 'info');
+            window.scrollTo({ top: document.body.scrollHeight * 0.75, behavior: 'smooth' });
+            setTimeout(() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setTimeout(createPanel, 500);
+            }, 2000);
+        } else {
+            setTimeout(createPanel, 500);
+        }
+    }
+
+}

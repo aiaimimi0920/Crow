@@ -20,18 +20,10 @@ _EXCLUDE_DIRS = {
     "graphify-out",
 }
 
-_EXCLUDE_RELATIVE_DIRS = {
-    Path("tampermonkey_scripts/src/fapaifang_unified"),
-}
-
-
 def repo_js_syntax_check_files(repo_root: Path) -> list[Path]:
     files: list[Path] = []
     for path in sorted(repo_root.rglob("*.js")):
         if any(part in _EXCLUDE_DIRS for part in path.parts):
-            continue
-        relative_path = path.relative_to(repo_root)
-        if any(excluded_dir in relative_path.parents for excluded_dir in _EXCLUDE_RELATIVE_DIRS):
             continue
         files.append(path)
     return files
