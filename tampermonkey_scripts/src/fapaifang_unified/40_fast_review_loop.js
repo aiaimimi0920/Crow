@@ -1,3 +1,4 @@
+function crowSource_40_fast_review_loop() {
     // ==========================================
     // MODULE 2: FAST REVIEW (Master Page - No Tabs)
     // ==========================================
@@ -301,3 +302,4 @@
         });
     }
     
+}

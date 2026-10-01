@@ -17,6 +17,7 @@
 
     // Listen for solve command from external
     window.addEventListener('message', function(event) {
+        if (event.source !== window || event.origin !== window.location.origin) return;
         if (event.data && event.data.type === 'SOLVE_NC_CAPTCHA') {
             console.log('[NC-Solver] Received solve command');
             solveNCCaptcha();
@@ -211,10 +212,10 @@
 
         if (hasSuccess) {
             console.log('[NC-Solver] ✅ SUCCESS!');
-            window.postMessage({type: 'NC_SOLVED', success: true}, '*');
+            window.postMessage({type: 'NC_SOLVED', success: true}, window.location.origin);
         } else {
             console.log('[NC-Solver] ❌ Failed, will retry...');
-            window.postMessage({type: 'NC_SOLVED', success: false}, '*');
+            window.postMessage({type: 'NC_SOLVED', success: false}, window.location.origin);
 
             // Retry after delay
             setTimeout(function() {

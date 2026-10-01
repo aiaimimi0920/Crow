@@ -1,3 +1,4 @@
+function crowSource_20_sniff_challenge() {
     
     // --- State Management ---
     // Mode: 'IDLE' | 'SNIFF' | 'REVIEW_FAST' | 'REVIEW_SLOW'
@@ -11,8 +12,8 @@
     
     // Page Type Detection
     const isMaster = window.location.hostname === "sf.taobao.com";
-    const isDetail = window.location.hostname.includes("item.taobao.com") || window.location.hostname.includes("paimai.taobao.com");
-    const isLoginOrSec = window.location.hostname.includes("login.taobao.com") || window.location.hostname.includes("sec.taobao.com");
+    const isDetail = ["sf-item.taobao.com", "susong-item.taobao.com", "paimai.taobao.com"].includes(window.location.hostname);
+    const isLoginOrSec = ["login.taobao.com", "sec.taobao.com"].includes(window.location.hostname);
 
     const urlParams = initialUrlParams; // Reuse parsed params
     const autoWorkerMode = urlParams.get('auto_worker'); // 1 = enabled
@@ -139,45 +140,4 @@
     }
 
     // --- Dashboard UI (Only on Master Page) ---
-    function createDashboard() {
-        if (!isMaster || dashboardPanel) return;
-        if (modeParam === 'SNIFF_WORKER') return; // Hide dashboard in worker tabs
-
-        dashboardPanel = document.createElement('div');
-        Object.assign(dashboardPanel.style, {
-            position: 'fixed', top: '10px', right: '10px', width: '300px',
-            backgroundColor: 'rgba(0, 0, 0, 0.85)', color: 'white',
-            borderRadius: '8px', padding: '15px', zIndex: 999999,
-            fontFamily: 'Segoe UI, sans-serif', fontSize: '14px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)', border: '1px solid #444'
-        });
-
-        const render = () => {
-            const modeOptions = [
-                { val: 'IDLE', label: '🛑 空闲 (Idle)' },
-                { val: 'SNIFF', label: '🕵️ 嗅探模式 (Sniffing)' },
-                { val: 'REVIEW_FAST', label: '⚡ 快速检阅 (Fast API)' },
-                { val: 'REVIEW_SLOW', label: '🐢 慢速检阅 (Slow Tab)' }
-            ];
-            
-            let optionsHtml = modeOptions.map(opt => 
-                `<option value="${opt.val}" ${currentMode === opt.val ? 'selected' : ''}>${opt.label}</option>`
-            ).join('');
-
-            dashboardPanel.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #555; padding-bottom:8px;">
-                    <strong style="font-size:16px; color:#4dabf7;">🛠️ 法拍房全能助手</strong>
-                    <span style="font-size:12px; color:#888;">v1.0</span>
-                </div>
-                
-                <div style="margin-bottom:12px;">
-                    <label style="display:block; margin-bottom:5px; color:#ccc;">工作模式:</label>
-                    <select id="uni-mode-select" style="width:100%; padding:6px; background:#333; color:white; border:1px solid #555; border-radius:4px;">
-                        ${optionsHtml}
-                    </select>
-                </div>
-
-                <div style="display:flex; gap:10px; margin-bottom:15px;">
-                    <button id="uni-btn-start" style="flex:1; padding:8px; background:${isRunning ? '#f03e3e' : '#2f9e44'}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
-                        ${isRunning ? '⏹️ 停止工作' : '▶️ 开始工作'}
-                    </button>
+}

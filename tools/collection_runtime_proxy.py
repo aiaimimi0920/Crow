@@ -1,13 +1,17 @@
 """Fixed operator routes from the TLS gateway to the same-host collection API."""
+
 import ipaddress
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 
-from src.project_environment import getenv as project_getenv
 from src.collection_engine_restart import RestartError, token
-from src.collection_operator_actions import OPERATOR_ACTION_PATHS, validate_operator_body
+from src.collection_operator_actions import (
+    OPERATOR_ACTION_PATHS,
+    validate_operator_body,
+)
+from src.project_environment import getenv as project_getenv
 
 RUNTIME_ROUTES = frozenset(OPERATOR_ACTION_PATHS.values())
 
@@ -18,26 +22,40 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def runtime_origin():
-    value = project_getenv("CROW_CONTROL_LOCAL_API_BASE", "").strip()
+    value = project_getenv("CROW_CONTROL_LOCAL_API_BASE", "")
     try:
-        parsed = urllib.parse.urlsplit(value)
+        parsed = urllib.parse.urlsplit(value.strip())
+        address = ipaddress.ip_address(parsed.hostname or "")
+        port = parsed.port
         valid = (
-            parsed.scheme == "http" and parsed.hostname
-            and ipaddress.ip_address(parsed.hostname).is_loopback
-            and parsed.port and not parsed.username and not parsed.password
-            and parsed.path in {"", "/"} and not parsed.query and not parsed.fragment
+            parsed.scheme == "http"
+            and address.is_loopback
+            and not getattr(address, "scope_id", None)
+            and port
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+            and not any(ord(char) < 32 or ord(char) == 127 for char in value)
         )
     except ValueError:
         valid = False
     if not valid:
         raise RestartError("Local runtime control is not configured", 503)
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+    host = f"[{address.compressed}]" if address.version == 6 else address.compressed
+    return f"http://{host}:{port}"
 
 
 def forward_runtime(method, path, body):
     if method != "POST" or path not in RUNTIME_ROUTES:
         raise RestartError("Unsupported runtime action", 405)
-    action = next(action for action, route in OPERATOR_ACTION_PATHS.items() if route == path)
+    action = next(
+        action for action, route in OPERATOR_ACTION_PATHS.items() if route == path
+    )
+    # Select the server-owned route, rather than forwarding caller URL text.
+    # The caller can choose an action but cannot supply any part of its URL.
+    canonical_path = OPERATOR_ACTION_PATHS[action]
     try:
         validate_operator_body(action, body)
     except ValueError:
@@ -49,8 +67,13 @@ def forward_runtime(method, path, body):
     if not credential:
         raise RestartError("Operator token is not configured", 503)
     request = urllib.request.Request(
-        runtime_origin() + path, data=raw, method="POST",
-        headers={"Content-Type": "application/json", "X-FAPAI-Control-Token": credential},
+        runtime_origin() + canonical_path,
+        data=raw,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-FAPAI-Control-Token": credential,
+        },
     )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:

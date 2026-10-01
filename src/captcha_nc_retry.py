@@ -5,10 +5,12 @@ import math
 import os
 import random
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 from src.project_environment import getenv as project_getenv
 
 from .collection.adapters.taobao_auth_target import canonical_auth_target
+from .collection.adapters.taobao_solver_target import _split_web_target_url
 from .captcha_dom import eval_in_all_frames
 
 logger = logging.getLogger(__name__)
@@ -319,12 +321,17 @@ class CaptchaNCRetryMixin:
                     return canonical_auth_target(scope, target)
                 except (ValueError, TypeError):
                     continue
-        if "/_____tmd_____/" in href:
-            dest = href.split("/_____tmd_____/", 1)[0]
+        try:
+            parsed_href = urlsplit(href)
+        except ValueError:
+            parsed_href = None
+        if parsed_href is not None and "/_____tmd_____/" in parsed_href.path:
+            dest = urlunsplit((parsed_href.scheme, parsed_href.netloc, parsed_href.path.split("/_____tmd_____/", 1)[0], "", ""))
             dest = self._normalize_target_url(dest)
-            if dest.startswith("http"):
+            if parsed_href.scheme in {"http", "https"}:
                 return dest
-        if "sf.taobao.com/list/" in href:
+        parsed = _split_web_target_url(href)
+        if parsed is not None and parsed.hostname == "sf.taobao.com" and parsed.path.startswith("/list/"):
             return self._normalize_target_url(href)
         return "https://sf.taobao.com/list/50025969__2.htm"
 
@@ -355,13 +362,18 @@ class CaptchaNCRetryMixin:
     def _looks_like_login_ui(self, summary):
         if not isinstance(summary, dict):
             return False
-        href = str(summary.get("href") or "").lower()
+        href = str(summary.get("href") or "")
         title = str(summary.get("title") or "")
+        parsed = _split_web_target_url(href)
+        try:
+            path = urlsplit(href).path.lower()
+        except ValueError:
+            path = ""
         return bool(
             summary.get("loginRequired")
-            or "login.taobao.com" in href
-            or "login_jump" in href
-            or "/passport/" in href
+            or (parsed is not None and parsed.hostname == "login.taobao.com")
+            or "login_jump" in path
+            or "/passport/" in path
             or title.strip() == "登录"
         )
 

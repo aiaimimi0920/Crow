@@ -1,55 +1,4 @@
-                     fetchApi('/collection/details/next_task', {}, (task) => {
-                         if (task && task.url) {
-                             let nextUrl = task.url;
-                             let separator = nextUrl.includes('?') ? '&' : '?';
-                             if (!nextUrl.includes('auto_fix=1')) {
-                                 nextUrl += separator + 'auto_fix=1';
-                                 separator = '&';
-                             }
-                             // Persist uni_port if present in current URL
-                             const currentPort = new URLSearchParams(window.location.search).get('uni_port');
-                             if (currentPort && !nextUrl.includes('uni_port=')) {
-                                 nextUrl += separator + 'uni_port=' + currentPort;
-                             }
-                             window.location.href = nextUrl;
-                         } else {
-                             updateStatus('🏁 完成', '#ff9800');
-                             setTimeout(() => window.close(), 3000);
-                         }
-                     });
-                 }, 500);
-                 return;
-            }
-            
-            // Auto-submit to AI Queue
-            const data = collectFormData();
-            if(data.id) {
-                updateStatus('🤖 提交AI校验...', '#9c27b0');
-                fetchApi('/area_result', data, () => {
-                     updateStatus('✅ AI校验提交成功', '#4caf50');
-                     setTimeout(() => checkAutoSubmit(true), 500);
-                }, () => updateStatus('❌ AI提交失败', '#f44336'));
-            }
-        }
-        
-        function updateStatus(msg, color = '#666') {
-            const el = document.getElementById('dh-status');
-            if (el) { el.textContent = msg; el.style.color = color; }
-        }
-
-        // --- Init ---
-        if (IS_AUTO_MODE) {
-            log('自动模式 - 预滚动...', 'info');
-            window.scrollTo({ top: document.body.scrollHeight * 0.75, behavior: 'smooth' });
-            setTimeout(() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                setTimeout(createPanel, 500);
-            }, 2000);
-        } else {
-            setTimeout(createPanel, 500);
-        }
-    }
-
+function crowSource_100_detail_helper_actions() {
     // --- Main Entry ---
     
     // --- WORKER IDENTITY CHECK (Phase 3.1) ---
@@ -186,3 +135,16 @@
 
     // 1. If Master Page -> Show Dashboard
     if (isMaster) {
+        window.addEventListener('load', createDashboard);
+    } 
+    // 2. If Detail Page -> Init Helper & Worker Check
+    else if (isDetail) {
+        initHelper();
+        initWorker();
+    }
+    // 3. Login/Sec Page -> Auto-close or Alert
+    else if (isLoginOrSec) {
+        log('检测到验证/登录页面', 'warning');
+        initCaptchaDetector();
+    }
+}

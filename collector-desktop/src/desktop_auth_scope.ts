@@ -1,5 +1,5 @@
 import { object } from "./desktop_value.ts";
-import { DEFAULT_AUTH_CHALLENGE_URL, normalizeAuthChallengeUrl } from "./desktop_auth_target.ts";
+import { authTargetScope, DEFAULT_AUTH_CHALLENGE_URL, normalizeAuthChallengeUrl } from "./desktop_auth_target.ts";
 
 export type AuthScope = "seed" | "detail";
 export const scopeLabel = (scope: AuthScope): string => scope === "seed" ? "链接采集" : "详情采集";
@@ -23,7 +23,8 @@ export function authScopeTarget(value: unknown, scope: AuthScope, itemId: unknow
   const request = object(authScopeState(value, scope)?.last_request);
   const candidate = request.challenge_target_url || request.target_url || request.url;
   const normalized = candidate ? normalizeAuthChallengeUrl(candidate) : "";
-  if (scope === "seed") return normalized.includes("https://sf.taobao.com/list/") ? normalized : DEFAULT_AUTH_CHALLENGE_URL;
-  if (normalized.startsWith("https://sf-item.taobao.com/sf_item/")) return normalized;
+  const targetScope = authTargetScope(normalized);
+  if (scope === "seed") return targetScope === "seed" ? normalized : DEFAULT_AUTH_CHALLENGE_URL;
+  if (targetScope === "detail") return normalized;
   return /^\d+$/.test(String(itemId)) ? `https://sf-item.taobao.com/sf_item/${itemId}.htm` : "";
 }

@@ -1,15 +1,4 @@
-        window.addEventListener('load', createDashboard);
-    } 
-    // 2. If Detail Page -> Init Helper & Worker Check
-    else if (isDetail) {
-        initHelper();
-        initWorker();
-    }
-    // 3. Login/Sec Page -> Auto-close or Alert
-    else if (isLoginOrSec) {
-        log('检测到验证/登录页面', 'warning');
-        initCaptchaDetector();
-    }
+function crowSource_110_dispatch_and_captcha() {
     // --- TAB Identity ---
     const TAB_ID = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     console.log(`[Crow] Init Tab ID: ${TAB_ID}`);
@@ -79,4 +68,4 @@
         }, 1000);
     }
 
-})();
+}

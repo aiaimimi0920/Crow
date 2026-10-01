@@ -195,7 +195,7 @@ def test_auth_dialog_open_is_passive_and_browser_open_is_explicit() -> None:
     assert "function normalizeAuthChallengeUrl" in main_js
     assert "_____tmd_____/punish" in main_js
     assert "transient challenge credentials" in main_js
-    assert "sf-item.taobao.com" in main_js
+    assert 'parsed.hostname === "sf-item.taobao.com"' in main_js
     assert "https://sf.taobao.com/list/50025969__2.htm?__captcha_solver_bg=1" in main_js
     auth = (APP_ROOT / "src/desktop_auth.ts").read_text(encoding="utf-8")
     open_function = auth[auth.index("export function openAuthChallenge"):auth.index("async function run")]
@@ -307,7 +307,7 @@ def test_runtime_state_fallback_keeps_running_for_detail_only_auth_when_seed_sta
     ]
     assert "last_request" in runtime_function
     assert "target_url" in runtime_function
-    assert "sf-item.taobao.com" in runtime_function
+    assert 'authTargetScope(targetUrl) === "detail"' in runtime_function
     assert "seed_scan_job_pending" in runtime_function
     assert "seed_scan_progress_pending" in runtime_function
     assert 'return "运行中";' in runtime_function

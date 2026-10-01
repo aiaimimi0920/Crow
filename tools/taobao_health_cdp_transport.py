@@ -79,87 +79,72 @@ def fetch_health_samples_via_cdp_cookie_http(cdp_endpoint: str, urls: Sequence[s
 
 
 def build_cdp_verification_page_matcher(url: str) -> Callable[[str], bool]:
-    requested_url = url.lower()
-    requested_worker_master = "__captcha_worker_master=1" in requested_url
-    requested_solver_target = "__captcha_solver_bg=1" in requested_url
-    requested_solver_route = _captcha_solver_route(url) if requested_solver_target else ""
-    requested_solver_scope = _captcha_solver_scope(url) if requested_solver_target else ""
+    from urllib.parse import parse_qs
 
-    requested_login = (
-        "login.taobao.com" in requested_url
-        or "login.m.taobao.com" in requested_url
-        or "login.tmall.com" in requested_url
-        or "havanaone/login" in requested_url
+    from src.collection.adapters.taobao_solver_target import (
+        _is_taobao_login_target,
+        _is_taobao_target,
+        _solver_request_scope_from_target_url,
+        _split_web_target_url,
     )
+    from tools.taobao_health_captcha import _captcha_solver_route
+
+    requested = _split_web_target_url(url)
+    if requested is None:
+        return lambda _candidate_url: False
+    requested_query = parse_qs(requested.query, keep_blank_values=True)
+    requested_worker_master = requested_query.get("__captcha_worker_master") == ["1"]
+    requested_solver_target = requested_query.get("__captcha_solver_bg") == ["1"]
+    requested_route = _captcha_solver_route(url)
+    requested_scope = _solver_request_scope_from_target_url(url)
+    requested_taobao = _is_taobao_target(requested)
+    requested_login = _is_taobao_login_target(requested)
 
     def is_taobao_verification_page(candidate_url: str) -> bool:
-        lowered = candidate_url.lower()
+        candidate = _split_web_target_url(candidate_url)
+        if candidate is None:
+            return False
+        query = parse_qs(candidate.query, keep_blank_values=True)
+        candidate_route = _captcha_solver_route(candidate_url)
         if requested_worker_master:
-            return "__captcha_worker_master=1" in lowered
-        if requested_solver_target:
-            # Login redirects carry the original solver target inside an
-            # encoded query parameter.  They do not themselves retain the
-            # ``__captcha_solver_bg`` marker, so recognize the shared login
-            # surface before applying list/detail scope matching.  This keeps
-            # one operator login tab across both independent challenge scopes.
-            if any(
-                marker in lowered
-                for marker in (
-                    "login.taobao.com",
-                    "login.m.taobao.com",
-                    "login.tmall.com",
-                    "havanaone/login",
-                )
-            ):
-                return True
-            if "__captcha_solver_bg=1" in lowered or "__captcha_manual_popup=1" in lowered:
-                # Solver tabs are scoped by the auction page type.  A
-                # detail challenge must never be reused for a list challenge
-                # (or vice versa), even though both carry the same marker.
-                candidate_scope = _captcha_solver_scope(candidate_url)
-                if requested_solver_scope and candidate_scope:
-                    return candidate_scope == requested_solver_scope
-                return bool(
-                    requested_solver_route
-                    and _captcha_solver_route(candidate_url) == requested_solver_route
-                )
-            candidate_is_challenge = any(
-                marker in lowered
-                for marker in ("/_____tmd_____/punish", "x5secdata=", "x5step=")
-            )
-            return bool(
-                candidate_is_challenge
-                and requested_solver_route
-                and (
-                    (
-                        requested_solver_scope
-                        and _captcha_solver_scope(candidate_url) == requested_solver_scope
-                    )
-                    or (
-                        not requested_solver_scope
-                        and _captcha_solver_route(candidate_url) == requested_solver_route
-                    )
-                )
-            )
-        if requested_login:
             return (
-                "login.taobao.com" in lowered
-                or "login.m.taobao.com" in lowered
-                or "login.tmall.com" in lowered
-                or "havanaone/login" in lowered
+                query.get("__captcha_worker_master") == ["1"]
+                and candidate_route == requested_route
             )
-        return any(
-            marker in lowered
-            for marker in (
-                "login.taobao.com",
-                "login.m.taobao.com",
-                "havanaone/login",
-                "__captcha_solver_bg=1",
-                "__captcha_manual_popup=1",
-                "_____tmd_____",
-                "/punish",
-                "challenge",
-            )
+        candidate_login = _is_taobao_login_target(candidate)
+        if requested_login:
+            return candidate_login
+        candidate_solver = query.get("__captcha_solver_bg") == ["1"] or query.get(
+            "__captcha_manual_popup"
+        ) == ["1"]
+        path_segments = {segment.lower() for segment in candidate.path.split("/")}
+        candidate_challenge = bool(
+            path_segments & {"_____tmd_____", "punish", "challenge"}
+            or "x5secdata" in query
+            or "x5step" in query
+        )
+        if requested_solver_target:
+            # Login redirects do not retain the solver marker at the top level.
+            # Only verified Taobao/Tmall targets may share this operator tab.
+            if requested_taobao and candidate_login:
+                return True
+            if not (candidate_solver or candidate_challenge):
+                return False
+            if requested_scope != "unknown":
+                return (
+                    _solver_request_scope_from_target_url(candidate_url)
+                    == requested_scope
+                )
+            # Keep explicitly requested local/test targets usable without
+            # granting another origin access merely because it has a marker.
+            return candidate_route == requested_route
+        allowed_target = (
+            _is_taobao_target(candidate)
+            if requested_taobao
+            else candidate_route == requested_route
+        )
+        return allowed_target and (
+            candidate_login or candidate_solver or candidate_challenge
         )
 
     return is_taobao_verification_page

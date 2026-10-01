@@ -6,6 +6,8 @@ import re
 from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .taobao_solver_target import _is_taobao_login_target, _split_web_target_url
+
 HEALTHY_LIST_PAYLOAD = "healthy_list_payload"
 
 PARTIAL_AVAILABLE = "partial_available"
@@ -95,11 +97,8 @@ def classify_taobao_health(
     lowered_text = text.lower()
     lowered_url = (final_url or "").lower()
 
-    has_login = (
-        _summary_flag(summary, "body_has_login")
-        or "login.taobao.com" in lowered_url
-        or "login.m.taobao.com" in lowered_url
-        or "havanaone/login" in lowered_url
+    has_login = _summary_flag(summary, "body_has_login") or _is_taobao_login_target(
+        _split_web_target_url(final_url)
     )
     has_punish = (
         _summary_flag(summary, "body_has_punish")

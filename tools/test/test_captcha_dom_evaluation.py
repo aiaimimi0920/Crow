@@ -36,7 +36,7 @@ function doc(spec) {
         getElementById: id => nodes.find(node => matches(node, '#' + id)) || null,
     };
 }
-const value = vm.runInNewContext(input.expression, {document: doc(input.document), window: {}}, {timeout: 1000});
+const value = vm.runInNewContext(input.expression, {document: doc(input.document), window: {}, URL}, {timeout: 1000});
 process.stdout.write(JSON.stringify(value));
 """
 

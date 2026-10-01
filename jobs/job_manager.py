@@ -24,6 +24,11 @@ import tempfile
 from copy import deepcopy
 from typing import Optional, Dict, List, Tuple
 
+if __package__:
+    from .job_json import format_job_json
+else:
+    from job_json import format_job_json
+
 # 默认类别和排序参数
 DEFAULT_CATEGORIES = ["50025969", "200782003"]  # 住宅用房, 商业用房
 DEFAULT_ST_PARAMS = ["2", "1", "0", "3", "4", "5"]  # 排序参数优先级
@@ -179,17 +184,8 @@ class JobManager:
     
     def _save_job_file(self, file_path: str, data: Dict):
         """保存job文件并更新缓存"""
-        import re
         try:
-            content = json.dumps(data, ensure_ascii=False, indent=2)
-            
-            # Compact arrays (pages) to single line for readability
-            def compact_array(match):
-                arr_str = match.group(0)
-                arr = json.loads(arr_str)
-                return json.dumps(arr)
-            
-            content = re.sub(r'\[\s*\n\s*(\d+,?\s*\n?\s*)+\]', compact_array, content)
+            content = format_job_json(data)
             
             with tempfile.NamedTemporaryFile(
                 mode='w', encoding='utf-8', dir=os.path.dirname(os.path.abspath(file_path)),

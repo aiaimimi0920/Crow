@@ -42,7 +42,7 @@ const document = {
   querySelector: selector => selector.includes('.errloading') ? {offsetParent: options.visible ? {} : null} : null,
   querySelectorAll: () => [], getElementsByTagName: () => [],
 };
-console.log(JSON.stringify(vm.runInNewContext(process.argv[1], {document})));
+console.log(JSON.stringify(vm.runInNewContext(process.argv[1], {document, URL})));
 """
     result = subprocess.run(
         [

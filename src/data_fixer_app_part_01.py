@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from src.data_fixer_context import AI_AVAILABLE, DATAS_DIR, FIELDS_SCHEMA, INFERABLE_FIELDS, logger
+from src.collection.adapters.taobao_solver_target import _is_web_target_domain, _split_web_target_url
 
 
 logger = logging.getLogger(__name__)
@@ -189,7 +190,7 @@ class DataFixerAppPart01:
 
                     # Needs fix
                     url = item.get('原始网站', '')
-                    if url and 'taobao.com' in url:
+                    if _is_web_target_domain(_split_web_target_url(url), "taobao.com"):
                         item_id = item.get('id', 'unknown')
                         location = item.get('地点', '') or item.get('所属小区', '')
                         if location:

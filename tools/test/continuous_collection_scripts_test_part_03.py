@@ -416,6 +416,6 @@ def test_pc2_self_heal_bootstrap_repeats_as_system_without_password() -> None:
 def test_pc2_host_open_auth_latest_resets_login_redirect_targets_to_default_list() -> None:
     script = _pc2_host_script("open-auth-latest.ps1")
 
-    assert "login.taobao.com" in script
-    assert "havanaone/login" in script
+    assert "$targetHost.Contains('login.taobao.com')" in script
+    assert "$lowerPath.Contains('havanaone/login')" in script
     assert "return $defaultUrl" in script

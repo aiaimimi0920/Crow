@@ -17,5 +17,8 @@ test("detail authentication never silently falls back to a list page", () => {
   assert.equal(authScopeTarget(value, "detail"), "");
   assert.equal(authScopeTarget(value, "detail", "12345"), "https://sf-item.taobao.com/sf_item/12345.htm");
   assert.equal(authScopeTarget(value, "detail", "1/../../"), "");
-  assert.match(authScopeTarget({}, "seed"), /^https:\/\/sf.taobao.com\/list\//);
+  const seed = new URL(authScopeTarget({}, "seed"));
+  assert.equal(seed.protocol, "https:");
+  assert.equal(seed.hostname, "sf.taobao.com");
+  assert.ok(seed.pathname.startsWith("/list/"));
 });

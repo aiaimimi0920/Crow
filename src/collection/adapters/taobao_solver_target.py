@@ -1,18 +1,70 @@
 """Preserve Taobao collection identity while removing stale solver challenge data."""
 
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+def _split_web_target_url(value: object) -> SplitResult | None:
+    """Reject ambiguous browser authorities before using a URL as an identity."""
+    target_url = str(value or "").strip(" ")
+    if (
+        not target_url
+        or "\\" in target_url
+        or any(ord(char) <= 32 or ord(char) == 127 for char in target_url)
+    ):
+        return None
+    try:
+        parsed = urlsplit(target_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or "%" in parsed.netloc
+        ):
+            return None
+        # Accessing port validates malformed and out-of-range port values.
+        _ = parsed.port
+    except ValueError:
+        return None
+    return parsed
+
+
+def _is_web_target_domain(parsed: SplitResult | None, domain: str) -> bool:
+    if parsed is None:
+        return False
+    host = parsed.hostname or ""
+    return (host == domain or host.endswith("." + domain)) and all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
+        for label in host.split(".")
+    )
+
+
+def _is_taobao_target(parsed: SplitResult | None) -> bool:
+    return any(
+        _is_web_target_domain(parsed, domain) for domain in ("taobao.com", "tmall.com")
+    )
+
+
+def _is_taobao_login_target(parsed: SplitResult | None) -> bool:
+    if not _is_taobao_target(parsed) or parsed is None:
+        return False
+    if parsed.hostname in {"login.taobao.com", "login.m.taobao.com", "login.tmall.com"}:
+        return True
+    path = re.sub(r"/+", "/", parsed.path.lower())
+    return path == "/havanaone/login" or path.startswith("/havanaone/login/")
 
 
 def _solver_request_scope_from_target_url(target_url: str) -> str:
-    normalized = str(target_url or "").strip().lower()
-    if not normalized:
+    parsed = _split_web_target_url(target_url)
+    if not _is_taobao_target(parsed) or parsed is None:
         return "unknown"
-    if "sf-item.taobao.com" in normalized or "/sf_item/" in normalized:
+    path = re.sub(r"/+", "/", parsed.path.lower())
+    if parsed.hostname == "sf-item.taobao.com" or "/sf_item/" in path:
         return "detail"
-    if "sf.taobao.com/list/" in normalized or "sf.taobao.com//list/" in normalized:
+    if parsed.hostname == "sf.taobao.com" and "/list/" in path:
         return "seed"
-    if "/punish" in normalized and "/list/" in normalized:
+    if "/punish" in path and "/list/" in path:
         return "seed"
     return "unknown"
 
@@ -22,12 +74,10 @@ def _normalize_solver_target_url(value: object) -> str:
     if not target_url:
         return ""
 
-    try:
-        parsed = urlsplit(target_url)
-    except ValueError:
+    parsed = _split_web_target_url(target_url)
+    if parsed is None:
         return target_url
-
-    hostname = (parsed.hostname or "").lower()
+    hostname = parsed.hostname or ""
     if hostname != "taobao.com" and not hostname.endswith(".taobao.com"):
         return target_url
 

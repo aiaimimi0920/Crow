@@ -18,6 +18,7 @@ import { updateRuntimeControls, refreshEngineRestartStatus } from "./desktop_run
 import { errorMessage, object, safeExternalUrl } from "./desktop_value.ts";
 import { recordArray, type CollectionRecord } from "./desktop_collection_contract.ts";
 import { DETAIL_PREVIEW_MAX_CHARS } from "./desktop_config.ts";
+import { authTargetScope } from "./desktop_auth_target.ts";
 
 export function hideDetailPanel() {
   state.detailRequestId += 1;
@@ -145,8 +146,7 @@ export function runtimeStateFromOverview(data: CollectionRecord): string {
   if (authRequired) {
     const lastRequest = object(solver.last_request);
     const targetUrl = String(lastRequest.target_url || lastRequest.url || "").toLowerCase();
-    const detailOnlyAuth =
-      targetUrl.includes("sf-item.taobao.com") || targetUrl.includes("/sf_item/");
+    const detailOnlyAuth = authTargetScope(targetUrl) === "detail";
     const seedStageCanContinue =
       Number(status.seed_scan_job_pending || 0) > 0 ||
       Number(status.seed_scan_job_in_progress || 0) > 0 ||

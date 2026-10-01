@@ -29,7 +29,7 @@
 // @run-at       document-idle
 // ==/UserScript==
 
-(function() {
+function crowSource_00_bootstrap() {
     'use strict';
 
     const initialUrlParams = new URLSearchParams(window.location.search);
@@ -266,3 +266,4 @@
             setTimeout(startSniffWorker, 1000);
         });
     }
+}

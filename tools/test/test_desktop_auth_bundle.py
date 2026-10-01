@@ -69,6 +69,7 @@ def test_real_auth_payload_is_importable_and_handles_offline_request_in_isolatio
 def test_real_auth_payload_declares_its_lightweight_target_adapter(tmp_path):
     bundle = copy_declared_bundle(tmp_path / "installed bundle")
     assert (bundle / "src/collection/adapters/taobao_auth_target.py").is_file()
+    assert (bundle / "src/collection/adapters/taobao_solver_target.py").is_file()
 
 
 def test_real_browser_launcher_has_its_dot_sourced_modules_in_the_payload(tmp_path):

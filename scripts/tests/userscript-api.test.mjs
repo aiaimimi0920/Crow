@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { loadUserscriptParts } from "../build-userscript.mjs";
 
-const source = fs.readFileSync(new URL("../../tampermonkey_scripts/src/fapaifang_unified/00_bootstrap.js", import.meta.url), "utf8");
+const source = "(function() {\n" + loadUserscriptParts()[0].body;
 const token = "fixture_worker_token_".repeat(3);
 const key = "uni_collection_credential";
 

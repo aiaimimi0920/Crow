@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -219,8 +220,12 @@ def test_client_builds_amap_request_with_key_and_query() -> None:
 
     assert result is not None
     assert len(calls) == 1
-    assert "key=TESTKEY" in calls[0]
-    assert "restapi.amap.com" in calls[0]
+    request = urlsplit(calls[0])
+    assert request.scheme == "https"
+    assert request.hostname == "restapi.amap.com"
+    assert request.path == "/v3/geocode/geo"
+    assert parse_qs(request.query)["key"] == ["TESTKEY"]
+    assert parse_qs(request.query)["address"] == ["上海市黄浦区人民广场"]
 
 
 def test_client_caches_repeated_queries_to_save_quota() -> None:
