@@ -10,13 +10,20 @@ import hmac
 import json
 import os
 import ssl
+import sys
 from datetime import datetime
+from pathlib import Path
 from time import mktime
 from urllib.parse import urlencode, urlparse
 from wsgiref.handlers import format_date_time
 
 import websocket
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.llm_diagnostics import diagnostic_number, failure_kind
 
 SECRETS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "secrets.json")
 
@@ -91,32 +98,30 @@ def gen_params(appid, domain):
 
 def build_handlers(app_id, model_id):
     def on_error(ws, error):
-        print("### Error:", error)
+        print("### Error kind:", failure_kind(error))
 
     def on_close(ws, one, two):
         print("### Closed ###")
 
     def run(ws, *args):
         data = json.dumps(gen_params(appid=app_id, domain=model_id))
-        print(f"Sending payload: {data}")
+        print("Sending request")
         ws.send(data)
 
     def on_open(ws):
         thread.start_new_thread(run, (ws,))
 
     def on_message(ws, message):
-        print("### Message:", message)
         data = json.loads(message)
         code = data["header"]["code"]
         if code != 0:
-            print(f"Error Code: {code}")
-            print(f"Error Message: {data['header']['message']}")
+            print(f"Error Code: {diagnostic_number(code)}")
             ws.close()
         else:
             choices = data["payload"]["choices"]
             status = data["header"]["status"]
             content = choices["text"][0]["content"]
-            print(content, end="")
+            print(f"Received response chunk: {len(content)} characters")
             if status == 2:
                 print("\nAnalysis Finished.")
                 ws.close()
@@ -134,7 +139,7 @@ def main():
 
     ws_param = WsParam(app_id, api_key, api_secret, ws_url)
     final_url = ws_param.create_url()
-    print(f"Connecting to: {final_url}")
+    print("Connecting to configured WebSocket endpoint")
 
     on_message, on_error, on_close, on_open = build_handlers(app_id, model_id)
     ws = websocket.WebSocketApp(

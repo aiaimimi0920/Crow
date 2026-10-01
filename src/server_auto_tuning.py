@@ -4,6 +4,8 @@ import logging
 import time
 from threading import Event
 
+from src.llm_diagnostics import diagnostic_number, failure_kind, model_slot
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,12 +48,16 @@ def auto_tuner_thread(stop_event: Event | None = None) -> None:
             logger.info("[AUTO-TUNER] Analysis @ %s", time.strftime("%H:%M:%S"))
 
             for name, s in stats.items():
+                slot = model_slot(model_selector.pool, name)
                 current_limit = model_selector.limits.get(name, 5)
                 total = s["success"] + s["error"]
 
                 if total < MIN_REQUESTS:
                     logger.info(
-                        "  [%s] Requests %s < %s, skipping", name, total, MIN_REQUESTS
+                        "  [model_slot=%s] Requests %s < %s, skipping",
+                        slot,
+                        diagnostic_number(total),
+                        MIN_REQUESTS,
                     )
                     continue
 
@@ -60,33 +66,33 @@ def auto_tuner_thread(stop_event: Event | None = None) -> None:
                 if error_rate < ERROR_RATE_LOW and current_limit < MAX_LIMIT:
                     new_limit = min(current_limit + STEP_SIZE, MAX_LIMIT)
                     logger.info(
-                        "  [%s] Error %.1f%% < %s%%; %s -> %s",
-                        name,
+                        "  [model_slot=%s] Error %.1f%% < %s%%; %s -> %s",
+                        slot,
                         error_rate,
                         ERROR_RATE_LOW,
-                        current_limit,
-                        new_limit,
+                        diagnostic_number(current_limit),
+                        diagnostic_number(new_limit),
                     )
                     model_selector.update_limit(name, new_limit)
                     stable_count[name] = 0
                 elif error_rate > ERROR_RATE_HIGH and current_limit > MIN_LIMIT:
                     new_limit = max(current_limit - STEP_SIZE, MIN_LIMIT)
                     logger.info(
-                        "  [%s] Error %.1f%% > %s%%; %s -> %s",
-                        name,
+                        "  [model_slot=%s] Error %.1f%% > %s%%; %s -> %s",
+                        slot,
                         error_rate,
                         ERROR_RATE_HIGH,
-                        current_limit,
-                        new_limit,
+                        diagnostic_number(current_limit),
+                        diagnostic_number(new_limit),
                     )
                     model_selector.update_limit(name, new_limit)
                     stable_count[name] = 0
                 else:
                     logger.info(
-                        "  [%s] Error %.1f%% OK, keeping %s",
-                        name,
+                        "  [model_slot=%s] Error %.1f%% OK, keeping %s",
+                        slot,
                         error_rate,
-                        current_limit,
+                        diagnostic_number(current_limit),
                     )
                     stable_count[name] += 1
 
@@ -103,12 +109,16 @@ def auto_tuner_thread(stop_event: Event | None = None) -> None:
             # Check stability
             if min(stable_count.values()) >= STABLE_ROUNDS:
                 is_stable = True
-                logger.info(
-                    "[AUTO-TUNER] Stable; final config: %s", model_selector.limits
-                )
+                logger.info("[AUTO-TUNER] Stable; models=%s", len(model_selector.pool))
+                for index, model in enumerate(model_selector.pool, start=1):
+                    logger.info(
+                        "[AUTO-TUNER] model_slot=%s final_limit=%s",
+                        index,
+                        diagnostic_number(model_selector.limits.get(model["name"])),
+                    )
 
-        except Exception:
-            logger.exception("[AUTO-TUNER] Error")
+        except Exception as error:
+            logger.error("[AUTO-TUNER] Error kind=%s", failure_kind(error))
 
 
 __all__ = ["auto_tuner_thread"]

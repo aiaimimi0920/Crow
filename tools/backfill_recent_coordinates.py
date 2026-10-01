@@ -20,7 +20,7 @@ from src.avm.feature_builder import build_features
 from src.avm.service import AVMService
 from src.storage.repository import create_repository_from_env
 from tools.audit_recent_avm_gaps import _iter_recent_rows
-
+from tools.maintenance_diagnostics import coordinate_summary
 
 BACKFILL_VERSION = "coord_backfill_v1"
 
@@ -131,7 +131,7 @@ def main() -> None:
     report = backfill_recent_coordinates(args.data_root, args.window_days, args.dry_run)
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     args.output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(coordinate_summary(report), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

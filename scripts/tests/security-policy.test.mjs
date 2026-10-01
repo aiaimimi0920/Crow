@@ -47,6 +47,7 @@ test("CodeQL covers every code ecosystem with explicit no-build analysis", () =>
   assert.match(text, /language: \[python, javascript-typescript, rust, actions\]/);
   assert.match(text, /build-mode: none/);
   assert.match(text, /queries: security-extended/);
+  assert.match(text, /    env:\n(?:      #[^\n]*\n)*      CODEQL_ACTION_DIFF_INFORMED_QUERIES: 'false'/);
   assert.match(text, /security-events: write/);
   assert.match(text, /branches: \[master\]/);
   assert.match(text, /output: codeql-results/);

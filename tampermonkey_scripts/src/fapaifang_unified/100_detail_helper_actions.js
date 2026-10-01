@@ -32,7 +32,9 @@ function crowSource_100_detail_helper_actions() {
         const cwLog = (msg) => {
             const el = document.getElementById('cw-log');
             if (el) {
-                el.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+                const line = document.createElement('div');
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                el.appendChild(line);
                 el.scrollTop = el.scrollHeight;
             }
         };

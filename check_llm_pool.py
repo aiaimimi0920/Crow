@@ -1,20 +1,23 @@
-import sys
-import os
-sys.path.append(os.path.join(os.getcwd(), 'src'))
-# Suppress print from import
-import io
-original_stdout = sys.stdout
-sys.stdout = io.StringIO()
-try:
-    from src.llm_model_selector import get_model_selector
-    model_selector = get_model_selector()
-except Exception as e:
-    sys.stdout = original_stdout
-    print(f"Import Error: {e}")
-    sys.exit(1)
-sys.stdout = original_stdout
+"""Inspect pool capacity without printing credential-bearing configuration."""
 
-print(f"Total Models: {len(model_selector.pool)}")
-print(f"Total Capacity: {model_selector.get_total_capacity()}")
-for m in model_selector.pool:
-    print(f"- {m['name']} (Limit: {model_selector.limits[m['name']]})")
+from src.llm_diagnostics import diagnostic_number, failure_kind
+from src.llm_model_selector import get_model_selector
+
+
+def main() -> int:
+    try:
+        model_selector = get_model_selector()
+    except Exception as error:
+        print(f"Pool unavailable: {failure_kind(error)}")
+        return 1
+
+    print(f"Total Models: {len(model_selector.pool)}")
+    print(f"Total Capacity: {diagnostic_number(model_selector.get_total_capacity())}")
+    for index, model in enumerate(model_selector.pool, start=1):
+        limit = diagnostic_number(model_selector.limits[model["name"]])
+        print(f"- Model slot {index} (Limit: {limit})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

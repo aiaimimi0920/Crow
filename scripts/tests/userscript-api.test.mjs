@@ -15,6 +15,7 @@ function runtime({ search = "", credential, operatorCredential, version = "5.5.0
   let timerId = 0, aborted = 0;
   const context = vm.createContext({
     URL, URLSearchParams,
+    crypto: { getRandomValues: (bytes) => bytes.fill(1) },
     window: { location: { search }, prompt: () => prompt, addEventListener() {} },
     sessionStorage: { getItem: () => null, setItem() {} },
     GM_info: { version, scriptHandler: "Tampermonkey" },

@@ -29,6 +29,8 @@ from datetime import datetime
 
 import logging
 
+from src.llm_diagnostics import failure_kind
+
 logger = logging.getLogger(__name__)
 
 DATAS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'datas')
@@ -86,7 +88,7 @@ try:
             idx = random.randint(0, len(MODEL_POOL) - 1)
             config = MODEL_POOL[idx]
 
-        logger.info(f"[AI] Using {config['name']} (pool {idx})")
+        logger.info("[AI] Using model_slot=%s", idx + 1)
 
         for attempt in range(max_retries):
             try:
@@ -122,16 +124,16 @@ try:
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait = 10 * (2 ** attempt)
-                    logger.warning(f"[AI_RETRY] 异常: {e}，{wait}s后重试")
+                    logger.warning("[AI_RETRY] kind=%s，%ss后重试", failure_kind(e), wait)
                     _time.sleep(wait)
                 else:
-                    logger.error(f"[AI_FAIL] 重试{max_retries}次后仍失败: {e}")
+                    logger.error("[AI_FAIL] 重试%s次后仍失败 kind=%s", max_retries, failure_kind(e))
                     return ""
 
     AI_AVAILABLE = True
     logger.info("[AI] Standalone AI call initialized (independent from data_receiver)")
 except ImportError as e:
-    logger.warning(f"[WARNING] AI verification disabled: {e}")
+    logger.warning("[WARNING] AI verification disabled kind=%s", failure_kind(e))
 
 try:
     from src.avm.community_resolver import apply_community_resolution, load_default_community_index, resolve_community_name

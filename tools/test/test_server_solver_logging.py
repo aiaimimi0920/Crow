@@ -88,7 +88,7 @@ def test_auto_tuner_uses_structured_logging() -> None:
     source = AUTO_TUNING_SOURCE.read_text(encoding="utf-8")
     assert "logger = logging.getLogger(__name__)" in source
     assert 'logger.info("[AUTO-TUNER] Started (5-minute intervals)")' in source
-    assert 'logger.exception("[AUTO-TUNER] Error")' in source
+    assert 'logger.error("[AUTO-TUNER] Error kind=%s", failure_kind(error))' in source
     assert "print(" not in source
 
 
