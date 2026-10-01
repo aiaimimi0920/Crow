@@ -118,7 +118,9 @@ def test_traceback_drops_paths_source_locals_notes_and_exception_chains():
     try:
         sample()
     except RuntimeError as error:
-        error.add_note(PRIVATE)
+        # Python 3.10 has no add_note(), but exceptions support this synthetic
+        # attribute; 3.11+ also recognizes it when formatting real tracebacks.
+        error.__notes__ = [PRIVATE]
         diagnostic = safe_exception_text(error) + safe_exception_traceback(error)
         assert error.__cause__ is not None
         assert "external:7" in diagnostic

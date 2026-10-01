@@ -1,6 +1,7 @@
 """Failure reporting preserves worker decisions without persisting secrets."""
 
 import json
+import shlex
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -69,7 +70,8 @@ def test_configured_endpoint_credentials_are_absent_from_failure_hints(tmp_path,
     assert result["cdp_endpoint_redacted"] is True
     assert PRIVATE not in json.dumps(result)
     assert "user:" not in json.dumps(result)
-    assert "https://private.invalid" in result["operator_hint"]["helper_command"]
+    command = shlex.split(result["operator_hint"]["helper_command"])
+    assert command[command.index("--cdp-endpoint") + 1] == result["cdp_endpoint"]
     assert "parameters were omitted" in result["operator_hint"]["message"]
     if kind == "seed":
         assert result["attempted"] is True
