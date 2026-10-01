@@ -13,7 +13,7 @@ import {
 
 
 const REVIEWED_SOURCE_SHA256 =
-  "42f73cfb5cf5b2de3f051641fb9458df69a11ab4a9baa985da09040b3db972fe";
+  "677d08411ed761d7b723534593ba2724dcb560699d2e9abaa3bcda24448483db";
 
 
 test("userscript parts deterministically reproduce the installable script", () => {

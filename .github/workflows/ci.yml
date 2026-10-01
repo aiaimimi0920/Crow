@@ -193,7 +193,7 @@ jobs:
       - run: python scripts/run_quality_tests.py --suite postgres
         env:
           CROW_TEST_POSTGRES_URL: postgresql+psycopg://quality:isolated_ci_only@127.0.0.1:5432/crow_quality
-      - run: node --test scripts/tests/effective-code-lines.test.mjs scripts/tests/build-userscript.test.mjs scripts/tests/userscript-generated-gate.test.mjs scripts/tests/userscript-api.test.mjs
+      - run: node --test scripts/tests/effective-code-lines.test.mjs scripts/tests/build-userscript.test.mjs scripts/tests/userscript-generated-gate.test.mjs scripts/tests/userscript-api.test.mjs scripts/tests/userscript-url-security.test.mjs
       - run: node scripts/effective-code-lines.mjs --mode ratchet --json artifacts/effective-code-lines.json
       - run: git diff --check
   desktop:

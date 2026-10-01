@@ -11,8 +11,8 @@
     
     // Page Type Detection
     const isMaster = window.location.hostname === "sf.taobao.com";
-    const isDetail = window.location.hostname.includes("item.taobao.com") || window.location.hostname.includes("paimai.taobao.com");
-    const isLoginOrSec = window.location.hostname.includes("login.taobao.com") || window.location.hostname.includes("sec.taobao.com");
+    const isDetail = ["sf-item.taobao.com", "susong-item.taobao.com", "paimai.taobao.com"].includes(window.location.hostname);
+    const isLoginOrSec = ["login.taobao.com", "sec.taobao.com"].includes(window.location.hostname);
 
     const urlParams = initialUrlParams; // Reuse parsed params
     const autoWorkerMode = urlParams.get('auto_worker'); // 1 = enabled
