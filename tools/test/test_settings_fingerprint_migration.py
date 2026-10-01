@@ -13,6 +13,15 @@ from tools.test.collection_settings_fixtures import config_fixture
 
 pytestmark = pytest.mark.security
 
+# Public golden fingerprints from a95734d2 for config_fixture(): one binds a
+# supplied synthetic value, the other retains the previously configured value.
+LEGACY_FINGERPRINT_BOUND = (
+    "9d3f04feb550a7c1a145717f16ef6f4b57b2b955f93038db3f02fe40155eb180"
+)
+LEGACY_FINGERPRINT_RETAIN = (
+    "927fa7f55077c001b0856540a4c5c371be2ed22eb729f27bfda49556c946f1e9"
+)
+
 
 def _read(store):
     with sqlite3.connect(store.root / "state.sqlite3") as db:
@@ -38,10 +47,8 @@ def _legacy_store(tmp_path, status="succeeded", key="synthetic-old-secret"):
         _poll(store)
     # Frozen a95734d2 store outputs for config_fixture(), not a new weak-hash
     # writer that could accidentally diverge with the production verifier.
-    legacy = {
-        "synthetic-old-secret": "9d3f04feb550a7c1a145717f16ef6f4b57b2b955f93038db3f02fe40155eb180",
-        None: "927fa7f55077c001b0856540a4c5c371be2ed22eb729f27bfda49556c946f1e9",
-    }[key]
+    assert key in {None, "synthetic-old-secret"}
+    legacy = LEGACY_FINGERPRINT_RETAIN if key is None else LEGACY_FINGERPRINT_BOUND
     with sqlite3.connect(store.root / "state.sqlite3") as db:
         db.execute("UPDATE requests SET fingerprint=?,status=?", (legacy, status))
     return store, payload, _read(store)
