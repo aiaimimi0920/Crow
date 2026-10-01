@@ -216,6 +216,8 @@ SECURITY_FILES = (
     "test_cors_header_safety.py",
     "test_export_data_contracts.py",
     "test_collection_settings_retry_compatibility.py",
+    "test_settings_fingerprint.py",
+    "test_settings_fingerprint_migration.py",
     "test_llm_diagnostic_logging.py",
     "test_llm_probe_logging.py",
     "test_maintenance_diagnostic_logging.py",
