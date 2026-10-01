@@ -17,6 +17,8 @@ from tools import fetch_missing_detail_archives as cli
 )
 def test_maintenance_cli_resolves_data_and_report_roots(module, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.delenv("CROW_DATA_ROOT", raising=False)
     monkeypatch.delenv("FAPAI_DATA_ROOT", raising=False)
     monkeypatch.delenv("FAPAI_DATA_ROOT_HOST", raising=False)
     monkeypatch.delenv("CROW_DATA_ROOT_HOST", raising=False)

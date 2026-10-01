@@ -268,9 +268,9 @@ def test_operator_docs_include_cdp_browser_startup_helper() -> None:
 def test_open_remote_auth_browser_script_prefers_pc2_remote_helper_and_falls_back_locally() -> None:
     script = REPO_ROOT.joinpath("scripts", "open-remote-auth-browser.ps1").read_text(encoding="utf-8")
 
-    assert "FAPAI_REMOTE_AUTH_HOST" in script
-    assert "FAPAI_REMOTE_AUTH_USER" in script
-    assert "FAPAI_REMOTE_AUTH_PASSWORD" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_HOST'" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_USER'" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_PASSWORD'" in script
     assert "C:\\fapaifang-worker\\ops\\trigger-open-auth-task.ps1" in script
     assert "edge-cdp-profile-pc2" in script
     assert "paramiko" in script
@@ -303,7 +303,7 @@ def test_local_bridge_auth_keeps_one_cdp_browser_and_uses_port_9225() -> None:
     script = REPO_ROOT.joinpath("scripts", "open-remote-auth-browser.ps1").read_text(encoding="utf-8")
 
     assert "start-pc1-auth-bridge.ps1" in script
-    assert "FAPAI_AUTH_BRIDGE_SCRIPT" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_AUTH_BRIDGE_SCRIPT'" in script
     assert '"-LocalCdpPort",\n        "9225"' in script
     assert '"-RemoteCdpPort",\n        "9225"' in script
     assert "Start-LocalAuthAutoResumeWatcher" in script
@@ -359,7 +359,7 @@ def test_export_taobao_cookie_snapshot_script_starts_browser_and_does_not_print_
     assert "--write-cookie-snapshot" in script
     assert "Resolve-CrowProjectDataRoot" in script
     assert "taobao-cookies.json" in script
-    assert "FAPAI_AUTH_LOCAL_CDP_PORT" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_PORT'" in script
     assert "http://127.0.0.1:$resolvedPort" in script
     assert "load_cookie_snapshot" in script
     assert "summarize_cookie_snapshot" in script

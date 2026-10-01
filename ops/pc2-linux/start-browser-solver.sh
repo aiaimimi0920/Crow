@@ -70,26 +70,33 @@ if [[ "$display_mode" != "xvfb" ]]; then
   fi
 fi
 
-export DISPLAY="$display"
+crow_select_xvfb_display() {
+  local requested="$1" socket_root="${2:-/tmp}" number offset lock socket_path
+  [[ "$requested" =~ ^:([0-9]{1,5})$ ]] || {
+    echo "Invalid Xvfb display: expected a local numeric display" >&2
+    return 1
+  }
+  number=$((10#${BASH_REMATCH[1]}))
+  # /tmp/.X11-unix may be shared with the host. Never unlink another display's
+  # socket or lock, even when its PID is invisible inside this container.
+  for ((offset=0; offset<64; offset++)); do
+    lock="$socket_root/.X$((number + offset))-lock"
+    socket_path="$socket_root/.X11-unix/X$((number + offset))"
+    if [[ ! -e "$lock" && ! -L "$lock" && ! -e "$socket_path" && ! -L "$socket_path" ]]; then
+      printf ':%s\n' "$((number + offset))"
+      return 0
+    fi
+  done
+  echo "No unused Xvfb display in the bounded startup range" >&2
+  return 1
+}
 
 if [[ "$use_host_display" == "0" ]]; then
-  display_number="${display#:}"
-  if [[ "$display_number" =~ ^[0-9]+$ ]]; then
-    display_lock="/tmp/.X${display_number}-lock"
-    display_socket="/tmp/.X11-unix/X${display_number}"
-    if [[ -f "$display_lock" ]]; then
-      display_pid="$(tr -dc '0-9' <"$display_lock")"
-      if [[ -n "$display_pid" && -d "/proc/$display_pid" ]]; then
-        echo "X display $display is already owned by process $display_pid" >&2
-        exit 1
-      fi
-    fi
-    rm -f "$display_lock" "$display_socket"
-  fi
-
+  display="$(crow_select_xvfb_display "$display")"
   Xvfb "$display" -screen 0 "$screen_geometry" -nolisten tcp -ac &
   pids+=("$!")
 fi
+export DISPLAY="$display"
 
 for _ in $(seq 1 40); do
   if xdotool getmouselocation >/dev/null 2>&1; then

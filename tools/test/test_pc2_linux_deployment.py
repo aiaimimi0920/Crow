@@ -182,7 +182,8 @@ def test_browser_image_keeps_solver_and_os_mouse_in_one_display() -> None:
     assert 'tigervncpasswd -f >"$vnc_auth_file"' in start_script
     assert "x0tigervncserver" in start_script
     assert "-SecurityTypes VncAuth" in start_script
-    assert 'rm -f "$display_lock" "$display_socket"' in start_script
+    assert 'display="$(crow_select_xvfb_display "$display")"' in start_script
+    assert 'rm -f "$display_lock" "$display_socket"' not in start_script
 
 
 def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> None:

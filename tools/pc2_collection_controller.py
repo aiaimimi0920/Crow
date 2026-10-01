@@ -1,6 +1,7 @@
 """One explicitly enabled host controller for settings and engine restarts."""
 
 import argparse
+import json
 import os
 import subprocess
 import time
@@ -19,6 +20,27 @@ from .pc2_engine_controller import (
 from .pc2_settings_controller import SettingsClient, SettingsController
 from .pc2_settings_runtime import SettingsRuntime, write_private
 from .pc2_worker_watchdog import WorkerWatchdog
+
+
+def unavailable_event(error):
+    """Expose actionable categories, never exception text containing credentials."""
+    reason = "runtime_unavailable"
+    if isinstance(error, ValueError) and str(error) == (
+        "Live settings drift from provisioned Compose; refusing to overwrite"
+    ):
+        reason = "settings_drift"
+    elif isinstance(error, subprocess.TimeoutExpired):
+        reason = "command_timeout"
+    elif isinstance(error, OSError):
+        reason = "transport_or_filesystem_unavailable"
+    return json.dumps(
+        {
+            "event": "collection_controller_unavailable",
+            "reason": reason,
+            "error_type": type(error).__name__,
+            "operation_replayed": False,
+        }
+    )
 
 
 class RestartController:
@@ -131,9 +153,9 @@ def main():
                 RuntimeError,
                 subprocess.SubprocessError,
                 ControllerError,
-            ):
+            ) as error:
                 print(
-                    "Collection controller unavailable; no operation replayed",
+                    unavailable_event(error),
                     flush=True,
                 )
             time.sleep(5)

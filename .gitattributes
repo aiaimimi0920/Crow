@@ -1,0 +1,2 @@
+# Preserve Linux-compatible LF line endings after a Windows checkout or archive.
+*.sh text eol=lf

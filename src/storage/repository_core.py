@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from .connection_policy import engine_connection_options
 from .models import Base
 from .repository_context import DatabaseSettings
 
@@ -29,7 +30,10 @@ class RepositoryCoreMixin:
             if self._engine is None:
                 if not self.enabled:
                     raise RuntimeError("database repository is disabled")
-                self._engine = create_engine(self.settings.url, echo=self.settings.echo, future=True)
+                self._engine = create_engine(
+                    self.settings.url, echo=self.settings.echo, future=True,
+                    **engine_connection_options(self.settings.url),
+                )
             return self._engine
 
     @property

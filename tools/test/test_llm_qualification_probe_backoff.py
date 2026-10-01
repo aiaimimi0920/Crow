@@ -99,10 +99,13 @@ def test_unusable_old_qualification_does_not_keep_business_open(tmp_path, unavai
 
     pool.store.change(invalidate)
     calls = []
-    fail_exploration(pool, "candidate", "timeout", calls)
+    phase = "renewal" if unavailable == "expired" else "candidate"
+    fail_exploration(pool, phase, "timeout", calls)
     assert pool.ensure() == []
     assert pool.store.snapshot()["cooldown_until"] > time.time() + 590
-    assert calls == ["candidate"]
+    assert calls == [phase]
+    if unavailable == "expired":
+        assert pool.store.snapshot()["models"]["good"]["score"] is None
 
 
 def test_scan_backoff_preserves_shared_business_request_spacing(tmp_path, monkeypatch):

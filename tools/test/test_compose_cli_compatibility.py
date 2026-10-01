@@ -94,8 +94,8 @@ def test_real_templates_keep_legacy_mounts_images_and_services(
     assert models[0] == models[1] == models[2]
     worker = models[0]["services"]["fapaifang-seed-collector"]
     assert worker["image"] == "fapaifang-collector:local"
-    assert {row["source"] for row in worker["volumes"]} == {
-        str(data / name) for name in ("output", "datas", "jobs", "secrets")
+    assert {Path(row["source"]) for row in worker["volumes"]} == {
+        data / name for name in ("output", "datas", "jobs", "secrets")
     }
 
 
