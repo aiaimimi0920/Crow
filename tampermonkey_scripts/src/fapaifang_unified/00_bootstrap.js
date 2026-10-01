@@ -192,6 +192,13 @@ function crowSource_00_bootstrap() {
     };
 
     // Use multiple sessions to maximize distribution across locations
+    function newSniffSessionId(index) {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        const nonce = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+        return 'sniff_s' + index + '_' + Date.now() + '_' + nonce;
+    }
+
     let sniffSessions = [];
     try {
         const stored = sessionStorage.getItem('sniff_sessions_list');
@@ -201,7 +208,7 @@ function crowSource_00_bootstrap() {
     if (!sniffSessions || sniffSessions.length < sniffState.maxSlots) {
         sniffSessions = [];
         for (let i = 0; i < sniffState.maxSlots; i++) {
-            sniffSessions.push('sniff_s' + i + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+            sniffSessions.push(newSniffSessionId(i));
         }
         sessionStorage.setItem('sniff_sessions_list', JSON.stringify(sniffSessions));
     }

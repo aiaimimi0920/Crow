@@ -7,6 +7,7 @@ import threading
 import time
 
 from src.llm_config import CONFIG_FILE, get_model_pool
+from src.llm_diagnostics import diagnostic_number, failure_kind, model_slot
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,8 @@ class ModelSelector:
         self.base_models = [m for m in pool if "Base" in m.get("base_name", m["name"])]
 
         total = sum(self.limits.values())
-        logger.info("Model selector initialized models=%s total_concurrency=%s", len(pool), total)
+        logger.info("Model selector initialized models=%s total_concurrency=%s",
+                    len(pool), diagnostic_number(total))
 
     def get_next(self, task_type=None):
         """
@@ -134,7 +136,8 @@ class ModelSelector:
             if model_name in self.disabled_models:
                 return
             self.disabled_models[model_name] = str(reason or "unavailable")
-            logger.warning("[MODEL-DISABLE] Disabled '%s': %s", model_name, self.disabled_models[model_name])
+            logger.warning("[MODEL-DISABLE] Disabled model_slot=%s",
+                           model_slot(self.pool, model_name))
             self.condition.notify_all()
 
     def release(self, model_name, model_config=None, from_queue=False):
@@ -192,9 +195,9 @@ class ModelSelector:
         try:
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2)
-            logger.info("[CONFIG] Saved to %s", CONFIG_FILE)
+            logger.info("[CONFIG] Saved model concurrency configuration")
         except Exception as e:
-            logger.error("[CONFIG] Save error: %s", e)
+            logger.error("[CONFIG] Save failed kind=%s", failure_kind(e))
 
     def update_limit(self, model_name, new_limit):
         """
@@ -210,7 +213,9 @@ class ModelSelector:
                     if model["name"] == model_name:
                         model["max_concurrent"] = new_limit
                         break
-                logger.info("[CONFIG] Runtime update: %s %s -> %s", model_name, old_limit, new_limit)
+                logger.info("[CONFIG] Runtime update model_slot=%s limit=%s -> %s",
+                            model_slot(self.pool, model_name),
+                            diagnostic_number(old_limit), diagnostic_number(new_limit))
                 # If limit increased, wake up waiters
                 if new_limit > old_limit:
                     self.condition.notify_all()

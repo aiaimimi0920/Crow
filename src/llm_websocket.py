@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import _thread as thread
 import base64
-from datetime import datetime
-from time import mktime
-from urllib.parse import urlparse
-from wsgiref.handlers import format_date_time
 import hashlib
 import hmac
 import json
 import logging
 import ssl
 import time
+from datetime import datetime
+from time import mktime
+from urllib.parse import urlparse
+from wsgiref.handlers import format_date_time
 
 import websocket
 
+from src.llm_diagnostics import diagnostic_number, failure_kind, model_slot
 from src.llm_metrics import record_api_metrics
 from src.llm_model_selector import AUTH_INVALID_ERROR_CODES, get_model_selector
-
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class AIService:
         self.model_config = model_config
 
     def on_error(self, ws, error):
-        logger.error(f"### WS Error ({self.model_config['name'] if self.model_config else 'default'}): {error} ###")
+        logger.error("WS failure kind=%s", failure_kind(error))
 
     def on_close(self, ws, one, two):
         # print("### WS Closed ###")
@@ -91,9 +91,7 @@ class AIService:
         if code != 0:
             self.error_code = code
             self.error_msg = data['header']['message']
-            model_name = self.model_config['name'] if self.model_config else 'default'
-            logger.error(f"AI Error ({model_name}) Code: {code}")
-            logger.error(f"AI Error Message: {self.error_msg}")
+            logger.error("AI provider error code=%s", diagnostic_number(code))
             ws.close()
         else:
             choices = data["payload"]["choices"]
@@ -148,14 +146,16 @@ class AIService:
             # Use get_next to find a suitable base model
             config = model_selector.get_next('community_search')
             model_name = config['name']
-            logger.debug(f"DEBUG: [community_search] Waiting for slot on '{model_name}'...")
+            logger.debug("[community_search] Waiting for model_slot=%s",
+                         model_slot(model_selector.pool, model_name))
             model_selector.acquire(model_name)
             from_queue = False
         elif self.model_config:
             # Explicitly provided model config
             config = self.model_config
             model_name = config['name']
-            logger.debug(f"DEBUG: [explicit] Waiting for slot on '{model_name}'...")
+            logger.debug("[explicit] Waiting for model_slot=%s",
+                         model_slot(model_selector.pool, model_name))
             model_selector.acquire(model_name)
             from_queue = False
         else:
@@ -165,7 +165,8 @@ class AIService:
             model_name = config['name']
             from_queue = True
 
-        logger.debug(f"DEBUG: Using model '{model_name}' (ID: {config['model_id']})")
+        slot = model_slot(model_selector.pool, model_name)
+        logger.debug("Using model_slot=%s", slot)
         self.model_config = config
 
         try:
@@ -192,22 +193,25 @@ class AIService:
                 if self.error_code in AUTH_INVALID_ERROR_CODES:
                     model_selector.disable_model(
                         model_name,
-                        f"error_code={self.error_code}, error_msg={self.error_msg or 'AppIdNoAuthError'}",
+                        f"error_code={diagnostic_number(self.error_code)}",
                     )
                 if is_concurrency_err:
-                    logger.warning(f"[STATS] Concurrency error on '{model_name}' (code: {self.error_code})")
+                    logger.warning("[STATS] Concurrency error model_slot=%s code=%s",
+                                   slot, diagnostic_number(self.error_code))
                     # INSTANT limit reduction: Immediately reduce limit by 1 when concurrency error detected
                     current_limit = model_selector.limits.get(model_name, 10)
                     if current_limit > 3:  # Don't go below 3
                         new_limit = current_limit - 1
                         model_selector.update_limit(model_name, new_limit)
-                        logger.info(f"[INSTANT-TUNE] Reduced '{model_name}' limit: {current_limit} → {new_limit}")
+                        logger.info("[INSTANT-TUNE] Reduced model_slot=%s limit=%s -> %s",
+                                    slot, diagnostic_number(current_limit),
+                                    diagnostic_number(new_limit))
             elif self.final_result:
                 model_selector.record_success(model_name)
         finally:
             # Release slot back to queue or semaphore
             model_selector.release(model_name, model_config=config, from_queue=from_queue)
-            logger.debug(f"DEBUG: Released slot on '{model_name}' (queue={from_queue})")
+            logger.debug("Released model_slot=%s queue=%s", slot, from_queue)
 
             elapsed_ms = (time.time() - started_at) * 1000
             record_api_metrics(success=bool(self.error_code == 0 and self.final_result), response_time_ms=elapsed_ms)

@@ -1,8 +1,31 @@
 import vm from "node:vm";
-import { loadUserscriptParts } from "../build-userscript.mjs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { loadUserscriptParts, PART_RELATIVE_PATHS } from "../build-userscript.mjs";
+
+const REFACTOR_COMMIT = "9f700178bd1ed19ac64db739a498baac0ea4b42c";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+let reviewedParts;
+
+function historicalRefactorParts() {
+  if (!reviewedParts) reviewedParts = PART_RELATIVE_PATHS.map((partPath) => {
+    // CI already uses a full checkout for the repository's pinned integrity
+    // baseline. Read only immutable reviewed Git objects, never the network.
+    const source = execFileSync("git", ["--no-pager", "show", `${REFACTOR_COMMIT}:${partPath}`],
+      { cwd: root, encoding: "utf8" }).replace(/\r\n?/g, "\n");
+    const opening = `function crowSource_${path.basename(partPath, ".js")}() {\n`;
+    const start = source.indexOf(opening);
+    if (start < 0 || !source.endsWith("\n}\n")) throw new Error("Invalid reviewed source unit");
+    return { metadata: source.slice(0, start), body: source.slice(start + opening.length, -2) };
+  });
+  return reviewedParts;
+}
 
 export function restoreReviewedSource() {
-  const parts = loadUserscriptParts();
+  // This certificate remains pinned to the reviewed syntax refactor. Later
+  // intentional security fixes have their own behavior regressions.
+  const parts = historicalRefactorParts();
   const legacyNames = (text) => text.replaceAll("getCleanDetailContext", "getCleanContext")
     .replaceAll("extractDetailPageData", "extractPageData");
   const restoredHelpers = legacyNames(parts[8].body).split(/(?<=\n)/)
@@ -65,6 +88,7 @@ export function dispatchFixture(source, url, { name = "", values = {} } = {}) {
   math.random = () => 0.25;
   const context = {
     window, document, URL, URLSearchParams, Date: FixedDate, Math: math,
+    crypto: { getRandomValues: (bytes) => bytes.fill(1) },
     console: { log: (...args) => logs.push(args), warn: (...args) => logs.push(args), error: (...args) => logs.push(args) },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     GM_info: { version: "5.5.0", scriptHandler: "Tampermonkey" },

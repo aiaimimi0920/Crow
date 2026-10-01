@@ -33,6 +33,7 @@ from tools.analysis_stage_planner import (
 from tools.audit_recent_avm_gaps import build_recent_gap_audit
 from tools.backfill_archived_details import backfill_archived_details
 from tools.backfill_recent_coordinates import backfill_recent_coordinates
+from tools.maintenance_diagnostics import maintenance_summary
 from tools.prepare_recent_detail_replay import prepare_recent_detail_replay
 from tools.run_analysis_stage_reconcile import run_analysis_stage_reconcile
 
@@ -365,7 +366,7 @@ def main() -> None:
     )
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     args.output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(maintenance_summary(report), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

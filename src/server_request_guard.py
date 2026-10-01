@@ -158,24 +158,42 @@ def _read_limited_body(
 def _cors_allowed_origins() -> set[str]:
     configured = str(project_getenv("CROW_CORS_ALLOWED_ORIGINS") or "")
     origins = {
-        item.strip().rstrip("/") for item in configured.split(",") if item.strip()
+        item.strip().rstrip("/")
+        for item in configured.split(",")
+        if item.strip() and _cors_header_value_safe(item)
     }
     origins.update(CORS_DEFAULT_ORIGINS)
     return origins
 
 
+def _cors_header_value_safe(value: str) -> bool:
+    # Validate before stripping: folded headers and control bytes are not origins.
+    return all(32 <= ord(char) < 127 for char in value)
+
+
 def _cors_origin_permitted(origin: object) -> bool:
-    candidate = str(origin or "").strip().rstrip("/")
+    raw = str(origin or "")
+    if not _cors_header_value_safe(raw):
+        return False
+    candidate = raw.strip().rstrip("/")
     if not candidate or candidate.lower() == "null":
         return False
     return candidate in _cors_allowed_origins()
 
 
 def _apply_cors_headers(self: GuardRequest) -> None:
-    origin = str(self.headers.get("Origin") or "").strip()
-    if origin and _cors_origin_permitted(origin):
-        self.send_header("Access-Control-Allow-Origin", origin.rstrip("/"))
-        self.send_header("Vary", "Origin")
+    origin = str(self.headers.get("Origin") or "")
+    if not _cors_header_value_safe(origin):
+        return
+    candidate = origin.strip().rstrip("/")
+    if not candidate or candidate.lower() == "null":
+        return
+    for allowed_origin in _cors_allowed_origins():
+        if candidate == allowed_origin:
+            # Emit the validated configured value, never raw request header text.
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
+            self.send_header("Vary", "Origin")
+            return
 
 
 def _control_plane_expected_tokens() -> list[bytes]:
