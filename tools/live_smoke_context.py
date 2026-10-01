@@ -42,6 +42,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.project_environment import EnvironmentAliasConflict, getenv as project_getenv
 from src.project_data_paths import resolve_project_data_root
+from tools.safe_exception_diagnostics import safe_exception_details, safe_exception_text, safe_exception_traceback
 
 DEFAULT_OUTPUT_DIR = Path("output/live_batch_smoke")
 
@@ -119,9 +120,7 @@ class CdpEndpointUnavailableError(RuntimeError):
         self.cdp_endpoint = str(cdp_endpoint or "")
         self.operation = str(operation or "")
         self.cause = cause
-        super().__init__(
-            f"CDP endpoint unavailable during {self.operation} on {self.cdp_endpoint}: {cause!r}"
-        )
+        super().__init__("CDP endpoint unavailable")
 
 
 class DetailChallengeError(RuntimeError):

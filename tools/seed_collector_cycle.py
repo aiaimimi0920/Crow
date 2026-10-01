@@ -247,14 +247,14 @@ def run_seed_collector_once(
         return summary
     except Exception as exc:
         if not page_completed:
-            _fail_claimed_seed_page(config, repository, task, repr(exc))
+            _fail_claimed_seed_page(config, repository, task, safe_exception_text(exc))
         if isinstance(exc, CdpEndpointUnavailableError):
             summary = {
                 "decision": "seed_collection_paused",
                 "reason": "cdp_unreachable",
                 "task": task,
-                "error": repr(exc),
-                "traceback": traceback.format_exc(),
+                "error": safe_exception_text(exc),
+                "traceback": safe_exception_traceback(exc),
                 "auth_probe": _build_cdp_unreachable_auth_probe(config, str(task.get("url") or "")),
                 "counts": repository.seed_queue_counts(),
             }
@@ -266,8 +266,8 @@ def run_seed_collector_once(
             "decision": "seed_page_retryable_failure",
             "reason": "exception",
             "task": task,
-            "error": repr(exc),
-            "traceback": traceback.format_exc(),
+            "error": safe_exception_text(exc),
+            "traceback": safe_exception_traceback(exc),
             "counts": repository.seed_queue_counts(),
         }
         if auth_probe_summary is not None:

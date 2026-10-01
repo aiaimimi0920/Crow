@@ -165,7 +165,7 @@ def test_run_detail_worker_once_records_report_failure_when_captcha_report_raise
 
     assert summary["reason"] == "detail_challenge_page"
     assert summary["captcha_solver_report"]["status"] == "report_failed"
-    assert "captcha report offline" in str(summary["captcha_solver_report"]["error"])
+    assert summary["captcha_solver_report"]["error"] == "RuntimeError: runtime_error"
 
 def test_run_detail_worker_once_does_not_report_when_solver_and_manual_reporting_are_disabled(
     tmp_path: Path,

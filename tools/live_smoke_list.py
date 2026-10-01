@@ -168,8 +168,8 @@ def collect_list_union(
             if config.list_stop_on_empty and int(spec.get("page") or 1) > 1 and not batch_items:
                 stopped_keys.add(key)
         except Exception as exc:
-            record["error"] = repr(exc)
-            record["traceback"] = traceback.format_exc()
+            record["error"] = safe_exception_text(exc)
+            record["traceback"] = safe_exception_traceback(exc)
             list_fetches.append(record)
             if config.list_stop_on_empty and int(spec.get("page") or 1) > 1:
                 stopped_keys.add(key)

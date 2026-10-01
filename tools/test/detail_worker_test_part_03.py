@@ -180,7 +180,7 @@ def test_run_detail_worker_once_marks_retryable_failure(tmp_path: Path) -> None:
 
     assert summary["decision"] == "detail_item_retryable_failure"
     assert summary["item_id"] == "3001"
-    assert "detail timeout" in summary["error"]
+    assert summary["error"] == "RuntimeError: runtime_error"
     retry = repo.claim_seed_detail_item("detail-retry", lease_seconds=30)
     assert retry is not None
     assert retry["id"] == "3001"

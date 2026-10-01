@@ -171,7 +171,7 @@ def test_run_detail_worker_batch_aborts_before_claiming_items_when_llm_preflight
     assert summary["attempts"] == 0
     assert summary["completed"] == 0
     assert summary["results"] == []
-    assert "llm preflight connect timeout" in summary["llm_preflight"]["error"]
+    assert summary["llm_preflight"]["error"] == "RuntimeError: runtime_error"
     assert summary["llm_preflight"]["attempt"] == 3
     assert preflight_calls == [{"timeout": 2.5, "check_chat": True}] * 3
     assert processed == []

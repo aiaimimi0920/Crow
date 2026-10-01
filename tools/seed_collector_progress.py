@@ -161,7 +161,7 @@ def _report_manual_seed_challenge(config: SeedCollectorConfig, target_url: str) 
             )
         )
     except Exception as exc:
-        return {"status": "report_failed", "error": repr(exc)}
+        return {"status": "report_failed", "error": safe_exception_text(exc)}
 
 
 __all__ = (

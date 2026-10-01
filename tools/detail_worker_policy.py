@@ -18,7 +18,7 @@ def _collection_pause_state(api_base_url: str) -> dict[str, Any]:
     try:
         payload = fetch_json(endpoint, timeout=5)
     except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return {"paused": False, "reason": "status_unavailable", "error": repr(exc)}
+        return {"paused": False, "reason": "status_unavailable", "error": safe_exception_text(exc)}
 
     if not isinstance(payload, dict):
         return {"paused": False, "reason": "status_unavailable", "error": "non_object_status"}
@@ -131,7 +131,7 @@ def _pause_state_has_resolved_open_detail_page(
 
 
 def _is_detail_challenge_error(exc: BaseException) -> bool:
-    text = repr(exc).lower()
+    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
     return any(
         marker in text
         for marker in (
@@ -147,7 +147,7 @@ def _is_detail_challenge_error(exc: BaseException) -> bool:
 
 
 def _is_transient_dns_error(exc: BaseException) -> bool:
-    text = repr(exc).lower()
+    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
     return any(
         marker in text
         for marker in (
@@ -167,7 +167,7 @@ def _is_llm_backend_unavailable_error(exc: BaseException) -> bool:
 
     if isinstance(exc, llm_helper.LLMBackendUnavailableError):
         return True
-    text = repr(exc).lower()
+    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
     return any(
         marker in text
         for marker in (
@@ -269,17 +269,24 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _build_cdp_unreachable_health(config: DetailWorkerConfig, target_url: str) -> dict[str, Any]:
     from tools import taobao_login_health
+    from tools.safe_exception_diagnostics import safe_cdp_endpoint
 
     effective_target_url = str(target_url or "").strip()
+    endpoint = safe_cdp_endpoint(config.cdp_endpoint)
+    hint = taobao_login_health.build_operator_hint(
+        status=taobao_login_health.CDP_UNREACHABLE,
+        cdp_endpoint=endpoint,
+        check_url=effective_target_url,
+    )
+    redacted = str(config.cdp_endpoint).strip().rstrip("/") != endpoint
+    if redacted:
+        hint["message"] += " Connection parameters were omitted; use the configured CDP endpoint locally."
     return {
         "status": taobao_login_health.CDP_UNREACHABLE,
-        "cdp_endpoint": config.cdp_endpoint,
+        "cdp_endpoint": endpoint,
+        "cdp_endpoint_redacted": redacted,
         "target_url": effective_target_url,
-        "operator_hint": taobao_login_health.build_operator_hint(
-            status=taobao_login_health.CDP_UNREACHABLE,
-            cdp_endpoint=config.cdp_endpoint,
-            check_url=effective_target_url,
-        ),
+        "operator_hint": hint,
     }
 
 

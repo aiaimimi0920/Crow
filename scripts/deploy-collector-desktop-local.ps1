@@ -393,6 +393,7 @@ foreach ($relativePath in @(
         "tools\taobao_login_health.py",
         "tools\taobao_health_context.py",
         "tools\taobao_health_classification.py",
+        "tools\safe_exception_diagnostics.py",
         "tools\taobao_health_cdp_transport.py",
         "tools\taobao_health_captcha.py",
         "tools\taobao_health_cdp_session.py",

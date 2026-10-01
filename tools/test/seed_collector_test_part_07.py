@@ -323,7 +323,7 @@ def test_run_seed_collector_loop_retries_after_runtime_context_refresh_failure(t
     ]
     assert events[0]["run"] == 1
     assert events[0]["decision"] == "seed_runtime_refresh_failed"
-    assert "cdp unavailable" in events[0]["error"]
+    assert events[0]["error"] == "RuntimeError: runtime_error"
     assert summary["runs"] == 2
     assert summary["last_decision"] == "seed_scan_queue_empty"
 
@@ -379,6 +379,6 @@ def test_run_seed_collector_loop_reuses_last_runtime_context_after_later_refresh
         "seed_collector_run",
     ]
     assert events[2]["run"] == 2
-    assert "cdp refresh timed out" in events[2]["error"]
+    assert events[2]["error"] == "RuntimeError: runtime_error"
     assert summary["runs"] == 2
     assert summary["last_decision"] == "seed_scan_queue_empty"

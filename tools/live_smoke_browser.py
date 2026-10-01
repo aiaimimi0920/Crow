@@ -282,7 +282,7 @@ def fetch_browser_list_page(cdp_endpoint: str, target_url: str) -> tuple[str, st
                 {
                     "event": "open_browser_list_page_probe_failed",
                     "target_url": target_url,
-                    "error": repr(error),
+                    "error": safe_exception_text(error),
                 },
                 ensure_ascii=False,
             )

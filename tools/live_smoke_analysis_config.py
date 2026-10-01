@@ -106,8 +106,7 @@ def _analysis_module_b_shadow_selected(item_id: str) -> bool:
     return bucket / 2**64 < rate
 
 def _safe_module_b_error(exc: BaseException) -> dict[str, str]:
-    message = str(exc).replace("\r", " ").replace("\n", " ").strip()
-    return {"type": type(exc).__name__, "message": message[:1000]}
+    return safe_exception_details(exc)
 
 def _module_b_cached_candidate(
     path: Path,
@@ -255,7 +254,7 @@ def _run_analysis_module_b(
                             "attempt": attempt,
                             "max_attempts": max_attempts,
                             "wait_seconds": wait_seconds,
-                            "error_type": type(exc).__name__,
+                            "error_type": safe_exception_details(exc)["type"],
                         },
                         ensure_ascii=True,
                     )

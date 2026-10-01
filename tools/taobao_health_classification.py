@@ -61,7 +61,9 @@ def report_captcha_via_api(
     try:
         loaded = post_json(endpoint, payload, timeout=10)
     except OSError as exc:
-        return {"status": "request_failed", "error": str(exc)}
+        from tools.safe_exception_diagnostics import safe_exception_text
+
+        return {"status": "request_failed", "error": safe_exception_text(exc)}
     return loaded if isinstance(loaded, dict) else {"status": "unknown_response", "raw": loaded}
 
 
