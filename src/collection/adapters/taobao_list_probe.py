@@ -114,7 +114,14 @@ def _looks_like_login_page(text: str, final_url: str) -> bool:
 def summarize_list_page(html: str, *, final_url: str) -> dict[str, object]:
     text = html or ""
     lowered_final_url = str(final_url or "").lower()
-    payload = extract_list_payload(text)
+    payload_error = None
+    try:
+        payload = extract_list_payload(text)
+    except json.JSONDecodeError:
+        # Auth classification must survive incomplete page data. Extraction
+        # remains strict so collectors retry it instead of accepting an empty list.
+        payload = None
+        payload_error = "invalid_json"
     data = payload.get("data") if isinstance(payload, dict) else None
     items = cast("list[Mapping[str, object]]", data) if isinstance(data, list) else []
     body_has_punish = (
@@ -139,6 +146,7 @@ def summarize_list_page(html: str, *, final_url: str) -> dict[str, object]:
     body_snippet = redact_taobao_sensitive_text(text[:260].replace("\n", " ")[:260])
     return {
         "has_script": payload is not None,
+        "payload_error": payload_error,
         "item_count": len(items) if payload is not None else None,
         "first_ids": [item.get("id") for item in items[:5]],
         "first_urls": [item.get("itemUrl") or item.get("url") for item in items[:5]],
