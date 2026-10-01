@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import time
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 import requests
 import websocket
@@ -12,8 +12,17 @@ import websocket
 from src.project_environment import getenv as project_getenv
 
 from .captcha_context import browser_identity_init_script, build_user_agent_override
+from .collection.adapters.taobao_solver_target import _is_taobao_target, _split_web_target_url
 
 logger = logging.getLogger(__name__)
+
+
+def _has_solver_url_flag(value, name):
+    try:
+        query = urlsplit(str(value or "")).query
+    except ValueError:
+        return False
+    return parse_qs(query, keep_blank_values=True).get(name) == ["1"]
 
 
 class CaptchaCDPMixin:
@@ -323,7 +332,7 @@ class CaptchaCDPMixin:
             requested_scope = self._solver_target_scope(self.target_url)
             for tab in tabs:
                 url = tab.get("url", "")
-                if "__captcha_solver_bg=1" in url:
+                if _has_solver_url_flag(url, "__captcha_solver_bg"):
                     if requested_scope and self._solver_target_scope(url) != requested_scope:
                         continue
                     self._remember_target_tab(tab)
@@ -336,7 +345,7 @@ class CaptchaCDPMixin:
         if not target_ws:
             for tab in tabs:
                 url = tab.get("url", "")
-                if "__captcha_worker_master=1" in url:
+                if _has_solver_url_flag(url, "__captcha_worker_master"):
                     self._remember_target_tab(tab)
                     target_ws = tab.get("webSocketDebuggerUrl")
                     target_title = tab.get("title", "")
@@ -347,7 +356,8 @@ class CaptchaCDPMixin:
         if not target_ws:
             for tab in tabs:
                 url = tab.get("url", "")
-                if "sec.taobao.com" in url or "login.taobao.com" in url:
+                parsed = _split_web_target_url(url)
+                if parsed is not None and parsed.hostname in {"sec.taobao.com", "login.taobao.com"}:
                     self._remember_target_tab(tab)
                     target_ws = tab.get("webSocketDebuggerUrl")
                     target_title = tab.get("title", "")
@@ -361,7 +371,12 @@ class CaptchaCDPMixin:
                 for tab in tabs:
                     url = tab.get("url", "")
                     title = tab.get("title", "")
-                    if kw in title or kw in url:
+                    # Brand text in a path/query is not evidence of site identity.
+                    parsed = _split_web_target_url(url)
+                    url_hint = url
+                    if kw in {"tmall", "taobao"}:
+                        url_hint = parsed.hostname if _is_taobao_target(parsed) else ""
+                    if kw in title or kw in url_hint:
                         self._remember_target_tab(tab)
                         target_ws = tab.get("webSocketDebuggerUrl")
                         target_title = title

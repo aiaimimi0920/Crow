@@ -128,14 +128,17 @@ def _collection_pause_state_with_retry(api_base_url: str) -> dict[str, Any]:
 
 
 def _pause_state_targets_detail_page(pause_state: dict[str, Any]) -> bool:
+    # The legacy facade clones this function with its own globals.
+    from src.collection.adapters.taobao_solver_target import _solver_request_scope_from_target_url
+
     captcha_solver = pause_state.get("captcha_solver")
     if not isinstance(captcha_solver, dict):
         return False
     last_request = captcha_solver.get("last_request")
     if not isinstance(last_request, dict):
         return False
-    target_url = str(last_request.get("target_url") or "").lower()
-    return "sf-item.taobao.com" in target_url or "/sf_item/" in target_url
+    target_url = str(last_request.get("target_url") or "")
+    return _solver_request_scope_from_target_url(target_url) == "detail"
 
 
 def _default_seed_auth_probe_target_url() -> str:

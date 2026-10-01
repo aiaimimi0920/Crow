@@ -23,7 +23,7 @@ def test_start_taobao_cdp_browser_script_opens_visible_cdp_browser_when_missing(
     assert '"FPFData"' in script
     assert "C:\\Users\\Public\\nas_home\\AI\\FPFData" not in script
     assert "edge-cdp-profile" in script
-    assert "https://sf.taobao.com/" in script
+    assert '[string]$StartUrl = "https://sf.taobao.com/"' in script
     assert "Microsoft\\Edge\\Application\\msedge.exe" in script
     assert "Google\\Chrome\\Application\\chrome.exe" in script
     assert "Invoke-CdpWebRequest" in script

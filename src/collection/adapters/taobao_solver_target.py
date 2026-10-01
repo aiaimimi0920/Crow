@@ -30,16 +30,19 @@ def _split_web_target_url(value: object) -> SplitResult | None:
     return parsed
 
 
-def _is_taobao_target(parsed: SplitResult | None) -> bool:
+def _is_web_target_domain(parsed: SplitResult | None, domain: str) -> bool:
     if parsed is None:
         return False
     host = parsed.hostname or ""
-    return any(
-        host == domain or host.endswith("." + domain)
-        for domain in ("taobao.com", "tmall.com")
-    ) and all(
+    return (host == domain or host.endswith("." + domain)) and all(
         re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
         for label in host.split(".")
+    )
+
+
+def _is_taobao_target(parsed: SplitResult | None) -> bool:
+    return any(
+        _is_web_target_domain(parsed, domain) for domain in ("taobao.com", "tmall.com")
     )
 
 

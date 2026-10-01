@@ -14,6 +14,7 @@ from src.project_environment import getenv as project_getenv
 from .captcha_context import DEFAULT_CDP_PAGE_TARGET_LIMIT
 from .captcha_pointer_backend import OSPointerBackend
 from .collection.adapters.taobao_auth_target import SEED_IDENTITY_QUERY_KEYS
+from .collection.adapters.taobao_solver_target import _split_web_target_url
 
 logger = logging.getLogger(__name__)
 
@@ -157,27 +158,40 @@ class CaptchaTargetMixin:
 
     @staticmethod
     def _is_login_url(value):
-        target_url = str(value or "").strip().lower()
+        target_url = str(value or "").strip()
         if not target_url:
             return False
+        parsed_web = _split_web_target_url(target_url)
+        if parsed_web is not None and parsed_web.hostname in {
+            "login.taobao.com", "login.tmall.com",
+        }:
+            return True
+        # Generic and local CAPTCHA harnesses also use login routes. Keep those
+        # paths independent of Taobao host identity, without trusting query text.
+        try:
+            path = urlsplit(target_url).path.lower()
+        except ValueError:
+            return False
         return (
-            "login.taobao.com" in target_url
-            or "login.tmall.com" in target_url
-            or "third-party-cookie" in target_url
-            or "/passport/" in target_url
-            or "/login_jump" in target_url
-            or "/_____tmd_____/page/login" in target_url
+            "third-party-cookie" in path
+            or "/passport/" in path
+            or "/login_jump" in path
+            or "/_____tmd_____/page/login" in path
         )
 
     @classmethod
     def _is_manual_challenge_url(cls, value):
-        target_url = str(value or "").strip().lower()
+        target_url = str(value or "").strip()
         if not target_url:
             return False
+        try:
+            parsed = urlsplit(target_url)
+        except ValueError:
+            return False
+        query_keys = {key.lower() for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
         return (
-            "/_____tmd_____/punish" in target_url
-            or "x5secdata=" in target_url
-            or "x5step=" in target_url
+            "/_____tmd_____/punish" in parsed.path.lower()
+            or bool(query_keys & {"x5secdata", "x5step"})
             or cls._is_login_url(target_url)
         )
 

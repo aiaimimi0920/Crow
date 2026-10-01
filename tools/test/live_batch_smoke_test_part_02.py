@@ -401,5 +401,5 @@ def test_fetch_browser_navigation_list_page_reuses_single_existing_login_tab(mon
     )
 
     assert html == "<html>淘宝登录</html>"
-    assert "login.taobao.com" in final_url
+    assert urlparse(final_url).hostname == "login.taobao.com"
     assert events == ["close:login-2", "activate:login-1"]

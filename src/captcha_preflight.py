@@ -43,6 +43,15 @@ class CaptchaPreflightMixin:
                 var slider = doc.querySelector(__PREFLIGHT_SLIDER_SELECTOR__);
                 var hasSlider = !!(slider && slider.offsetParent !== null);
                 var lowerHref = href.toLowerCase();
+                var urlHost = '', urlPath = '';
+                try {
+                    var parsedUrl = new URL(href);
+                    urlPath = parsedUrl.pathname.toLowerCase();
+                    if ((parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') &&
+                        !parsedUrl.username && !parsedUrl.password) {
+                        urlHost = parsedUrl.hostname.toLowerCase();
+                    }
+                } catch (e) {}
                 var combined = (className + '\\n' + bodyText + '\\n' + title + '\\n' + href).toLowerCase();
                 var listRoute = lowerHref.indexOf('sf.taobao.com/list/') !== -1;
                 var detailRoute = lowerHref.indexOf('sf-item.taobao.com/sf_item/') !== -1;
@@ -63,7 +72,7 @@ class CaptchaPreflightMixin:
                     !!(errorWidget && errorWidget.offsetParent !== null) ||
                     !!errorMatch;
                 var challengeMarker = combined.indexOf('验证码拦截') !== -1 || combined.indexOf('请按住滑块') !== -1 || combined.indexOf('安全验证') !== -1;
-                var loginUrl = lowerHref.indexOf('login.taobao.com') !== -1 || lowerHref.indexOf('login.tmall.com') !== -1 || lowerHref.indexOf('third-party-cookie') !== -1 || lowerHref.indexOf('/passport/') !== -1 || lowerHref.indexOf('/login') !== -1;
+                var loginUrl = urlHost === 'login.taobao.com' || urlHost === 'login.tmall.com' || urlPath.indexOf('third-party-cookie') !== -1 || urlPath.indexOf('/passport/') !== -1 || urlPath.indexOf('/login') !== -1;
                 var loginText = title.trim().toLowerCase() === '登录' || combined.indexOf('请登录') !== -1 || combined.indexOf('请先登录') !== -1;
                 var loginRequired = !validAuctionPayload && (!supportedAuctionPage || challengeRedirect) && (loginUrl || loginText);
                 // A valid auction payload wins over generic hidden challenge copy from an iframe.

@@ -378,6 +378,7 @@ foreach ($relativePath in @(
         "src\collection\adapters\taobao_auth_target.py",
         "src\collection\adapters\taobao_health.py",
         "src\collection\adapters\taobao_list_probe.py",
+        "src\collection\adapters\taobao_solver_target.py",
         "src\collection_engine_restart.py",
         "src\collection_operator_actions.py",
         "src\llm_analysis_policy.py",

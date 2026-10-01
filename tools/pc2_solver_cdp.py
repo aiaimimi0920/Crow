@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from importlib import import_module
 from typing import Protocol, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
+from src.collection.adapters.taobao_solver_target import _split_web_target_url
 from tools.internal_api_http import fetch_json
 from tools.pc2_solver_scope_policy import (
     _challenge_scope_for_url,
@@ -111,12 +112,26 @@ def check_cdp_browser_for_challenge_page(
             requested_route = solver._solver_target_route(target_url)
         candidates = []
         for tab in page_tabs:
-            url = str(tab.get("url") or "").lower()
+            url = str(tab.get("url") or "")
             title = str(tab.get("title") or "").strip().lower()
+            try:
+                parsed = urlsplit(url)
+            except ValueError:
+                continue
+            path = parsed.path.lower()
+            query_keys = {
+                key.lower()
+                for key, _ in parse_qsl(parsed.query, keep_blank_values=True)
+            }
+            parsed_web = _split_web_target_url(url)
             is_challenge = (
-                "/_____tmd_____/punish" in url
-                or "x5secdata" in url
-                or ("sec.taobao.com" in url and "punish" in url)
+                "/_____tmd_____/punish" in path
+                or "x5secdata" in query_keys
+                or (
+                    parsed_web is not None
+                    and parsed_web.hostname == "sec.taobao.com"
+                    and "punish" in path
+                )
                 or ("验证码" in title and "拦截" in title)
             )
             if is_challenge:
@@ -327,11 +342,15 @@ def check_cdp_browser_for_slider(
         for tab in tabs:
             if not isinstance(tab, dict) or not tab.get("webSocketDebuggerUrl"):
                 continue
-            url = str(tab.get("url") or "").lower()
-            if (
-                "/_____tmd_____/" in url
-                or "sec.taobao.com" in url
-                or "login.taobao.com" in url
+            url = str(tab.get("url") or "")
+            try:
+                path = urlsplit(url).path.lower()
+            except ValueError:
+                path = ""
+            parsed = _split_web_target_url(url)
+            if "/_____tmd_____/" in path or (
+                parsed is not None
+                and parsed.hostname in {"sec.taobao.com", "login.taobao.com"}
             ):
                 challenge_tabs.append(tab)
             elif tab.get("type") == "page":

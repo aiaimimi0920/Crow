@@ -2,8 +2,8 @@
 
 Counts describe results in the supplied files, not GitHub's deduplicated open
 alerts. Messages, snippets, fingerprints, flows, URLs and invocation data are
-never included in output. Invalid or incomplete inputs fail instead of yielding
-a misleading zero-result report.
+never included in output. Invalid inputs fail without counts. Scanner execution
+errors retain validated findings, but mark analysis incomplete and exit nonzero.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ MAX_INPUT_RESULTS = 100_000
 MAX_RULES = 2_000
 MAX_OUTPUT_RESULTS = 5_000
 MAX_DIRECTORY_ENTRIES = 10_000
+MAX_COMPONENTS = 101
+MAX_DIAGNOSTICS = 100_000
 RULE_ID = re.compile(
     r"(?:py|js|java|go|cpp|cs|rb|swift|rust|actions|ql)/[a-z0-9-]+(?:/[a-z0-9-]+)*"
 )
@@ -116,46 +118,151 @@ def _location(result: dict, run: dict) -> tuple[str, int]:
     return path, line
 
 
-def _run_rules(run: dict) -> dict[str, dict]:
+def _run_rules(run: dict) -> list[tuple[dict, dict[str, dict]]]:
     _require(isinstance(run.get("tool"), dict))
     driver = run["tool"].get("driver")
     _require(isinstance(driver, dict))
-    rules = driver.get("rules", [])
-    _require(isinstance(rules, list) and len(rules) <= MAX_RULES, "invalid_rules")
-    indexed = {}
-    for rule in rules:
-        _require(isinstance(rule, dict), "invalid_rules")
-        identifier = _rule_id(rule.get("id"))
-        _require(identifier not in indexed, "invalid_rules")
-        indexed[identifier] = rule
-    return indexed
+    extensions = run["tool"].get("extensions", [])
+    _require(
+        isinstance(extensions, list) and len(extensions) < MAX_COMPONENTS,
+        "invalid_rules",
+    )
+    components, count = [], 0
+    for component in [driver, *extensions]:
+        _require(isinstance(component, dict), "invalid_rules")
+        rules = component.get("rules", [])
+        _require(isinstance(rules, list), "invalid_rules")
+        count += len(rules)
+        _require(count <= MAX_RULES, "invalid_rules")
+        indexed = {}
+        for rule in rules:
+            _require(isinstance(rule, dict), "invalid_rules")
+            identifier = _rule_id(rule.get("id"))
+            _require(identifier not in indexed, "invalid_rules")
+            indexed[identifier] = rule
+        components.append((component, indexed))
+    return components
 
 
-def _check_execution(run: dict) -> None:
+def _guid(value: object) -> str:
+    _require(
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", value)
+        is not None,
+        "invalid_rules",
+    )
+    return value.lower()
+
+
+def _component_rules(reference: dict, components: list) -> dict[str, dict]:
+    # SARIF 2.1.0 sections 3.52.7 and 3.54.2: index addresses extensions;
+    # absent index/GUID means driver. Names verify identity, never select it.
+    selected = 0
+    if "index" in reference:
+        _require(_integer(reference["index"], 0, len(components) - 2), "invalid_rules")
+        selected = reference["index"] + 1
+    if "guid" in reference:
+        guid = _guid(reference["guid"])
+        matches = [
+            index
+            for index, (component, _) in enumerate(components)
+            if isinstance(component.get("guid"), str)
+            and component["guid"].lower() == guid
+        ]
+        _require(len(matches) == 1, "invalid_rules")
+        _require("index" not in reference or selected == matches[0], "invalid_rules")
+        selected = matches[0]
+    component, rules = components[selected]
+    if "name" in reference:
+        name = reference["name"]
+        _require(
+            isinstance(name, str)
+            and 0 < len(name) <= 256
+            and name == component.get("name"),
+            "invalid_rules",
+        )
+    return rules
+
+
+def _result_rule(result: dict, components: list) -> tuple[str, dict]:
+    reference = result.get("rule", {})
+    _require(isinstance(reference, dict), "invalid_rules")
+    component = reference.get("toolComponent", {})
+    _require(isinstance(component, dict), "invalid_rules")
+    rules = _component_rules(component, components)
+    for outer, inner in (("ruleId", "id"), ("ruleIndex", "index")):
+        if outer in result and inner in reference:
+            _require(
+                type(result[outer]) is type(reference[inner])
+                and result[outer] == reference[inner],
+                "invalid_rules",
+            )
+    identifier = reference.get("id", result.get("ruleId"))
+    rule = {}
+    if "index" in reference or "ruleIndex" in result:
+        index = reference.get("index", result.get("ruleIndex"))
+        _require(_integer(index, 0, len(rules) - 1), "invalid_rules")
+        rule = list(rules.values())[index]
+    if "guid" in reference:
+        guid = _guid(reference["guid"])
+        matches = [
+            entry
+            for entry in rules.values()
+            if isinstance(entry.get("guid"), str) and entry["guid"].lower() == guid
+        ]
+        _require(
+            len(matches) == 1 and (not rule or rule is matches[0]), "invalid_rules"
+        )
+        rule = matches[0]
+    if not rule:
+        identifier = _rule_id(identifier)
+        rule = rules.get(identifier, {})
+    if rule:
+        identifier = rule["id"] if identifier is None else _rule_id(identifier)
+        _require(
+            identifier == rule["id"] or identifier.rsplit("/", 1)[0] == rule["id"],
+            "invalid_rules",
+        )
+    return identifier, rule
+
+
+def _check_execution(run: dict) -> Counter:
     invocations = run.get("invocations", [])
-    _require(isinstance(invocations, list))
+    _require(isinstance(invocations, list) and len(invocations) <= MAX_DIAGNOSTICS)
+    counts = Counter(
+        invocation_count=len(invocations),
+        failed_invocation_count=0,
+        notification_count=0,
+        error_count=0,
+        warning_count=0,
+        note_count=0,
+        none_count=0,
+    )
     for invocation in invocations:
         _require(isinstance(invocation, dict))
-        _require(invocation.get("executionSuccessful") is True, "scan_execution_failed")
+        success = invocation.get("executionSuccessful")
+        _require(type(success) is bool, "invalid_execution_status")
+        counts["failed_invocation_count"] += not success
         for key in ("toolExecutionNotifications", "toolConfigurationNotifications"):
             notifications = invocation.get(key, [])
             _require(isinstance(notifications, list))
+            counts["notification_count"] += len(notifications)
+            _require(
+                counts["notification_count"] <= MAX_DIAGNOSTICS, "input_limit_exceeded"
+            )
             for notification in notifications:
                 _require(isinstance(notification, dict))
-                _require(notification.get("level") != "error", "scan_execution_failed")
+                level = notification.get("level", "warning")
+                _require(
+                    isinstance(level, str) and level in LEVELS, "invalid_diagnostic"
+                )
+                counts[f"{level}_count"] += 1
+    return counts
 
 
-def _row(result: dict, run: dict, rules: dict[str, dict]) -> dict:
+def _row(result: dict, run: dict, rules: list) -> dict:
     _require(isinstance(result, dict))
-    identifier = result.get("ruleId")
-    if "ruleIndex" in result:
-        index = result["ruleIndex"]
-        _require(_integer(index, 0, len(rules) - 1), "invalid_rules")
-        indexed_id = list(rules)[index]
-        _require(identifier is None or identifier == indexed_id, "invalid_rules")
-        identifier = indexed_id
-    identifier = _rule_id(identifier)
-    rule = rules.get(identifier, {})
+    identifier, rule = _result_rule(result, rules)
     configuration = rule.get("defaultConfiguration", {})
     properties = rule.get("properties", {})
     _require(
@@ -216,7 +323,7 @@ def summarize(directory: Path, max_results: int = 500) -> dict:
         files.extend(Path(root) / name for name in names if name.endswith(".sarif"))
         _require(len(files) <= MAX_FILES, "input_limit_exceeded")
     _require(bool(files), "missing_sarif")
-    rows, by_rule, by_severity = [], Counter(), Counter()
+    rows, by_rule, by_severity, diagnostics = [], Counter(), Counter(), Counter()
     total = runs_count = total_bytes = 0
     for path in sorted(files):
         payload, size = _read_sarif(path)
@@ -228,7 +335,12 @@ def summarize(directory: Path, max_results: int = 500) -> dict:
         _require(runs_count <= MAX_RUNS, "input_limit_exceeded")
         for run in runs:
             _require(isinstance(run, dict))
-            _check_execution(run)
+            diagnostics.update(_check_execution(run))
+            _require(
+                diagnostics["notification_count"] <= MAX_DIAGNOSTICS
+                and diagnostics["invocation_count"] <= MAX_DIAGNOSTICS,
+                "input_limit_exceeded",
+            )
             rules = _run_rules(run)
             results = run.get("results")
             _require(isinstance(results, list), "missing_results")
@@ -242,7 +354,13 @@ def summarize(directory: Path, max_results: int = 500) -> dict:
                 _require(len(by_severity) <= MAX_RULES, "input_limit_exceeded")
                 if len(rows) < max_results:
                     rows.append(row)
-    return {
+    complete = (
+        diagnostics["failed_invocation_count"] == 0 and diagnostics["error_count"] == 0
+    )
+    report = {
+        "inventory_complete": True,
+        "analysis_complete": complete,
+        "diagnostics": dict(diagnostics),
         "count_kind": "sarif_results_not_github_open_alerts",
         "file_count": len(files),
         "run_count": runs_count,
@@ -261,6 +379,9 @@ def summarize(directory: Path, max_results: int = 500) -> dict:
         ],
         "results": rows,
     }
+    if not complete:
+        report.update(error="analysis_incomplete", error_kind="scanner_diagnostics")
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -271,13 +392,31 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = summarize(args.directory, args.max_results)
     except SummaryError as error:
-        print(json.dumps({"error": str(error)}))
+        print(
+            json.dumps(
+                {
+                    "error": str(error),
+                    "error_kind": "inventory_error",
+                    "analysis_complete": False,
+                    "inventory_complete": False,
+                }
+            )
+        )
         return 2
     except (OSError, TypeError, ValueError, RecursionError):
-        print(json.dumps({"error": "unreadable_or_invalid_input"}))
+        print(
+            json.dumps(
+                {
+                    "error": "unreadable_or_invalid_input",
+                    "error_kind": "inventory_error",
+                    "analysis_complete": False,
+                    "inventory_complete": False,
+                }
+            )
+        )
         return 2
     print(json.dumps(report, ensure_ascii=True, sort_keys=True))
-    return 0
+    return 0 if report["analysis_complete"] else 2
 
 
 if __name__ == "__main__":

@@ -130,8 +130,8 @@ def test_empty_results_are_valid_and_parse_warnings_are_not_failures(
     "notification",
     [None, "toolExecutionNotifications", "toolConfigurationNotifications"],
 )
-def test_failed_execution_never_produces_zero(
-    tmp_path: Path, notification: str | None
+def test_failed_execution_never_produces_complete_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture, notification: str | None
 ) -> None:
     payload = _payload([])
     invocation = payload["runs"][0]["invocations"][0]
@@ -140,8 +140,16 @@ def test_failed_execution_never_produces_zero(
     else:
         invocation["executionSuccessful"] = False
     _write(tmp_path, payload)
-    with pytest.raises(summary.SummaryError, match="^scan_execution_failed$"):
-        summary.summarize(tmp_path)
+    assert summary.main([str(tmp_path)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["analysis_complete"] is False
+    assert report["inventory_complete"] is True
+    assert report["result_count"] == 0
+    assert report["error_kind"] == "scanner_diagnostics"
+    assert report["diagnostics"]["error_count"] == (1 if notification else 0)
+    assert report["diagnostics"]["failed_invocation_count"] == (
+        0 if notification else 1
+    )
 
 
 @pytest.mark.parametrize(
@@ -302,7 +310,15 @@ def test_cli_errors_never_include_input_data(
         (tmp_path / "PRIVATE.sarif").write_text(contents)
     assert summary.main([str(tmp_path)]) == 2
     captured = capsys.readouterr()
-    assert set(json.loads(captured.out)) == {"error"}
+    report = json.loads(captured.out)
+    assert set(report) == {
+        "error",
+        "error_kind",
+        "analysis_complete",
+        "inventory_complete",
+    }
+    assert report["error_kind"] == "inventory_error"
+    assert report["analysis_complete"] is report["inventory_complete"] is False
     assert not captured.err
     assert "PRIVATE" not in captured.out
     assert str(tmp_path) not in captured.out
@@ -323,3 +339,199 @@ def test_cli_findings_are_successful_diagnostics(
     _write(tmp_path, _payload())
     assert summary.main([str(tmp_path)]) == 0
     assert json.loads(capsys.readouterr().out)["result_count"] == 1
+
+
+def _extension_payload() -> dict:
+    payload = _payload()
+    run = payload["runs"][0]
+    rules = run["tool"]["driver"].pop("rules")
+    run["tool"]["extensions"] = [
+        {
+            "name": "codeql/python-queries",
+            "guid": "11111111-1111-1111-1111-111111111111",
+            "rules": rules,
+        }
+    ]
+    run["results"][0]["rule"] = {
+        "id": rules[0]["id"],
+        "index": 0,
+        "toolComponent": {"index": 0, "name": "codeql/python-queries"},
+    }
+    return payload
+
+
+@pytest.mark.parametrize("reference_type", ["index", "component_guid", "rule_guid"])
+def test_extension_rule_metadata_is_resolved(
+    tmp_path: Path, reference_type: str
+) -> None:
+    payload = _extension_payload()
+    run = payload["runs"][0]
+    reference = run["results"][0]["rule"]
+    if reference_type == "component_guid":
+        reference["toolComponent"] = {"guid": run["tool"]["extensions"][0]["guid"]}
+    if reference_type == "rule_guid":
+        del reference["index"]
+        reference["guid"] = "22222222-2222-2222-2222-222222222222"
+        run["tool"]["extensions"][0]["rules"][0]["guid"] = reference["guid"]
+    _write(tmp_path, payload)
+    row = summary.summarize(tmp_path)["results"][0]
+    assert row["security_severity"] == "7.8"
+    assert row["rule_id"] == _result()["ruleId"]
+
+
+def test_extension_rule_id_can_come_only_from_reference(tmp_path: Path) -> None:
+    payload = _extension_payload()
+    del payload["runs"][0]["results"][0]["ruleId"]
+    _write(tmp_path, payload)
+    assert summary.summarize(tmp_path)["results"][0]["security_severity"] == "7.8"
+
+
+def test_same_rule_id_in_different_components_uses_explicit_component(
+    tmp_path: Path,
+) -> None:
+    payload = _extension_payload()
+    run = payload["runs"][0]
+    run["tool"]["driver"]["rules"] = deepcopy(run["tool"]["extensions"][0]["rules"])
+    run["tool"]["driver"]["rules"][0]["properties"]["security-severity"] = "1.2"
+    _write(tmp_path, payload)
+    assert summary.summarize(tmp_path)["results"][0]["security_severity"] == "7.8"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("index", -1),
+        ("index", 1),
+        ("index", True),
+        ("name", "PRIVATE"),
+        ("guid", "PRIVATE"),
+    ],
+)
+def test_bad_component_reference_is_an_inventory_error(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    payload = _extension_payload()
+    payload["runs"][0]["results"][0]["rule"]["toolComponent"][field] = value
+    _write(tmp_path, payload)
+    with pytest.raises(summary.SummaryError, match="^invalid_rules$"):
+        summary.summarize(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("index", True), ("index", 1), ("index", -1), ("index", "0"), ("id", "py/redos")],
+)
+def test_conflicting_rule_reference_is_rejected(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    payload = _extension_payload()
+    payload["runs"][0]["results"][0]["rule"][field] = value
+    _write(tmp_path, payload)
+    with pytest.raises(summary.SummaryError, match="^invalid_rules$"):
+        summary.summarize(tmp_path)
+
+
+def test_top_level_and_nested_rule_indexes_must_agree(tmp_path: Path) -> None:
+    payload = _extension_payload()
+    payload["runs"][0]["results"][0]["ruleIndex"] = 1
+    _write(tmp_path, payload)
+    with pytest.raises(summary.SummaryError, match="^invalid_rules$"):
+        summary.summarize(tmp_path)
+
+
+def test_mixed_invocations_preserve_findings_and_only_diagnostic_counts(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    payload = _extension_payload()
+    payload["runs"][0]["invocations"].append(
+        {
+            "executionSuccessful": False,
+            "commandLine": "PRIVATE_TOKEN",
+            "toolExecutionNotifications": [
+                {
+                    "level": "error",
+                    "message": {
+                        "text": "PRIVATE_TOKEN https://private.invalid/?token=SECRET"
+                    },
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": "/home/private/source.py"},
+                                "region": {"snippet": {"text": "PRIVATE_SNIPPET"}},
+                            }
+                        }
+                    ],
+                    "exception": {"message": "PRIVATE_EXCEPTION"},
+                },
+                {"level": "warning", "message": {"text": "PRIVATE_WARNING"}},
+            ],
+        }
+    )
+    _write(tmp_path, payload)
+    assert summary.main([str(tmp_path)]) == 2
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report["inventory_complete"] is True
+    assert report["analysis_complete"] is False
+    assert report["result_count"] == 1
+    assert report["results"][0]["security_severity"] == "7.8"
+    assert report["diagnostics"] == {
+        "invocation_count": 2,
+        "failed_invocation_count": 1,
+        "notification_count": 2,
+        "error_count": 1,
+        "warning_count": 1,
+        "note_count": 0,
+        "none_count": 0,
+    }
+    for private in ("PRIVATE", "https://", "token=", "/home", str(tmp_path)):
+        assert private not in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("status", [None, "false", 0, [], {}])
+def test_malformed_execution_status_is_not_a_scanner_failure(
+    tmp_path: Path, status: object
+) -> None:
+    payload = _payload()
+    payload["runs"][0]["invocations"][0]["executionSuccessful"] = status
+    _write(tmp_path, payload)
+    with pytest.raises(summary.SummaryError, match="^invalid_execution_status$"):
+        summary.summarize(tmp_path)
+
+
+def test_mixed_runs_and_files_preserve_all_available_findings(tmp_path: Path) -> None:
+    payload = _payload()
+    payload["runs"].append(deepcopy(payload["runs"][0]))
+    payload["runs"][1]["invocations"][0]["executionSuccessful"] = False
+    _write(tmp_path, payload)
+    _write(tmp_path, _payload(), "second.sarif")
+    report = summary.summarize(tmp_path, max_results=1)
+    assert report["result_count"] == 3
+    assert report["analysis_complete"] is False
+    assert report["inventory_complete"] is True
+    assert report["omitted_count"] == 2
+
+
+def test_invalid_result_with_scanner_errors_remains_inventory_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    payload = _payload()
+    payload["runs"][0]["invocations"][0]["executionSuccessful"] = False
+    payload["runs"][0]["results"][0]["ruleId"] = "PRIVATE"
+    _write(tmp_path, payload)
+    assert summary.main([str(tmp_path)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["error_kind"] == "inventory_error"
+    assert report["inventory_complete"] is False
+    assert "result_count" not in report
+
+
+@pytest.mark.parametrize("limit", ["MAX_COMPONENTS", "MAX_DIAGNOSTICS"])
+def test_component_and_diagnostic_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str
+) -> None:
+    _write(tmp_path, _extension_payload())
+    monkeypatch.setattr(summary, limit, 0)
+    with pytest.raises(summary.SummaryError):
+        summary.summarize(tmp_path)
