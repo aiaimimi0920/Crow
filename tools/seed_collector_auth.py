@@ -107,7 +107,7 @@ def _captcha_solver_targets_current_node(captcha_solver: dict[str, Any]) -> bool
     if not isinstance(last_request, dict):
         return True
     target_node_id = str(last_request.get("node_id") or "").strip().casefold()
-    current_node_id = str(os.environ.get("FAPAI_NODE_ID") or "").strip().casefold()
+    current_node_id = str(project_getenv("CROW_NODE_ID") or "").strip().casefold()
     if not target_node_id or not current_node_id:
         return True
     return target_node_id == current_node_id

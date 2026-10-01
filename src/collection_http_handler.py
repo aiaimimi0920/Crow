@@ -24,7 +24,7 @@ class CollectionRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
-            "Content-Type, X-FAPAI-Control-Token, X-Fapai-Recovery-Token, X-FAPAI-Collection-Token",
+            "Content-Type, X-Crow-Control-Token, X-Crow-Recovery-Token, X-Crow-Collection-Token, X-FAPAI-Control-Token, X-Fapai-Recovery-Token, X-FAPAI-Collection-Token",
         )
         self.end_headers()
 

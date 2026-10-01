@@ -12,15 +12,21 @@ def test_standalone_bundle_imports_and_sanitizes_missing_config(tmp_path):
     names = [
         "tools/desktop_settings_client.py",
         "tools/desktop_runtime_config.py",
+        "tools/desktop_environment.py",
         "tools/pc1_desktop_recovery.py",
         "src/auth_recovery_codes.py",
         "src/auth_snapshot_contract.py",
         "src/collection_api_credentials.py",
+        "src/credential_header_aliases.py",
         "src/collection_settings_schema.py",
         "src/collection_engine_restart.py",
+        "src/project_data_paths.py",
+        "src/project_environment.py",
         "src/collection_operator_actions.py",
         "src/llm_analysis_policy.py",
     ]
+    deployment = (root / "scripts/deploy-collector-desktop-local.ps1").read_text()
+    assert '"src\\credential_header_aliases.py"' in deployment
     for name in names:
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)

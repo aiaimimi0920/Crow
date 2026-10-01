@@ -7,6 +7,8 @@ import {
   defaultBrowserApiBase,
   state,
 } from "./desktop_state.ts";
+import { startupApiBase, CONFIGURATION_ERROR } from "./desktop_startup_config.ts";
+import { isConfigurationBlocked, setConfigurationBlocked } from "./desktop_http.ts";
 import { tryInvoke } from "./desktop_native.ts";
 import { mountTemplate } from "./desktop_template.ts";
 import { initializeShell } from "./desktop_shell.ts";
@@ -148,6 +150,7 @@ $("next").addEventListener("click", async () => {
 });
 $("applyApiBase").addEventListener("click", async () => {
   hideDetailPanel();
+  setConfigurationBlocked(false);
   state.apiBase = $<HTMLInputElement>("apiBase").value.trim() || defaultBrowserApiBase();
   state.offset = 0;
   state.selectedProvince = "";
@@ -185,18 +188,17 @@ $("authChallengeResume").addEventListener("click", resumeAfterAuthChallenge);
 $("refreshRegions").addEventListener("click", () => loadRegions({ silent: false }));
 $("resetRegionLinks").addEventListener("click", resetSelectedRegionLinks);
 
-try {
-  const configured: unknown = await tryInvoke("default_api_base");
-  if (typeof configured !== "string" || !configured) throw new Error("Missing API address");
-  state.apiBase = configured;
-  $<HTMLInputElement>("apiBase").value = state.apiBase;
-} catch {
-  state.apiBase = defaultBrowserApiBase();
-  $<HTMLInputElement>("apiBase").value = state.apiBase;
-}
-
+const initialConfig = await startupApiBase(() => tryInvoke("default_api_base"), defaultBrowserApiBase);
+state.apiBase = initialConfig.apiBase;
+$<HTMLInputElement>("apiBase").value = state.apiBase;
+setConfigurationBlocked(initialConfig.blocked);
 resetRuntimeSettings();
-await loadRegions();
-await reloadAll();
-setInterval(() => reloadAll({ silent: true }), AUTO_REFRESH_INTERVAL_MS);
-setInterval(() => loadRegions({ silent: true }), REGION_REFRESH_INTERVAL_MS);
+if (initialConfig.blocked) {
+  $("connectionStatus").textContent = CONFIGURATION_ERROR;
+  setAutoRefreshStatus("配置冲突，自动请求已暂停");
+} else {
+  await loadRegions();
+  await reloadAll();
+}
+setInterval(() => { if (!isConfigurationBlocked()) void reloadAll({ silent: true }); }, AUTO_REFRESH_INTERVAL_MS);
+setInterval(() => { if (!isConfigurationBlocked()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS);

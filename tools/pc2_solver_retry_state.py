@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import time
 from typing import cast
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_solver_config import (
     AUTH_COMPLETE_RETRY_BASE_SECONDS,
     AUTH_COMPLETE_RETRY_MAX_SECONDS,
@@ -13,11 +13,11 @@ from tools.pc2_solver_config import (
 from tools.pc2_solver_state_store import _default_fallback_state, _save_fallback_state
 
 SOLVER_COOLDOWN_FAIL_THRESHOLD = int(
-    os.environ.get("FAPAI_SOLVER_COOLDOWN_FAIL_THRESHOLD", "10")
+    project_getenv("CROW_SOLVER_COOLDOWN_FAIL_THRESHOLD", "10")
 )
-SOLVER_COOLDOWN_SECONDS = float(os.environ.get("FAPAI_SOLVER_COOLDOWN_SECONDS", "180"))
+SOLVER_COOLDOWN_SECONDS = float(project_getenv("CROW_SOLVER_COOLDOWN_SECONDS", "180"))
 SLIDER_RETRY_INTERVAL_SECONDS = float(
-    os.environ.get("FAPAI_SLIDER_RETRY_INTERVAL_SECONDS", "5")
+    project_getenv("CROW_SLIDER_RETRY_INTERVAL_SECONDS", "5")
 )
 
 

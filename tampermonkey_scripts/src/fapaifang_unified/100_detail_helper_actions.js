@@ -60,7 +60,7 @@
     const IS_SOLVER_BG = window.location.href.includes('__captcha_solver_bg=1');
     const IS_MANUAL_POPUP = window.location.href.includes('__captcha_manual_popup=1');
     
-    console.log(`[Fapaifang] Identity Check: IS_WORKER_TAB=${IS_WORKER_TAB}, IS_WORKER_STANDBY=${IS_WORKER_STANDBY}, IS_SOLVER_BG=${IS_SOLVER_BG}, hostname=${window.location.hostname}`);
+    console.log(`[Crow] Identity Check: IS_WORKER_TAB=${IS_WORKER_TAB}, IS_WORKER_STANDBY=${IS_WORKER_STANDBY}, IS_SOLVER_BG=${IS_SOLVER_BG}, hostname=${window.location.hostname}`);
     
     // Clean up stale global flag from previous buggy version
     GM_deleteValue('uni_captcha_worker_active');

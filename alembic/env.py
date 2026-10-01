@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import make_url
+from src.project_environment import getenv as project_getenv
 from src.storage.models import Base
 from src.storage.migration_metadata import extension_table_filter, metadata_for_dialect
 
@@ -15,7 +15,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv("FAPAI_DB_URL") or config.get_main_option("sqlalchemy.url")
+database_url = project_getenv("CROW_DB_URL") or config.get_main_option("sqlalchemy.url")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 

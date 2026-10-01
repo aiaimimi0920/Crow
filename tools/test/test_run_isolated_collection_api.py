@@ -8,14 +8,16 @@ from pathlib import Path
 from tools import run_isolated_collection_api
 
 
-def test_build_runtime_config_defaults_to_safe_isolated_flags():
+def test_build_runtime_config_defaults_to_safe_isolated_flags(monkeypatch):
+    monkeypatch.delenv("FAPAI_DATA_ROOT_HOST", raising=False)
+    monkeypatch.delenv("CROW_DATA_ROOT_HOST", raising=False)
     repo_root = Path(__file__).resolve().parents[2]
 
     config = run_isolated_collection_api.build_runtime_config(repo_root, port=8011)
 
     assert config["port"] == 8011
     assert config["repo_root"] == repo_root
-    assert config["data_dir"] == repo_root / "FPFData" / "datas"
+    assert config["data_dir"] == repo_root / "CrowData" / "datas"
     assert "ensure_browser" not in config
     assert "start_watchdog" not in config
     assert "avm_dir" not in config

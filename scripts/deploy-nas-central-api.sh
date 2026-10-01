@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/project-environment.sh"
 env_file="$repo_root/env.nas.local"
 compose_file="$repo_root/docker-compose.nas-central.yml"
 build_mode="full"
@@ -51,22 +52,19 @@ if ! docker compose version >/dev/null 2>&1; then
   export -f docker
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$env_file"
-set +a
-export FAPAI_NAS_ENV_FILE="${FAPAI_NAS_ENV_FILE:-$env_file}"
+crow_source_env_file "$env_file" "$repo_root/tools/shell_environment_file.py" --legacy-container-env
+crow_set_env CROW_NAS_ENV_FILE "${CROW_NAS_ENV_FILE:-$env_file}"
 
-: "${FAPAI_NAS_DATA_ROOT:?FAPAI_NAS_DATA_ROOT must be set}"
-postgres_container="${FAPAI_POSTGRES_CONTAINER:-fapaifang-postgres}"
-postgres_db="${FAPAI_POSTGRES_DB:-fapaifang}"
-postgres_user="${FAPAI_POSTGRES_USER:-fapaifang}"
-postgres_password="${FAPAI_POSTGRES_PASSWORD:-fapaifang}"
-api_container="${FAPAI_API_CONTAINER:-crow-api}"
-api_port="${FAPAI_API_HOST_PORT:-8001}"
-api_host_bind_address="${FAPAI_API_HOST_BIND_ADDRESS:-127.0.0.1}"
-api_tls_cert_file="${FAPAI_API_TLS_CERT_FILE:-}"
-api_tls_key_file="${FAPAI_API_TLS_KEY_FILE:-}"
+: "${CROW_NAS_DATA_ROOT:?CROW_NAS_DATA_ROOT must be set}"
+postgres_container="${CROW_POSTGRES_CONTAINER:-fapaifang-postgres}"
+postgres_db="${CROW_POSTGRES_DB:-fapaifang}"
+postgres_user="${CROW_POSTGRES_USER:-fapaifang}"
+postgres_password="${CROW_POSTGRES_PASSWORD:-fapaifang}"
+api_container="${CROW_API_CONTAINER:-crow-api}"
+api_port="${CROW_API_HOST_PORT:-8001}"
+api_host_bind_address="${CROW_API_HOST_BIND_ADDRESS:-127.0.0.1}"
+api_tls_cert_file="${CROW_API_TLS_CERT_FILE:-}"
+api_tls_key_file="${CROW_API_TLS_KEY_FILE:-}"
 api_health_scheme=http
 api_health_host=127.0.0.1
 api_health_resolve_address="$api_host_bind_address"
@@ -85,7 +83,7 @@ if not isinstance(address, ipaddress.IPv4Address):
 print(int(address.is_loopback))
 PY
 )"; then
-  echo "FAPAI_API_HOST_BIND_ADDRESS must be a literal IPv4 address." >&2
+  echo "CROW_API_HOST_BIND_ADDRESS must be a literal IPv4 address." >&2
   exit 1
 fi
 if [[ "$api_host_bind_address" == "0.0.0.0" ]]; then
@@ -94,20 +92,20 @@ fi
 
 if [[ -n "$api_tls_cert_file" || -n "$api_tls_key_file" ]]; then
   if [[ -z "$api_tls_cert_file" || -z "$api_tls_key_file" ]]; then
-    echo "FAPAI_API_TLS_CERT_FILE and FAPAI_API_TLS_KEY_FILE must be set together." >&2
+    echo "CROW_API_TLS_CERT_FILE and CROW_API_TLS_KEY_FILE must be set together." >&2
     exit 1
   fi
   api_health_scheme=https
-  api_health_host="${FAPAI_API_HEALTH_HOST:-localhost}"
+  api_health_host="${CROW_API_HEALTH_HOST:-localhost}"
   if [[ -z "$api_health_host" ]]; then
-    echo "FAPAI_API_HEALTH_HOST must match a host name in the API certificate." >&2
+    echo "CROW_API_HEALTH_HOST must match a host name in the API certificate." >&2
     exit 1
   fi
   api_health_curl_args=(--resolve "${api_health_host}:${api_port}:${api_health_resolve_address}")
-  api_health_ca_file="${FAPAI_API_HEALTH_CA_FILE:-}"
+  api_health_ca_file="${CROW_API_HEALTH_CA_FILE:-}"
   if [[ -n "$api_health_ca_file" ]]; then
     if [[ ! -r "$api_health_ca_file" ]]; then
-      echo "FAPAI_API_HEALTH_CA_FILE is not readable on this host." >&2
+      echo "CROW_API_HEALTH_CA_FILE is not readable on this host." >&2
       exit 1
     fi
     api_health_curl_args+=(--cacert "$api_health_ca_file")
@@ -149,11 +147,11 @@ else
 fi
 source_digest="$(sha256sum "${digest_files[@]}" | sha256sum | awk '{print $1}')"
 
-export FAPAI_BUILD_VERSION="$version"
-export FAPAI_BUILD_COMMIT="$commit"
-export FAPAI_BUILD_TIME="$built_at"
-export FAPAI_SOURCE_DIGEST="$source_digest"
-export FAPAI_DOCKERFILE="Dockerfile"
+crow_set_env CROW_BUILD_VERSION "$version"
+crow_set_env CROW_BUILD_COMMIT "$commit"
+crow_set_env CROW_BUILD_TIME "$built_at"
+crow_set_env CROW_SOURCE_DIGEST "$source_digest"
+crow_set_env CROW_DOCKERFILE "Dockerfile"
 
 docker inspect "$postgres_container" >/dev/null
 docker inspect "$api_container" >/dev/null
@@ -166,7 +164,7 @@ if [[ -z "$compose_project" || "$compose_project" == "<no value>" ]]; then
   compose_project="$(basename "$repo_root")"
 fi
 candidate_image="fapaifang-collector:nas-$version"
-export FAPAI_IMAGE="$candidate_image"
+crow_set_env CROW_IMAGE "$candidate_image"
 rollback_tag="fapaifang-collector:rollback-$version"
 
 echo "Deployment identity: version=$version commit=$commit source_digest=$source_digest"
@@ -180,7 +178,7 @@ if [[ "$dry_run" -eq 1 ]]; then
   exit 0
 fi
 
-auth_recovery_token_file="$FAPAI_NAS_DATA_ROOT/secrets/nas-auth-recovery.token"
+auth_recovery_token_file="$CROW_NAS_DATA_ROOT/secrets/nas-auth-recovery.token"
 if [[ ! -s "$auth_recovery_token_file" ]]; then
   mkdir -p "$(dirname "$auth_recovery_token_file")"
   umask 077
@@ -198,8 +196,8 @@ chmod 0600 "$auth_recovery_token_file"
 # private secrets mount. Publish the same token atomically into the shared
 # secrets directory so all three nodes authenticate with one value without
 # putting it in an environment file or command line.
-if [[ -n "${FAPAI_SHARED_ARTIFACT_ROOT:-}" ]]; then
-  shared_auth_recovery_token_file="$FAPAI_SHARED_ARTIFACT_ROOT/secrets/nas-auth-recovery.token"
+if [[ -n "${CROW_SHARED_ARTIFACT_ROOT:-}" ]]; then
+  shared_auth_recovery_token_file="$CROW_SHARED_ARTIFACT_ROOT/secrets/nas-auth-recovery.token"
   if [[ "$shared_auth_recovery_token_file" != "$auth_recovery_token_file" ]]; then
     mkdir -p "$(dirname "$shared_auth_recovery_token_file")"
     python3 - "$auth_recovery_token_file" "$shared_auth_recovery_token_file" <<'PY'
@@ -225,7 +223,7 @@ PY
   fi
 fi
 
-backup_dir="$FAPAI_NAS_DATA_ROOT/backups/postgres"
+backup_dir="$CROW_NAS_DATA_ROOT/backups/postgres"
 mkdir -p "$backup_dir"
 container_dump="/tmp/fapaifang-$version.dump"
 host_dump="$backup_dir/fapaifang-$version.dump"
@@ -249,16 +247,16 @@ echo "Verified database backup: $host_dump"
 
 docker image tag "$previous_image" "$rollback_tag"
 if [[ "$build_mode" == "hotfix" ]]; then
-  export FAPAI_DOCKERFILE="Dockerfile.nas-hotfix"
-  export FAPAI_BASE_IMAGE="$previous_image"
+  crow_set_env CROW_DOCKERFILE "Dockerfile.nas-hotfix"
+  crow_set_env CROW_BASE_IMAGE "$previous_image"
 elif [[ "$build_mode" == "auth-recovery-hotfix" ]]; then
-  export FAPAI_DOCKERFILE="Dockerfile.nas-auth-recovery"
-  export FAPAI_BASE_IMAGE="$previous_image"
+  crow_set_env CROW_DOCKERFILE "Dockerfile.nas-auth-recovery"
+  crow_set_env CROW_BASE_IMAGE "$previous_image"
 fi
 
 rollback() {
   echo "Health gate failed; restoring $rollback_tag" >&2
-  FAPAI_IMAGE="$rollback_tag" docker compose --project-name "$compose_project" \
+  CROW_IMAGE="$rollback_tag" FAPAI_IMAGE="$rollback_tag" docker compose --project-name "$compose_project" \
     --env-file "$env_file" \
     -f "$compose_file" \
     up -d --no-deps --no-build crow-api

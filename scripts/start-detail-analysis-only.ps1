@@ -1,5 +1,5 @@
 param(
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [int]$Port = 9223,
     [string]$Python = "python",
     [int]$DetailTargetSuccess = 10,
@@ -14,6 +14,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+. (Join-Path $PSScriptRoot "compose-environment-file.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function Set-EnvLine {
     param(
@@ -21,30 +24,7 @@ function Set-EnvLine {
         [Parameter(Mandatory = $true)][string]$Key,
         [Parameter(Mandatory = $true)][string]$Value
     )
-
-    $line = "$Key=$Value"
-    if (-not (Test-Path -LiteralPath $Path)) {
-        Set-Content -LiteralPath $Path -Value $line -Encoding UTF8
-        return
-    }
-
-    $content = Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue
-    $pattern = "^$([regex]::Escape($Key))="
-    $replaced = $false
-    $updated = foreach ($existingLine in $content) {
-        if ($existingLine -match $pattern) {
-            $replaced = $true
-            $line
-        }
-        else {
-            $existingLine
-        }
-    }
-
-    if (-not $replaced) {
-        $updated = @($updated) + $line
-    }
-    Set-Content -LiteralPath $Path -Value $updated -Encoding UTF8
+    Set-CrowEnvironmentFileValue -Path $Path -Key $Key -Value $Value
 }
 
 function Disable-DockerRestartPolicy {
@@ -71,6 +51,8 @@ function Disable-DockerRestartPolicy {
 }
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
+$composeWrapper = Join-Path $repoRoot "tools\crow_compose.py"
+if (-not (Test-Path -LiteralPath $composeWrapper -PathType Leaf)) { throw "Crow Compose adapter is unavailable" }
 $startBrowserScript = Join-Path $repoRoot "scripts\start-taobao-cdp-browser.ps1"
 $watchdogScript = Join-Path $repoRoot "scripts\taobao-login-watchdog.ps1"
 $exportScript = Join-Path $repoRoot "scripts\export-taobao-cookie-snapshot.ps1"
@@ -86,26 +68,26 @@ foreach ($name in @("output", "datas", "jobs", "secrets")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $DataRoot $name) | Out-Null
 }
 
-Set-EnvLine -Path $localEnv -Key "FAPAI_DATA_ROOT_HOST" -Value $DataRoot
-Set-EnvLine -Path $localEnv -Key "FAPAI_COOKIE_SNAPSHOT" -Value "/data/secrets/taobao-cookies.json"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_2_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_3_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_4_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_5_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_SEED_COLLECTOR_6_RESTART" -Value "no"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_WORKER_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_WORKER_2_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_WORKER_3_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_ANALYSIS_WORKER_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_ANALYSIS_WORKER_2_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART" -Value "unless-stopped"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_TARGET_SUCCESS" -Value ([string]$DetailTargetSuccess)
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_LOOP_INTERVAL_SECONDS" -Value "30"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_ANALYSIS_TARGET_SUCCESS" -Value ([string]$AnalysisTargetSuccess)
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS" -Value "30"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_FAILURE_COOLDOWN_THRESHOLD" -Value "3"
-Set-EnvLine -Path $localEnv -Key "FAPAI_DETAIL_FAILURE_COOLDOWN_SECONDS" -Value "1800"
+Set-EnvLine -Path $localEnv -Key "CROW_DATA_ROOT_HOST" -Value $DataRoot
+Set-EnvLine -Path $localEnv -Key "CROW_COOKIE_SNAPSHOT" -Value "/data/secrets/taobao-cookies.json"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_2_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_3_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_4_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_5_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_SEED_COLLECTOR_6_RESTART" -Value "no"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_WORKER_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_WORKER_2_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_WORKER_3_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_ANALYSIS_WORKER_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_ANALYSIS_WORKER_2_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_ANALYSIS_WORKER_3_RESTART" -Value "unless-stopped"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_TARGET_SUCCESS" -Value ([string]$DetailTargetSuccess)
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_LOOP_INTERVAL_SECONDS" -Value "30"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_ANALYSIS_TARGET_SUCCESS" -Value ([string]$AnalysisTargetSuccess)
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS" -Value "30"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_FAILURE_COOLDOWN_THRESHOLD" -Value "3"
+Set-EnvLine -Path $localEnv -Key "CROW_DETAIL_FAILURE_COOLDOWN_SECONDS" -Value "1800"
 
 $startBrowserArgs = @(
     "-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -169,9 +151,11 @@ $detailServices = @(
 
 Push-Location $repoRoot
 try {
+    & $Python $composeWrapper --check --data-root-host $DataRoot -- --env-file docker.local.env -f docker-compose.collection.yml -f docker-compose.collection.host-bind.yml config
+    if ($LASTEXITCODE -ne 0) { throw "Crow Compose environment rejected before worker changes" }
     Disable-DockerRestartPolicy -Services $seedServices
     Write-Output "Stopping seed workers before detail-only analysis."
-    & docker compose --env-file docker.local.env -f docker-compose.collection.yml -f docker-compose.collection.host-bind.yml stop @seedServices
+    & $Python $composeWrapper --data-root-host $DataRoot -- --env-file docker.local.env -f docker-compose.collection.yml -f docker-compose.collection.host-bind.yml stop @seedServices
     if ($LASTEXITCODE -ne 0) {
         throw "Docker compose failed to stop seed workers with exit code $LASTEXITCODE."
     }
@@ -190,14 +174,15 @@ try {
     }
     $composeArgs += $detailServices
 
-    & docker @composeArgs
+    $crowComposeArgs = @("--data-root-host", $DataRoot, "--") + @($composeArgs | Select-Object -Skip 1)
+    & $Python $composeWrapper @crowComposeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Docker detail-only workers failed to start with exit code $LASTEXITCODE."
     }
 
     Disable-DockerRestartPolicy -Services $seedServices
     Write-Output "Re-confirming seed workers are stopped after detail-only startup."
-    & docker compose --env-file docker.local.env -f docker-compose.collection.yml -f docker-compose.collection.host-bind.yml stop @seedServices
+    & $Python $composeWrapper --data-root-host $DataRoot -- --env-file docker.local.env -f docker-compose.collection.yml -f docker-compose.collection.host-bind.yml stop @seedServices
     if ($LASTEXITCODE -ne 0) {
         throw "Docker compose failed to re-stop seed workers with exit code $LASTEXITCODE."
     }
@@ -207,19 +192,19 @@ finally {
 }
 
 Write-Output "Detail-only analysis mode is configured."
-Write-Output "FAPAI_COOKIE_SNAPSHOT=/data/secrets/taobao-cookies.json"
-Write-Output "FAPAI_SEED_COLLECTOR_RESTART=no"
-Write-Output "FAPAI_SEED_COLLECTOR_2_RESTART=no"
-Write-Output "FAPAI_SEED_COLLECTOR_3_RESTART=no"
-Write-Output "FAPAI_SEED_COLLECTOR_4_RESTART=no"
-Write-Output "FAPAI_SEED_COLLECTOR_5_RESTART=no"
-Write-Output "FAPAI_SEED_COLLECTOR_6_RESTART=no"
-Write-Output "FAPAI_DETAIL_TARGET_SUCCESS=$DetailTargetSuccess"
-Write-Output "FAPAI_DETAIL_LOOP_INTERVAL_SECONDS=30"
-Write-Output "FAPAI_DETAIL_ANALYSIS_WORKER_RESTART=unless-stopped"
-Write-Output "FAPAI_DETAIL_ANALYSIS_WORKER_2_RESTART=unless-stopped"
-Write-Output "FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART=unless-stopped"
-Write-Output "FAPAI_DETAIL_ANALYSIS_TARGET_SUCCESS=$AnalysisTargetSuccess"
-Write-Output "FAPAI_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS=30"
-Write-Output "FAPAI_DETAIL_FAILURE_COOLDOWN_THRESHOLD=3"
-Write-Output "FAPAI_DETAIL_FAILURE_COOLDOWN_SECONDS=1800"
+Write-Output "CROW_COOKIE_SNAPSHOT=/data/secrets/taobao-cookies.json"
+Write-Output "CROW_SEED_COLLECTOR_RESTART=no"
+Write-Output "CROW_SEED_COLLECTOR_2_RESTART=no"
+Write-Output "CROW_SEED_COLLECTOR_3_RESTART=no"
+Write-Output "CROW_SEED_COLLECTOR_4_RESTART=no"
+Write-Output "CROW_SEED_COLLECTOR_5_RESTART=no"
+Write-Output "CROW_SEED_COLLECTOR_6_RESTART=no"
+Write-Output "CROW_DETAIL_TARGET_SUCCESS=$DetailTargetSuccess"
+Write-Output "CROW_DETAIL_LOOP_INTERVAL_SECONDS=30"
+Write-Output "CROW_DETAIL_ANALYSIS_WORKER_RESTART=unless-stopped"
+Write-Output "CROW_DETAIL_ANALYSIS_WORKER_2_RESTART=unless-stopped"
+Write-Output "CROW_DETAIL_ANALYSIS_WORKER_3_RESTART=unless-stopped"
+Write-Output "CROW_DETAIL_ANALYSIS_TARGET_SUCCESS=$AnalysisTargetSuccess"
+Write-Output "CROW_DETAIL_ANALYSIS_LOOP_INTERVAL_SECONDS=30"
+Write-Output "CROW_DETAIL_FAILURE_COOLDOWN_THRESHOLD=3"
+Write-Output "CROW_DETAIL_FAILURE_COOLDOWN_SECONDS=1800"

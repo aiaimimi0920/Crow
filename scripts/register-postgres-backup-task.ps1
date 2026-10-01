@@ -1,6 +1,6 @@
 param(
     [string]$TaskName = "FapaiFangPostgresBackup",
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [int]$IntervalMinutes = 15,
     [int]$KeepLast = 96,
     [int]$CommandTimeoutSeconds = 900,
@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function Convert-DataRootForScheduledTask {
     param([Parameter(Mandatory = $true)][string]$Path)

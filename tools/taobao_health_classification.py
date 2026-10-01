@@ -50,7 +50,7 @@ def report_captcha_via_api(
         "cdp_endpoint": report_cdp_endpoint,
         "timestamp": int(time.time() * 1000),
     }
-    node_id = str(os.environ.get("FAPAI_NODE_ID") or "").strip()
+    node_id = str(project_getenv("CROW_NODE_ID") or "").strip()
     if node_id:
         payload["node_id"] = node_id
     normalized_scope = str(scope or "").strip().lower()
@@ -67,7 +67,7 @@ def report_captcha_via_api(
 
 def resolve_captcha_report_cdp_endpoint(cdp_endpoint: str) -> str:
     for name in CAPTCHA_REPORT_CDP_ENV_NAMES:
-        raw = os.environ.get(name)
+        raw = project_getenv(name)
         if raw and raw.strip():
             return raw.strip()
     return cdp_endpoint

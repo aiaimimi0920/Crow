@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 
 from tools.desktop_runtime_config import load_runtime_environment
 from tools.pc1_desktop_recovery import RecoveryError, NoRedirect
+from tools.desktop_environment import environment_value
 from src.collection_settings_schema import validate, validate_key
 from src.collection_engine_restart import RestartError
 from src.collection_operator_actions import OPERATOR_ACTION_PATHS, validate_operator_body
@@ -33,9 +34,9 @@ def execute(request, root):
     if action not in {"config", "get", "apply", "restart_status", "restart"} | OPERATOR_ACTION_PATHS.keys():
         raise ValueError("invalid_action")
     env = load_runtime_environment(root)
-    configured = origin(env.get("FAPAI_SETTINGS_API_BASE", ""))
-    ca = Path(env.get("FAPAI_SETTINGS_CA_FILE", ""))
-    token_file = Path(env.get("FAPAI_ENGINE_OPERATOR_TOKEN_FILE", ""))
+    configured = origin(environment_value('CROW_SETTINGS_API_BASE', '', environment=env, root=Path(root)))
+    ca = Path(environment_value('CROW_SETTINGS_CA_FILE', '', environment=env, root=Path(root)))
+    token_file = Path(environment_value('CROW_ENGINE_OPERATOR_TOKEN_FILE', '', environment=env, root=Path(root)))
     if action == "config":
         return {"ok": True, "origin": configured, "configured": ca.is_file() and token_file.is_file()}
     if origin(request.get("origin", "")) != configured:

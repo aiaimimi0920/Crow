@@ -43,9 +43,11 @@
 
 - Derive project paths from the repository root; do not hard-code the checkout
   name, drive letter, UNC share, or developer home directory.
-- The default project-local runtime-data root is `FPFData/`. Environment or
-  command-line overrides remain supported for existing installations.
-- `FPFData/` may contain credentials, browser profiles, database backups, and
+- The default project-local runtime-data root for new installations is `CrowData/`.
+  Use the shared read-only root resolvers; existing `FPFData/` runtime data and
+  explicit environment/command-line paths must remain in place. Conflicting
+  configured roots or two populated roots require explicit selection, never a move.
+- `CrowData/` and legacy `FPFData/` may contain credentials, browser profiles, database backups, and
   large generated artifacts. Its runtime contents must remain outside Git;
   only its management documentation and ignore policy are versioned.
 

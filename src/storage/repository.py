@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-
 from src.collection.contracts import CollectionAdapter, Record
 from src.collection.seed_scan_policy import SeedScanPolicy
 from src.collection.stage_state import derive_collection_state, derive_stage_state
+from src.project_environment import getenv as project_getenv
 
 from .repository_collection import RepositoryCollectionMixin
 from .repository_context import DatabaseSettings, _env_flag
@@ -91,11 +90,11 @@ class PropertyRepository(CollectionRepository):
 
 def database_settings_from_env() -> DatabaseSettings:
     return DatabaseSettings(
-        url=os.environ.get("FAPAI_DB_URL", "").strip(),
-        echo=_env_flag("FAPAI_DB_ECHO", False),
-        enable_postgis=_env_flag("FAPAI_DB_ENABLE_POSTGIS", False),
-        auto_create=_env_flag("FAPAI_DB_AUTO_CREATE", False),
-        enabled=_env_flag("FAPAI_DB_ENABLED", True),
+        url=project_getenv("CROW_DB_URL", "").strip(),
+        echo=_env_flag("CROW_DB_ECHO", False),
+        enable_postgis=_env_flag("CROW_DB_ENABLE_POSTGIS", False),
+        auto_create=_env_flag("CROW_DB_AUTO_CREATE", False),
+        enabled=_env_flag("CROW_DB_ENABLED", True),
     )
 
 

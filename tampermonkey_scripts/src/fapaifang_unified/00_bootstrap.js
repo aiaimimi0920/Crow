@@ -2,7 +2,7 @@
 // @name         法拍房全能助手 (Fapaifang Unified Tool)
 // @namespace    http://tampermonkey.net/
 // @version      1.1
-// @description  集成了嗅探、检阅（快/慢）和详情助手功能的统一脚本
+// @description  Crow 统一采集助手：集成嗅探、检阅（快/慢）和详情助手功能
 // @author       Antigravity
 // @match        https://sf.taobao.com/*
 // @match        https://sf-item.taobao.com/*

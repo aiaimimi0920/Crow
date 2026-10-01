@@ -1,21 +1,5 @@
 function Resolve-FapaiDataRoot {
-    if ($DataRoot) {
-        return $DataRoot
-    }
-
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        return $env:FAPAI_DATA_ROOT_HOST
-    }
-
-    $localEnvPath = Join-Path $script:TaobaoCdpBrowserScriptRoot "..\docker.local.env"
-    if (Test-Path -LiteralPath $localEnvPath) {
-        $configuredRoot = Select-String -LiteralPath $localEnvPath -Pattern "^FAPAI_DATA_ROOT_HOST=(.+)$" | Select-Object -First 1
-        if ($configuredRoot) {
-            return $configuredRoot.Matches[0].Groups[1].Value.Trim()
-        }
-    }
-
-    return (Join-Path (Resolve-Path -LiteralPath (Join-Path $script:TaobaoCdpBrowserScriptRoot "..")).ProviderPath "FPFData")
+    return Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $script:TaobaoCdpBrowserScriptRoot "..") -ExplicitRoot $DataRoot
 }
 
 function Invoke-CdpWebRequest {

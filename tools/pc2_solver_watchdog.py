@@ -4,9 +4,17 @@ import argparse
 import json
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 from typing import Callable
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.project_environment import getenv as project_getenv
 
 
 def heartbeat_age_seconds(path: Path, *, now: float | None = None) -> float | None:
@@ -74,25 +82,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Restart the PC2 browser container when its solver loop stalls.")
     parser.add_argument(
         "--heartbeat-path",
-        default=os.environ.get(
-            "FAPAI_LOCAL_SOLVER_HEARTBEAT_PATH",
+        default=project_getenv(
+            "CROW_LOCAL_SOLVER_HEARTBEAT_PATH",
             "/tmp/fapaifang-local-solver-heartbeat.json",
         ),
     )
     parser.add_argument(
         "--stale-seconds",
         type=float,
-        default=float(os.environ.get("FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300")),
+        default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300")),
     )
     parser.add_argument(
         "--startup-grace-seconds",
         type=float,
-        default=float(os.environ.get("FAPAI_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS", "180")),
+        default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS", "180")),
     )
     parser.add_argument(
         "--poll-seconds",
         type=float,
-        default=float(os.environ.get("FAPAI_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS", "30")),
+        default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS", "30")),
     )
     parser.add_argument("--parent-pid", type=int, default=os.getppid())
     args = parser.parse_args()

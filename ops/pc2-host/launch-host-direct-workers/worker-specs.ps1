@@ -110,7 +110,7 @@ function Resolve-WorkerCount {
 
   $resolved = $RequestedCount
   if ($resolved -eq 0) {
-    $configured = [Environment]::GetEnvironmentVariable($EnvironmentName, 'Process')
+    $configured = (Get-CrowEnvironmentValue -Name $EnvironmentName)
     if ($configured) {
       if (-not [int]::TryParse($configured, [ref]$resolved)) {
         throw "$EnvironmentName must be an integer."
@@ -127,11 +127,11 @@ function Resolve-WorkerCount {
 
 $DetailWorkerCount = Resolve-WorkerCount `
   -RequestedCount $DetailWorkerCount `
-  -EnvironmentName 'FAPAI_HOST_DETAIL_WORKER_COUNT' `
+  -EnvironmentName 'CROW_HOST_DETAIL_WORKER_COUNT' `
   -DefaultCount 4
 $AnalysisWorkerCount = Resolve-WorkerCount `
   -RequestedCount $AnalysisWorkerCount `
-  -EnvironmentName 'FAPAI_HOST_ANALYSIS_WORKER_COUNT' `
+  -EnvironmentName 'CROW_HOST_ANALYSIS_WORKER_COUNT' `
   -DefaultCount 4
 
 for ($index = 4; $index -le $DetailWorkerCount; $index++) {

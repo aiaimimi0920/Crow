@@ -58,7 +58,7 @@ def test_collection_page_falls_back_to_inline_console_when_dist_missing(
 
     html = server._collection_observer_page_html()
 
-    assert "FapaiFang 采集观察台" in html
+    assert "Crow 采集观察台" in html
     assert "/api/collection/overview" in html
 
 

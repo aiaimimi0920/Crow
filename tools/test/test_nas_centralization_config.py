@@ -122,8 +122,8 @@ def test_nas_api_deploy_helper_requires_backup_identity_health_gate_and_rollback
     assert "pg_dump" in script
     assert "pg_restore -l" in script
     assert "docker image tag" in script
-    assert "FAPAI_BUILD_VERSION" in script
-    assert "FAPAI_SOURCE_DIGEST" in script
+    assert "CROW_BUILD_VERSION" in script
+    assert "CROW_SOURCE_DIGEST" in script
     assert 'build.get("version")' in script
     assert 'build.get("source_digest")' in script
     assert "up -d --no-deps --no-build crow-api" in script
@@ -132,14 +132,14 @@ def test_nas_api_deploy_helper_requires_backup_identity_health_gate_and_rollback
     assert "/api/collection/overview" in script
     assert "--dry-run" in script
     assert "shared_auth_recovery_token_file" in script
-    assert "FAPAI_SHARED_ARTIFACT_ROOT" in script
+    assert "CROW_SHARED_ARTIFACT_ROOT" in script
     assert "os.replace(temporary, target)" in script
     assert 'chown --reference="$(dirname "$shared_auth_recovery_token_file")"' in script
     assert "--auth-recovery-hotfix" in script
-    assert 'FAPAI_DOCKERFILE="Dockerfile.nas-auth-recovery"' in script
-    assert 'export FAPAI_NAS_ENV_FILE="${FAPAI_NAS_ENV_FILE:-$env_file}"' in script
+    assert 'crow_set_env CROW_DOCKERFILE "Dockerfile.nas-auth-recovery"' in script
+    assert 'crow_set_env CROW_NAS_ENV_FILE "${CROW_NAS_ENV_FILE:-$env_file}"' in script
     assert 'com.docker.compose.project' in script
-    assert 'export FAPAI_IMAGE="$candidate_image"' in script
+    assert 'crow_set_env CROW_IMAGE "$candidate_image"' in script
     assert '--project-name "$compose_project"' in script
     assert "Candidate image build failed; the running API was not replaced." in script
 
@@ -166,7 +166,7 @@ def test_nas_api_defaults_to_loopback_and_guards_external_binding_with_tls() -> 
     runbook = (REPO_ROOT / "docs" / "nas-central-deployment.md").read_text(encoding="utf-8")
 
     assert '"${FAPAI_API_HOST_BIND_ADDRESS:-127.0.0.1}:${FAPAI_API_HOST_PORT:-9520}:8001"' in compose
-    assert 'api_host_bind_address="${FAPAI_API_HOST_BIND_ADDRESS:-127.0.0.1}"' in script
+    assert 'api_host_bind_address="${CROW_API_HOST_BIND_ADDRESS:-127.0.0.1}"' in script
     assert 'if [[ "$api_bind_is_loopback" != 1 && -z "$api_tls_cert_file" ]]; then' in script
     assert "External NAS API binding requires a configured TLS certificate and key." in script
     assert "FAPAI_API_HOST_BIND_ADDRESS` 设为 NAS 的 IPv4 地址或 `0.0.0.0`" in runbook

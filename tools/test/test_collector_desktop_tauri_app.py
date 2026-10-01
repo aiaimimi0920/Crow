@@ -40,16 +40,25 @@ def test_collector_desktop_is_independent_tauri_application() -> None:
     tauri_config = json.loads((APP_ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
     cargo_toml = (APP_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
 
-    assert package_json["name"] == "fapaifang-collector-desktop"
+    assert package_json["name"] == "crow-collector-desktop"
     assert package_json["private"] is True
     assert "tauri" in package_json["scripts"]
     assert "tauri:dev" in package_json["scripts"]
     assert "tauri:build" in package_json["scripts"]
     assert tauri_config["productName"] == "FapaiFang Collector Console"
-    assert tauri_config["app"]["windows"][0]["title"] == "FapaiFang 运维观察台（PC2 采集）"
+    assert tauri_config["app"]["windows"][0]["title"] == "Crow 运维观察台（PC2 采集）"
     assert tauri_config["build"]["frontendDist"] == "../dist"
     assert tauri_config["bundle"]["icon"] == ["icons/icon.ico"]
-    assert 'name = "fapaifang_collector_desktop"' in cargo_toml
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib
+
+    manifest = tomllib.loads(cargo_toml)
+    assert manifest["package"]["name"] == "crow_collector_desktop"
+    assert manifest["lib"]["name"] == "crow_collector_desktop_lib"
+    assert manifest["package"]["default-run"] == "fapaifang_collector_desktop"
+    assert manifest["bin"] == [{"name": "fapaifang_collector_desktop", "path": "src/main.rs"}]
     assert 'tauri = { version = "2"' in cargo_toml
 
 
@@ -57,7 +66,7 @@ def test_collector_desktop_frontend_uses_collection_observer_api_not_browser_pag
     index_html = (APP_ROOT / "index.html").read_text(encoding="utf-8")
     main_js = _frontend_js()
 
-    assert "FapaiFang 运维观察台（PC2 采集）" in index_html
+    assert "Crow 运维观察台（PC2 采集）" in index_html
     assert "链接采集" in main_js
     assert "商品详情" in main_js
     assert "商品分析" in main_js
@@ -154,7 +163,14 @@ def test_runtime_status_card_exposes_operator_controls_and_auth_challenge_dialog
     bridge = (APP_ROOT / "src-tauri/src/auth_bridge.rs").read_text(encoding="utf-8")
     assert '"-NoProfile"' in bridge
     assert "creation_flags(0x08000000)" in bridge
-    assert "Stdio::null()" in bridge
+    assert "helper_process::run(" in bridge
+    helper = (APP_ROOT / "src-tauri/src/helper_process.rs").read_text(encoding="utf-8")
+    assert "Stdio::null()" in helper
+    assert ".stdout(Stdio::piped())" in helper
+    assert ".stderr(Stdio::piped())" in helper
+    assert "creation_flags(0x08000000)" in helper
+    assert "decode_result(&output.stdout)" in bridge
+    assert "CROW_AUTH_RESULT=" in bridge
     assert "desktop-auth-challenge.ps1" in bridge
     assert "spawn_blocking" in bridge
     assert "CROW_AUTH_RESULT=" in bridge
@@ -230,7 +246,7 @@ def test_auth_challenge_network_is_bounded_and_completion_waits_for_verification
 def test_tauri_inplace_auth_uses_port_9225_without_browser_restart_switch() -> None:
     helper = (REPO_ROOT / "tools/pc1_desktop_auth.py").read_text(encoding="utf-8")
     assert "handoff.complete_inplace_auth" in helper
-    assert '"FAPAI_AUTH_LOCAL_CDP_PORT") or 9225' in helper
+    assert 'environment_value("CROW_AUTH_LOCAL_CDP_PORT", environment=environment, root=ROOT) or 9225' in helper
     assert '"-ForceNew"' not in helper
 
 
@@ -242,7 +258,9 @@ def test_collector_desktop_frontend_can_run_as_plain_html_console() -> None:
     assert "function defaultBrowserApiBase()" in main_js
     assert "window.location.origin" in main_js
     assert 'value="${defaultBrowserApiBase()}"' in main_js
-    assert "state.apiBase = defaultBrowserApiBase();" in main_js
+    assert 'startupApiBase(() => tryInvoke("default_api_base"), defaultBrowserApiBase)' in main_js
+    assert "state.apiBase = initialConfig.apiBase" in main_js
+    assert "setConfigurationBlocked(initialConfig.blocked)" in main_js
     assert "not running inside Tauri" in main_js
     assert 'window.open(current.target_url, "_blank", "noopener,noreferrer")' in main_js
     assert "普通浏览器无法读取挑战窗口的 cookie" in main_js
@@ -334,7 +352,7 @@ def test_collector_desktop_refreshes_region_status_separately_every_ten_minutes(
     assert "regionRefreshStatus" in main_js
     assert "requestId === state.regionsRequestId" in main_js
     assert "最后刷新所在地" in main_js
-    assert 'setInterval(() => loadRegions({ silent: true }), REGION_REFRESH_INTERVAL_MS)' in main_js
+    assert 'setInterval(() => { if (!isConfigurationBlocked()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS)' in main_js
     assert '$("refreshRegions").addEventListener("click", () => loadRegions({ silent: false }))' in main_js
     assert "每 10 分钟自动刷新所在地状态" in main_js
 
@@ -399,7 +417,8 @@ def test_collector_desktop_readme_documents_api_dependency_and_commands() -> Non
     readme = (APP_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "Rust + Tauri" in readme
-    assert "http://192.168.15.200:8001" in readme
+    assert "FAPAI_COLLECTOR_API_BASE" in readme
+    assert "crow-desktop.runtime.json" in readme
     assert "npm run tauri:dev" in readme
     assert "npm run tauri:build" in readme
     assert "AI 再分析" in readme
@@ -438,7 +457,7 @@ def test_collector_desktop_local_deploy_script_builds_to_temp_and_copies_local_r
     assert "-ExpectedSha256 (Get-FileHash" in script
     assert '[string]$DataRoot = ""' in script
     assert '$previousEnvironment.FAPAI_DATA_ROOT_HOST' in script
-    assert '$previousEnvironment.FAPAI_AUTH_BROWSER_PROFILE_DIR' in script
+    assert "CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue" in script
     shortcut = REPO_ROOT.joinpath("scripts", "update-collector-desktop-shortcut.ps1").read_text(encoding="utf-8")
     assert "CreateShortcut" in shortcut
     assert "WScript.Shell" in shortcut
@@ -471,8 +490,8 @@ def test_pc1_auth_bridge_uses_private_reverse_tunnel_and_human_browser_mode() ->
     assert "127.0.0.1:{0}:127.0.0.1:{1}" in script
     assert '"ExitOnForwardFailure=yes"' in script
     assert '"ServerAliveInterval=15"' in script
-    assert "FAPAI_AUTH_BROWSER_PROFILE_DIR" in script
-    assert "FAPAI_AUTH_BROWSER_PATH" in script
+    assert "CROW_AUTH_BROWSER_PROFILE_DIR" in script
+    assert "CROW_AUTH_BROWSER_PATH" in script
     assert "report_cdp_endpoint" in script
     assert "report_cdp_websocket_url" in script
     assert "webSocketDebuggerUrl" in script

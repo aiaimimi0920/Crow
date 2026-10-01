@@ -1,5 +1,9 @@
 # Crow（乌鸦引擎）
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](docs/runbooks/crow-data-root-compatibility.md).
+
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Storage](https://img.shields.io/badge/Storage-JSON%20%2B%20PostgreSQL-green)
 ![Control%20Plane](https://img.shields.io/badge/Control%20Plane-Receipt%20Aware-orange)
@@ -154,7 +158,7 @@ node --check tampermonkey_scripts/fapaifang_unified.user.js
 
 默认会复用：
 
-- `.\FPFData\edge-cdp-profile`
+- `.\CrowData\edge-cdp-profile`
 
 如需把 Taobao 采集会话与日常浏览器/扩展环境隔离，推荐改用：
 
@@ -162,7 +166,7 @@ node --check tampermonkey_scripts/fapaifang_unified.user.js
 
 该模式会改用隔离 profile：
 
-- `.\FPFData\edge-cdp-profile-isolated`
+- `.\CrowData\edge-cdp-profile-isolated`
 
 并尽量减少扩展污染，适合：
 
@@ -336,15 +340,15 @@ FAPAI_DETAIL_ANALYSIS_WORKER_3_RESTART=unless-stopped
 本地开发默认使用仓库内、但不进入 Git 的数据根：
 
 ```text
-.\FPFData
+.\CrowData
 ```
 
 该路径由脚本相对于当前仓库根目录解析，因此移动或重命名项目目录后不需要改代码。
 现有安装仍可通过 `FAPAI_DATA_ROOT_HOST` 或脚本的 `-DataRoot` 参数覆盖默认值。
-`FPFData/.gitignore` 会阻止凭据、浏览器 profile、数据库备份和生成数据进入 Git。
+`CrowData/.gitignore` 会阻止凭据、浏览器 profile、数据库备份和生成数据进入 Git。
 
 历史数据只通过 `scripts\import-legacy-fpfdata.ps1` 做非破坏、可重试的归档导入。
-导入结果放在 `FPFData\imports\<source-id>`，默认排除 secrets、runtime、浏览器
+导入结果放在 `CrowData\imports\<source-id>`，默认排除 secrets、runtime、浏览器
 profile、日志和 live PostgreSQL data。导入不会修改源目录，也不会触发部署。
 
 当前默认 compose 使用 **Docker named volume** 持久化运行状态：
@@ -355,7 +359,7 @@ profile、日志和 live PostgreSQL data。导入不会修改源目录，也不�
 - `fapaifang_postgres_data` -> PostgreSQL `/var/lib/postgresql/data`
 
 这样可以保证容器重启后采集断点和 PostgreSQL 数据不丢。仓库内的
-`.\FPFData` 只作为本地开发、离线归档和显式同步目标，不是默认 live bind mount。
+`.\CrowData` 只作为本地开发、离线归档和显式同步目标，不是默认 live bind mount。
 
 原因是当前这台机器实测：
 
@@ -365,7 +369,7 @@ profile、日志和 live PostgreSQL data。导入不会修改源目录，也不�
 - Docker local CIFS volume 指向 `//192.168.15.200/home` 当前报 `no route to host`。
 
 因此不要把网络盘/UNC 直挂当作已经可用的持久化方案。正式运行时使用 Docker volumes，
-再用同步脚本把 collector artifacts 和 PostgreSQL dump 落到 `FPFData`：
+再用同步脚本把 collector artifacts 和 PostgreSQL dump 落到 `CrowData`：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-docker-data-to-host.ps1
@@ -390,7 +394,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register-fpfdata-syn
 PostgreSQL 建议使用独立 dump 脚本维护可恢复备份，默认数据根为：
 
 ```text
-.\FPFData
+.\CrowData
 ```
 
 手动备份并验证 restore list：
@@ -442,11 +446,11 @@ host-bind override 会把运行数据挂载到：
 - `${FAPAI_DATA_ROOT_HOST}\jobs` -> `/data/jobs`
 - `${FAPAI_DATA_ROOT_HOST}\postgres` -> PostgreSQL `/var/lib/postgresql/data`
 
-不要把 live 采集产物加入 Git。仓库内 `FPFData` 的内容已被忽略；如需在
+不要把 live 采集产物加入 Git。仓库内 `CrowData` 的内容已被忽略；如需在
 `docker.local.env` 中显式设置，可使用相对当前项目的路径：
 
 ```env
-FAPAI_DATA_ROOT_HOST=.\FPFData
+FAPAI_DATA_ROOT_HOST=.\CrowData
 ```
 
 ### 1. 准备环境变量
@@ -464,7 +468,7 @@ FAPAI_CDP_ENDPOINT=http://host.docker.internal:9223
 FAPAI_DB_URL=postgresql+psycopg://fapaifang:fapaifang@host.docker.internal:55432/fapaifang
 FAPAI_DB_AUTO_CREATE=1
 FAPAI_DB_ENABLE_POSTGIS=1
-FAPAI_DATA_ROOT_HOST=.\FPFData
+FAPAI_DATA_ROOT_HOST=.\CrowData
 FAPAI_SEED_JOBS_FILE=/data/jobs/seed_jobs_all.json
 FAPAI_SEED_JOB_KEY=guangdong-guangzhou-nansha-50025969
 FAPAI_SEED_PROVINCE=广东省
@@ -496,7 +500,7 @@ $env:OPENAI_BASE_URL = "https://your-openai-compatible-base-url/v1"
 $env:OPENAI_API_KEY = "<your-key>"
 $env:OPENAI_MODEL = "<optional-model-name>"
 $env:FAPAI_CDP_ENDPOINT = "http://host.docker.internal:9223"
-$env:FAPAI_DATA_ROOT_HOST = (Join-Path $PWD "FPFData")
+$env:FAPAI_DATA_ROOT_HOST = (Join-Path $PWD "CrowData")
 ```
 
 其中 `FAPAI_CDP_ENDPOINT` 指向已登录淘宝/阿里资产的 Chrome remote debugging endpoint。Docker Desktop 场景下容器访问宿主机通常使用 `host.docker.internal`；如果宿主 Chrome 只监听 `127.0.0.1` 且容器连不上，需要把 remote debugging endpoint 暴露到容器可访问的地址。
@@ -841,7 +845,7 @@ small subset eligible for a conservative automatic split.
 
 ```powershell
 python scripts/repair_seed_collisions.py `
-    --database-url "sqlite:///FPFData/offline/crow-copy.db" `
+    --database-url "sqlite:///CrowData/offline/crow-copy.db" `
     --item-id "<historical-item-id>"
 ```
 
@@ -850,13 +854,13 @@ required to roll the batch back:
 
 ```powershell
 python scripts/repair_seed_collisions.py `
-    --database-url "sqlite:///FPFData/offline/crow-copy.db" `
+    --database-url "sqlite:///CrowData/offline/crow-copy.db" `
     --item-id "<historical-item-id>" `
     --apply `
     --receipt "artifacts/seed-collision-repair.json"
 
 python scripts/repair_seed_collisions.py `
-    --database-url "sqlite:///FPFData/offline/crow-copy.db" `
+    --database-url "sqlite:///CrowData/offline/crow-copy.db" `
     --rollback "artifacts/seed-collision-repair.json"
 ```
 

@@ -7,7 +7,7 @@ from sqlalchemy import and_, case, func, not_, or_, select
 
 from src.collection.seed_scan_policy import SeedScanPolicy
 
-from .models import FapaiSeedItem, FapaiSeedOccurrence
+from .models import CollectionSeedItem, CollectionSeedOccurrence
 from .repository_context import (
     SEED_ITEM_CLAIM_BATCH_LIMIT,
     SEED_ITEM_STALE_FAILED_PRIORITY_SECONDS,
@@ -44,33 +44,33 @@ class RepositoryDetailClaimMixin:
         claimed_payload: Dict[str, Any] | None = None
         with self.session_factory.begin() as session:
             stale_failed_retry_cutoff = now - timedelta(seconds=SEED_ITEM_STALE_FAILED_PRIORITY_SECONDS)
-            stale_retry_timestamp = func.coalesce(FapaiSeedItem.updated_at, FapaiSeedItem.first_seen_at)
-            sort_first_seen_at = func.coalesce(FapaiSeedItem.first_seen_at, datetime.min)
+            stale_retry_timestamp = func.coalesce(CollectionSeedItem.updated_at, CollectionSeedItem.first_seen_at)
+            sort_first_seen_at = func.coalesce(CollectionSeedItem.first_seen_at, datetime.min)
             detail_claim_priority = case(
                 (
                     and_(
-                        FapaiSeedItem.status == "in_progress",
+                        CollectionSeedItem.status == "in_progress",
                         or_(
-                            FapaiSeedItem.detail_lease_until.is_(None),
-                            FapaiSeedItem.detail_lease_until < now,
+                            CollectionSeedItem.detail_lease_until.is_(None),
+                            CollectionSeedItem.detail_lease_until < now,
                         ),
                     ),
                     0,
                 ),
                 (
                     and_(
-                        FapaiSeedItem.status == "detail_failed",
+                        CollectionSeedItem.status == "detail_failed",
                         stale_retry_timestamp < stale_failed_retry_cutoff,
                     ),
                     1,
                 ),
-                (FapaiSeedItem.status == "pending_detail", 2),
-                (FapaiSeedItem.status == "detail_failed", 3),
-                (FapaiSeedItem.status == "in_progress", 4),
+                (CollectionSeedItem.status == "pending_detail", 2),
+                (CollectionSeedItem.status == "detail_failed", 3),
+                (CollectionSeedItem.status == "in_progress", 4),
                 else_=99,
             )
 
-            def _detail_row_priority(row: FapaiSeedItem) -> int:
+            def _detail_row_priority(row: CollectionSeedItem) -> int:
                 if (
                     row.status == "in_progress"
                     and row.detail_leased_by != worker_id
@@ -91,16 +91,16 @@ class RepositoryDetailClaimMixin:
             while claimed_payload is None:
                 candidate_query = (
                     select(
-                        FapaiSeedItem.item_id,
+                        CollectionSeedItem.item_id,
                         detail_claim_priority.label("claim_priority"),
                         sort_first_seen_at.label("sort_first_seen_at"),
                     )
-                    .where(FapaiSeedItem.status.in_(("pending_detail", "detail_failed", "in_progress")))
-                    .order_by(detail_claim_priority, sort_first_seen_at.asc(), FapaiSeedItem.item_id.asc())
+                    .where(CollectionSeedItem.status.in_(("pending_detail", "detail_failed", "in_progress")))
+                    .order_by(detail_claim_priority, sort_first_seen_at.asc(), CollectionSeedItem.item_id.asc())
                     .limit(SEED_ITEM_CLAIM_BATCH_LIMIT)
                 )
                 if excluded:
-                    candidate_query = candidate_query.where(not_(FapaiSeedItem.item_id.in_(excluded)))
+                    candidate_query = candidate_query.where(not_(CollectionSeedItem.item_id.in_(excluded)))
                 cursor_clause = _seed_claim_cursor_clause(detail_claim_priority, sort_first_seen_at, last_cursor)
                 if cursor_clause is not None:
                     candidate_query = candidate_query.where(cursor_clause)
@@ -108,12 +108,12 @@ class RepositoryDetailClaimMixin:
                 if not candidates:
                     break
                 locked_rows = session.scalars(
-                    select(FapaiSeedItem)
-                    .where(FapaiSeedItem.item_id.in_([str(candidate.item_id) for candidate in candidates]))
-                    .order_by(FapaiSeedItem.item_id)
+                    select(CollectionSeedItem)
+                    .where(CollectionSeedItem.item_id.in_([str(candidate.item_id) for candidate in candidates]))
+                    .order_by(CollectionSeedItem.item_id)
                     .with_for_update(skip_locked=True)
                 ).all()
-                remaining_rows: list[FapaiSeedItem] = []
+                remaining_rows: list[CollectionSeedItem] = []
                 for row in locked_rows:
                     if row.status not in {"pending_detail", "detail_failed", "in_progress"}:
                         continue
@@ -202,9 +202,9 @@ class RepositoryDetailClaimMixin:
             return None
         with self.session_factory() as session:
             occurrence = session.scalars(
-                select(FapaiSeedOccurrence)
-                .where(FapaiSeedOccurrence.item_id == claimed_item_id)
-                .order_by(FapaiSeedOccurrence.seen_at.asc(), FapaiSeedOccurrence.id.asc())
+                select(CollectionSeedOccurrence)
+                .where(CollectionSeedOccurrence.item_id == claimed_item_id)
+                .order_by(CollectionSeedOccurrence.seen_at.asc(), CollectionSeedOccurrence.id.asc())
             ).first()
             if occurrence is not None:
                 claimed_payload.setdefault("source_page_url", occurrence.source_page_url)
@@ -227,9 +227,9 @@ class RepositoryDetailClaimMixin:
         released = 0
         with self.session_factory.begin() as session:
             rows = session.scalars(
-                select(FapaiSeedItem).where(
-                    FapaiSeedItem.detail_leased_by == normalized_worker_id,
-                    FapaiSeedItem.status.in_(("in_progress", "analysis_in_progress")),
+                select(CollectionSeedItem).where(
+                    CollectionSeedItem.detail_leased_by == normalized_worker_id,
+                    CollectionSeedItem.status.in_(("in_progress", "analysis_in_progress")),
                 )
             ).all()
             for row in rows:
@@ -260,7 +260,7 @@ class RepositoryDetailClaimMixin:
         self.initialize()
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedItem, str(item_id))
+            row = session.get(CollectionSeedItem, str(item_id))
             if row is None:
                 return
             row.status = "detail_completed"
@@ -285,7 +285,7 @@ class RepositoryDetailClaimMixin:
         self.initialize()
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedItem, str(item_id))
+            row = session.get(CollectionSeedItem, str(item_id))
             if row is None:
                 return
             row.status = "raw_detail_captured"
@@ -323,23 +323,23 @@ class RepositoryDetailClaimMixin:
         claimed_payload: Dict[str, Any] | None = None
         with self.session_factory.begin() as session:
             stale_failed_retry_cutoff = now - timedelta(seconds=SEED_ITEM_STALE_FAILED_PRIORITY_SECONDS)
-            stale_retry_timestamp = func.coalesce(FapaiSeedItem.updated_at, FapaiSeedItem.first_seen_at)
-            sort_first_seen_at = func.coalesce(FapaiSeedItem.first_seen_at, datetime.min)
+            stale_retry_timestamp = func.coalesce(CollectionSeedItem.updated_at, CollectionSeedItem.first_seen_at)
+            sort_first_seen_at = func.coalesce(CollectionSeedItem.first_seen_at, datetime.min)
             raw_claim_priority = case(
                 (
                     and_(
-                        FapaiSeedItem.status == "analysis_failed",
+                        CollectionSeedItem.status == "analysis_failed",
                         stale_retry_timestamp < stale_failed_retry_cutoff,
                     ),
                     0,
                 ),
-                (FapaiSeedItem.status == "raw_detail_captured", 1),
-                (FapaiSeedItem.status == "analysis_failed", 2),
-                (FapaiSeedItem.status == "analysis_in_progress", 3),
+                (CollectionSeedItem.status == "raw_detail_captured", 1),
+                (CollectionSeedItem.status == "analysis_failed", 2),
+                (CollectionSeedItem.status == "analysis_in_progress", 3),
                 else_=99,
             )
 
-            def _analysis_row_priority(row: FapaiSeedItem) -> int:
+            def _analysis_row_priority(row: CollectionSeedItem) -> int:
                 if row.status == "analysis_failed" and (
                     (_coerce_naive_utc(row.updated_at) or row.first_seen_at or datetime.min) < stale_failed_retry_cutoff
                 ):
@@ -360,16 +360,16 @@ class RepositoryDetailClaimMixin:
             while claimed_payload is None:
                 candidate_query = (
                     select(
-                        FapaiSeedItem.item_id,
+                        CollectionSeedItem.item_id,
                         raw_claim_priority.label("claim_priority"),
                         sort_first_seen_at.label("sort_first_seen_at"),
                     )
-                    .where(FapaiSeedItem.status.in_(("raw_detail_captured", "analysis_failed", "analysis_in_progress")))
-                    .order_by(raw_claim_priority, sort_first_seen_at.asc(), FapaiSeedItem.item_id.asc())
+                    .where(CollectionSeedItem.status.in_(("raw_detail_captured", "analysis_failed", "analysis_in_progress")))
+                    .order_by(raw_claim_priority, sort_first_seen_at.asc(), CollectionSeedItem.item_id.asc())
                     .limit(SEED_ITEM_CLAIM_BATCH_LIMIT)
                 )
                 if excluded:
-                    candidate_query = candidate_query.where(not_(FapaiSeedItem.item_id.in_(excluded)))
+                    candidate_query = candidate_query.where(not_(CollectionSeedItem.item_id.in_(excluded)))
                 cursor_clause = _seed_claim_cursor_clause(raw_claim_priority, sort_first_seen_at, last_cursor)
                 if cursor_clause is not None:
                     candidate_query = candidate_query.where(cursor_clause)
@@ -377,12 +377,12 @@ class RepositoryDetailClaimMixin:
                 if not candidates:
                     break
                 locked_rows = session.scalars(
-                    select(FapaiSeedItem)
-                    .where(FapaiSeedItem.item_id.in_([str(candidate.item_id) for candidate in candidates]))
-                    .order_by(FapaiSeedItem.item_id)
+                    select(CollectionSeedItem)
+                    .where(CollectionSeedItem.item_id.in_([str(candidate.item_id) for candidate in candidates]))
+                    .order_by(CollectionSeedItem.item_id)
                     .with_for_update(skip_locked=True)
                 ).all()
-                remaining_rows: list[tuple[FapaiSeedItem, Dict[str, Any], Dict[str, Any], str, str, str]] = []
+                remaining_rows: list[tuple[CollectionSeedItem, Dict[str, Any], Dict[str, Any], str, str, str]] = []
                 for row in locked_rows:
                     if row.status not in {"raw_detail_captured", "analysis_failed", "analysis_in_progress"}:
                         continue

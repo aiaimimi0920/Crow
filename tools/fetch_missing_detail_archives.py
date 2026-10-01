@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -14,6 +13,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.collection.detail_archive_fetch import fetch_missing_detail_archives
+from src.project_data_paths import resolve_project_data_root
+from src.project_environment import getenv as project_getenv
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-root",
         type=Path,
-        default=Path(os.getenv("FAPAI_DATA_ROOT") or REPO_ROOT / "FPFData" / "datas"),
+        default=None,
     )
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--timeout", type=int, default=15)
@@ -34,6 +35,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
     )
     args = parser.parse_args()
+    if args.data_root is None:
+        args.data_root = Path(
+            project_getenv("CROW_DATA_ROOT")
+            or resolve_project_data_root(REPO_ROOT) / "datas"
+        )
     if args.output_path is None:
         args.output_path = (
             args.data_root / "maintenance" / "fetch_missing_detail_archives.json"

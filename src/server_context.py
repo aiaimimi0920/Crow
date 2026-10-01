@@ -44,6 +44,7 @@ from .utc_timestamps import (
 )
 
 from src import llm_helper
+from src.project_environment import getenv as project_getenv
 from src.collection.adapters.auction_risk_fields import MALIGNANT_RISK_LABELS, RISK_ALIAS_KEYS
 from src.avm_config import AVM_CONFIG_MANAGER
 from src.avm_config import DEFAULT_AVM_CONFIG
@@ -142,41 +143,41 @@ AVM_PIPELINE = AVMPipelineManager(data_dir=DATA_DIR)
 RUNTIME = RuntimeState()
 CHALLENGE_FORCE_RESET_SECONDS = max(
     1.0,
-    float(os.getenv("FAPAI_CHALLENGE_FORCE_RESET_SECONDS", "900")),
+    float(project_getenv("CROW_CHALLENGE_FORCE_RESET_SECONDS", "900")),
 )
 SOLVER_AUTH_REPORT_GRACE_SECONDS = max(
     0.0,
-    float(os.getenv("FAPAI_SOLVER_AUTH_REPORT_GRACE_SECONDS", "90")),
+    float(project_getenv("CROW_SOLVER_AUTH_REPORT_GRACE_SECONDS", "90")),
 )
 SOLVER_DETAIL_PROGRESS_GRACE_SECONDS = max(
     SOLVER_AUTH_REPORT_GRACE_SECONDS,
-    float(os.getenv("FAPAI_SOLVER_DETAIL_PROGRESS_GRACE_SECONDS", "180")),
+    float(project_getenv("CROW_SOLVER_DETAIL_PROGRESS_GRACE_SECONDS", "180")),
 )
 SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS = max(
     1,
-    int(os.getenv("FAPAI_SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS", "1")),
+    int(project_getenv("CROW_SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS", "1")),
 )
 SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS = max(
     0.0,
-    float(os.getenv("FAPAI_SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS", "180")),
+    float(project_getenv("CROW_SOLVER_FORCE_RESET_REPORT_GRACE_SECONDS", "180")),
 )
 NAS_AUTH_RECOVERY_POLL_SECONDS = max(
     5.0,
-    float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_POLL_SECONDS", "60")),
+    float(project_getenv("CROW_NAS_AUTH_RECOVERY_POLL_SECONDS", "60")),
 )
 NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS = max(
     60.0,
-    float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS", "300")),
+    float(project_getenv("CROW_NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS", "300")),
 )
 NAS_AUTH_RECOVERY = NasAuthRecoveryCoordinator(
     NAS_AUTH_RECOVERY_STATE_PATH,
-    enabled=str(os.getenv("FAPAI_NAS_AUTH_RECOVERY_ENABLED", "0")).strip().lower()
+    enabled=str(project_getenv("CROW_NAS_AUTH_RECOVERY_ENABLED", "0")).strip().lower()
     in {"1", "true", "yes", "on"},
-    stall_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_STALL_SECONDS", "1800")),
-    pc1_timeout_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_PC1_TIMEOUT_SECONDS", "1800")),
-    pc2_timeout_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_PC2_TIMEOUT_SECONDS", "600")),
-    verify_timeout_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_VERIFY_TIMEOUT_SECONDS", "600")),
-    cooldown_seconds=float(os.getenv("FAPAI_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")),
+    stall_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_STALL_SECONDS", "1800")),
+    pc1_timeout_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_PC1_TIMEOUT_SECONDS", "1800")),
+    pc2_timeout_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_PC2_TIMEOUT_SECONDS", "600")),
+    verify_timeout_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_VERIFY_TIMEOUT_SECONDS", "600")),
+    cooldown_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")),
 )
 
 

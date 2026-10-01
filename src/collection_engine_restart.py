@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hmac
-import os
-from pathlib import Path
 import re
 import secrets
 import sqlite3
 import time
+from pathlib import Path
+
+from src.credential_header_aliases import credential_header
+from src.project_environment import getenv as project_getenv
+
+from .project_data_paths import resolve_project_data_root
 
 PREFIX = "/api/collection/control/restart"
 ROUTES = {PREFIX, f"{PREFIX}/poll", f"{PREFIX}/result"}
@@ -22,7 +26,7 @@ class RestartError(Exception):
 
 
 def token(role: str) -> str:
-    path = os.getenv(f"FAPAI_ENGINE_{role.upper()}_TOKEN_FILE", "").strip()
+    path = project_getenv(f"CROW_ENGINE_{role.upper()}_TOKEN_FILE", "").strip()
     if not path:
         return ""
     try:
@@ -38,14 +42,14 @@ def configured() -> bool:
 
 
 def runtime_root() -> Path:
-    override = os.getenv("FAPAI_ENGINE_CONTROL_ROOT", "").strip()
-    return Path(override).resolve() if override else Path(__file__).resolve().parents[1] / "FPFData"
+    override = project_getenv("CROW_ENGINE_CONTROL_ROOT", "").strip()
+    return Path(override).resolve() if override else resolve_project_data_root(Path(__file__).resolve().parents[1])
 
 
 def authorize(headers, role: str) -> None:
     if not configured():
         raise RestartError("Restart control requires two distinct configured token files", 503)
-    supplied = str(headers.get("X-FAPAI-Control-Token", ""))
+    supplied = str(credential_header(headers, "X-Crow-Control-Token") or "")
     if not hmac.compare_digest(supplied.encode(), token(role).encode()):
         raise RestartError("Restart authorization rejected", 403)
 

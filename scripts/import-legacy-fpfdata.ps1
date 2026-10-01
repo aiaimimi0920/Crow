@@ -11,10 +11,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
 if (-not $DestinationRoot) {
-    $DestinationRoot = Join-Path $repoRoot ("FPFData\imports\{0}" -f $SourceId)
+    $DestinationRoot = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot $repoRoot) ("imports\{0}" -f $SourceId)
 }
 
 $resolvedSource = (Resolve-Path -LiteralPath $SourceRoot).ProviderPath

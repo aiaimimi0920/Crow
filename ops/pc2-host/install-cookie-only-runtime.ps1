@@ -11,6 +11,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $files = @(
+  'crow-environment.ps1',
+  'runtime\project-environment.ps1',
+  'runtime\compose-environment-file.ps1',
   'apply-cookie-only-worker-env.ps1',
   'import-host-direct-analysis-env.ps1',
   'launch-host-direct-workers.ps1',
@@ -22,7 +25,17 @@ $files = @(
   'start-host-direct-detail-worker.ps1',
   'start-host-direct-detail-worker-2.ps1',
   'start-host-direct-detail-worker-3.ps1',
-  'start-host-direct-seed-worker.ps1'
+  'start-host-direct-seed-worker.ps1',
+  'load-host-worker-env.ps1',
+  'start-host-detail-worker.ps1',
+  'start-host-seed-worker.ps1',
+  'start-host-seed-worker-2.ps1',
+  'start-pc2-local-solver.ps1',
+  'launch-host-direct-workers\analysis-backend.ps1',
+  'launch-host-direct-workers\control-plane.ps1',
+  'launch-host-direct-workers\process-lifecycle.ps1',
+  'launch-host-direct-workers\worker-specs.ps1',
+  'launch-host-direct-workers\worker-supervision.ps1'
 )
 
 function Test-PowerShellFile {

@@ -12,8 +12,14 @@ param(
     [int]$LoginWindowSeconds = 300,
     [switch]$UseSystemProxy
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 . (Join-Path $PSScriptRoot "collection-api-origin.ps1")
 . (Join-Path $PSScriptRoot "pc1-recovery-http.ps1")
 
@@ -21,11 +27,11 @@ function Resolve-ApiBase {
     $value = if ($ApiBase) {
         $ApiBase
     }
-    elseif ($env:FAPAI_COLLECTOR_API_BASE) {
-        $env:FAPAI_COLLECTOR_API_BASE
+    elseif ((Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')) {
+        (Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')
     }
-    elseif ($env:FAPAI_API_BASE_URL) {
-        $env:FAPAI_API_BASE_URL
+    elseif ((Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')) {
+        (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')
     }
     else {
         ""
@@ -34,7 +40,7 @@ function Resolve-ApiBase {
 }
 
 $apiBaseResolved = Resolve-ApiBase
-if (-not $ApiCaFile) { $ApiCaFile = $env:FAPAI_API_CA_FILE }
+if (-not $ApiCaFile) { $ApiCaFile = (Get-CrowEnvironmentValue -Name 'CROW_API_CA_FILE' -PathValue) }
 if ($ApiCaFile -and -not (Test-Path -LiteralPath $ApiCaFile -PathType Leaf)) {
     throw "Collection API CA file is unavailable."
 }
@@ -168,28 +174,21 @@ foreach ($required in @($startBrowserScript, $completeAuthScript)) {
     }
 }
 
-if (-not $DataRoot) {
-    $DataRoot = if ($env:FAPAI_DATA_ROOT_HOST) {
-        $env:FAPAI_DATA_ROOT_HOST
-    } else {
-        Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData"
-    }
-}
 if (-not $OutputPath) {
-    $OutputPath = if ($env:FAPAI_COOKIE_SNAPSHOT) { $env:FAPAI_COOKIE_SNAPSHOT } else { Join-Path $DataRoot "secrets\nodes\pc2\taobao-cookies.json" }
+    $OutputPath = if ((Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue)) { (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue) } else { Join-Path $DataRoot "secrets\nodes\pc2\taobao-cookies.json" }
 }
 if (-not $TokenPath) {
-    $TokenPath = if ($env:FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE) {
-        $env:FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE
+    $TokenPath = if ((Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -PathValue)) {
+        (Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -PathValue)
     } else {
         Join-Path $DataRoot "secrets\nas-auth-recovery.token"
     }
 }
 if (-not $ProfileDir) {
-    $ProfileDir = if ($env:FAPAI_AUTH_BROWSER_PROFILE_DIR) { $env:FAPAI_AUTH_BROWSER_PROFILE_DIR } else { Join-Path $DataRoot "chrome-cdp-profile-pc1-human-clean" }
+    $ProfileDir = if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -PathValue)) { (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -PathValue) } else { Join-Path $DataRoot "chrome-cdp-profile-pc1-human-clean" }
 }
 if (-not $BrowserPath) {
-    $BrowserPath = if ($env:FAPAI_AUTH_BROWSER_PATH) { $env:FAPAI_AUTH_BROWSER_PATH } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
+    $BrowserPath = if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -PathValue)) { (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -PathValue) } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
 }
 
 $statePath = Join-Path $DataRoot "runtime\pc1-nas-auth-recovery-state.json"

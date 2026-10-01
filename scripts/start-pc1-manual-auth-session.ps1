@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 function Resolve-Setting {
     param(
@@ -69,18 +70,15 @@ function Stop-ProfileBrowser {
     return $treeIds.Count
 }
 
+$resolvedDataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 $resolvedProfileDir = Resolve-Setting `
     -ExplicitValue $ProfileDir `
     -EnvironmentName "FAPAI_AUTH_BROWSER_PROFILE_DIR" `
-    -DefaultValue (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData\chrome-cdp-profile-pc1-human-clean")
+    -DefaultValue (Join-Path $resolvedDataRoot "chrome-cdp-profile-pc1-human-clean")
 $resolvedBrowserPath = Resolve-Setting `
     -ExplicitValue $BrowserPath `
     -EnvironmentName "FAPAI_AUTH_BROWSER_PATH" `
     -DefaultValue "C:\Program Files\Google\Chrome\Application\chrome.exe"
-$resolvedDataRoot = Resolve-Setting `
-    -ExplicitValue $DataRoot `
-    -EnvironmentName "FAPAI_DATA_ROOT_HOST" `
-    -DefaultValue (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData")
 
 if (-not (Test-Path -LiteralPath $resolvedBrowserPath)) {
     throw "Configured manual-auth browser does not exist: $resolvedBrowserPath"

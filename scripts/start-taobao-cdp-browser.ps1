@@ -18,6 +18,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 
 $script:TaobaoCdpBrowserScriptRoot = $PSScriptRoot
 $moduleRoot = Join-Path $PSScriptRoot "start-taobao-cdp-browser"

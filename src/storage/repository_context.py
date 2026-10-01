@@ -17,6 +17,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from src.project_environment import getenv as project_getenv
+from src.project_data_paths import resolve_project_data_root
 from .canonical_record import (
     CANONICAL_RECORD_SCHEMA_VERSION,
     build_canonical_payload,
@@ -24,11 +26,11 @@ from .canonical_record import (
 )
 from .models import (
     Base,
-    FapaiAnalysisRun,
-    FapaiSeedItem,
-    FapaiSeedOccurrence,
-    FapaiSeedScanJob,
-    FapaiSeedScanProgress,
+    CollectionAnalysisRun,
+    CollectionSeedItem,
+    CollectionSeedOccurrence,
+    CollectionSeedScanJob,
+    CollectionSeedScanProgress,
     ManualReviewReceipt,
     ManualReviewReceiptJob,
     ManualReviewReceiptOperation,
@@ -155,7 +157,7 @@ def _seed_claim_cursor_clause(
         and_(
             priority_expr == last_priority,
             sort_first_seen_at == last_first_seen_at,
-            FapaiSeedItem.item_id > last_item_id,
+            CollectionSeedItem.item_id > last_item_id,
         ),
     )
 
@@ -171,13 +173,18 @@ def _shared_data_root_candidates() -> list[Path]:
     candidates: list[Path] = []
     seen: set[str] = set()
     for env_name in (
-        "FAPAI_SHARED_ARTIFACT_ROOT",
-        "FAPAI_SHARED_DATA_ROOT_HOST",
-        "FAPAI_DATA_ROOT_HOST",
-        "FAPAI_SHARED_DATA_ROOT",
-        "FAPAI_DATA_ROOT",
+        "CROW_SHARED_ARTIFACT_ROOT",
+        "CROW_SHARED_DATA_ROOT_HOST",
+        "CROW_DATA_ROOT_HOST",
+        "CROW_SHARED_DATA_ROOT",
+        "CROW_DATA_ROOT",
     ):
-        raw = str(os.getenv(env_name) or "").strip()
+        if env_name == "CROW_DATA_ROOT_HOST":
+            if not any(str(os.getenv(key) or "").strip() for key in ("CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST")):
+                continue
+            raw = str(resolve_project_data_root(Path(__file__).resolve().parents[2]))
+        else:
+            raw = str(project_getenv(env_name) or "").strip()
         if not raw:
             continue
         path = Path(raw).expanduser()
@@ -190,18 +197,18 @@ def _shared_data_root_candidates() -> list[Path]:
 
 
 def _shared_artifact_relative_path(path_value: str) -> str | None:
-    """Extract a relative path from a Windows/UNC FPFData artifact path.
+    """Extract a relative path from a Windows/UNC CrowData or legacy FPFData artifact path.
 
     Workers may run on Windows and persist their host path in the central DB.
-    The API runs in Linux, so only the portion below the shared FPFData root is
+    The API runs in Linux, so only the portion below the shared management root is
     portable. Reject traversal rather than resolving arbitrary host paths.
     """
     normalized = path_value.replace("\\", "/")
     lowered = normalized.lower()
-    marker = "/fpfdata/"
-    marker_index = lowered.find(marker)
-    if marker_index < 0:
+    markers = [(lowered.find(marker), marker) for marker in ("/fpfdata/", "/crowdata/") if marker in lowered]
+    if not markers:
         return None
+    marker_index, marker = min(markers)
     relative = normalized[marker_index + len(marker) :].lstrip("/")
     if not relative:
         return None
@@ -254,7 +261,7 @@ def _resolve_collection_artifact_path(path_value: Any) -> str | None:
 
 
 def _taobao_location_override_path() -> Path:
-    configured = str(os.getenv("FAPAI_TAOBAO_LOCATIONS_FILE") or "").strip()
+    configured = str(project_getenv("CROW_TAOBAO_LOCATIONS_FILE") or "").strip()
     if configured:
         return Path(configured)
     return (
@@ -299,7 +306,7 @@ class DatabaseSettings:
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}

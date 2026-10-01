@@ -1,9 +1,12 @@
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
 function Resolve-Pc1AuthPython {
     param([string]$Requested = "")
 
     $candidate = $Requested
-    if (-not $candidate -and $env:FAPAI_DESKTOP_PYTHON_PATH) {
-        $candidate = $env:FAPAI_DESKTOP_PYTHON_PATH
+    if (-not $candidate -and (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)) {
+        $candidate = (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)
     }
     if (-not $candidate) {
         $candidate = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source

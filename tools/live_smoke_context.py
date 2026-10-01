@@ -40,6 +40,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import EnvironmentAliasConflict, getenv as project_getenv
+from src.project_data_paths import resolve_project_data_root
+
 DEFAULT_OUTPUT_DIR = Path("output/live_batch_smoke")
 
 DEFAULT_CDP_ENDPOINT = "http://127.0.0.1:9223"
@@ -65,7 +68,7 @@ DEFAULT_TARGET_URL = (
     "?location_code=110101&st_param=2&auction_start_seg=-1&page=1"
 )
 
-DEFAULT_API_BASE_URL = os.environ.get("FAPAI_API_BASE_URL", "http://127.0.0.1:8001/api")
+DEFAULT_API_BASE_URL = project_getenv("CROW_API_BASE_URL", "http://127.0.0.1:8001/api")
 
 DEFAULT_CDP_PAGE_TARGET_LIMIT = 12
 

@@ -3,45 +3,43 @@ param(
   [string]$RequestedOutputDir = '',
   [string]$BrowserFallbackOverride = ''
 )
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
+
 
 $ctx = & 'C:\fapaifang-worker\ops\load-host-direct-nas-env.ps1'
 $effectiveBrowserFallbackOverride = if ($BrowserFallbackOverride -ne '') {
   $BrowserFallbackOverride
 } else {
-  $env:FAPAI_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE')
 }
 if ($null -ne $effectiveBrowserFallbackOverride -and $effectiveBrowserFallbackOverride -ne '') {
-  [Environment]::SetEnvironmentVariable(
-    'FAPAI_DETAIL_BROWSER_FALLBACK',
-    $effectiveBrowserFallbackOverride,
-    'Process'
-  )
+  (Set-CrowEnvironmentValue -Name 'CROW_DETAIL_BROWSER_FALLBACK' -Value ($effectiveBrowserFallbackOverride))
 }
 Set-Location $ctx.SrcRoot
 $workerId = if ($RequestedWorkerId) {
   $RequestedWorkerId
-} elseif ($env:FAPAI_HOST_DETAIL_WORKER_ID) {
-  $env:FAPAI_HOST_DETAIL_WORKER_ID
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_WORKER_ID')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_WORKER_ID')
 } else {
   'pc2-real-detail-1'
 }
 $outputDir = if ($RequestedOutputDir) {
   $RequestedOutputDir
-} elseif ($env:FAPAI_HOST_DETAIL_OUTPUT_DIR) {
-  $env:FAPAI_HOST_DETAIL_OUTPUT_DIR
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_OUTPUT_DIR' -PathValue)) {
+  (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_OUTPUT_DIR' -PathValue)
 } else {
   Join-Path $ctx.SharedRoot 'output\nodes\pc2-real\detail_worker'
 }
-$detailCdpEndpoint = if ($env:FAPAI_DETAIL_CDP_ENDPOINT) { $env:FAPAI_DETAIL_CDP_ENDPOINT } else { $env:FAPAI_CDP_ENDPOINT }
-$targetSuccess = if ($env:FAPAI_HOST_DETAIL_TARGET_SUCCESS) { $env:FAPAI_HOST_DETAIL_TARGET_SUCCESS } else { '10' }
-$maxAttempts = if ($env:FAPAI_HOST_DETAIL_MAX_ATTEMPTS) { $env:FAPAI_HOST_DETAIL_MAX_ATTEMPTS } else { '30' }
-$activeLoopIntervalSeconds = if ($env:FAPAI_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS) { $env:FAPAI_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS } else { '0' }
-$successDelaySeconds = if ($env:FAPAI_HOST_DETAIL_SUCCESS_DELAY_SECONDS) { $env:FAPAI_HOST_DETAIL_SUCCESS_DELAY_SECONDS } else { '0' }
-$failureDelaySeconds = if ($env:FAPAI_HOST_DETAIL_FAILURE_DELAY_SECONDS) { $env:FAPAI_HOST_DETAIL_FAILURE_DELAY_SECONDS } else { '1' }
-$solverEnabled = if ($env:FAPAI_DETAIL_CAPTCHA_SOLVER_ENABLED) {
-  $env:FAPAI_DETAIL_CAPTCHA_SOLVER_ENABLED
-} elseif ($env:FAPAI_CAPTCHA_SOLVER_ENABLED) {
-  $env:FAPAI_CAPTCHA_SOLVER_ENABLED
+$detailCdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CDP_ENDPOINT')) { (Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CDP_ENDPOINT') } else { (Get-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT') }
+$targetSuccess = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_TARGET_SUCCESS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_TARGET_SUCCESS') } else { '10' }
+$maxAttempts = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_MAX_ATTEMPTS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_MAX_ATTEMPTS') } else { '30' }
+$activeLoopIntervalSeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS') } else { '0' }
+$successDelaySeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_SUCCESS_DELAY_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_SUCCESS_DELAY_SECONDS') } else { '0' }
+$failureDelaySeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_FAILURE_DELAY_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_FAILURE_DELAY_SECONDS') } else { '1' }
+$solverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CAPTCHA_SOLVER_ENABLED')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CAPTCHA_SOLVER_ENABLED')
+} elseif ((Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')) {
+  (Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')
 } else {
   '0'
 }

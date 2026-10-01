@@ -70,6 +70,7 @@ def validate_key(value):
 
 
 def environment_changes(config, stage):
+    """Legacy key mapping retained for callers; scoped writers synchronize aliases."""
     config = validate(config)
     intervals, retries, ai = config["intervals"], config["retries"], config["ai"]
     if stage == "links":

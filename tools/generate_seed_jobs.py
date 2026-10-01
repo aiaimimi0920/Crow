@@ -165,7 +165,7 @@ def build_seed_jobs(
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate full FapaiFang Taobao/SF seed jobs from all_locations.json.")
+    parser = argparse.ArgumentParser(description="Generate full Crow Taobao/SF seed jobs from all_locations.json.")
     parser.add_argument("--locations-file", type=Path, default=Path("datas") / "all_locations.json")
     parser.add_argument("--taobao-locations-file", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)

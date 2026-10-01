@@ -17,15 +17,18 @@ import time
 import datetime
 from pathlib import Path
 
-os.environ.setdefault("FAPAI_CDP_ENDPOINT", "http://127.0.0.1:9223")
 REPO = str(Path(__file__).resolve().parents[1])
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
+from src.project_environment import require_env, setdefault_env
+
+setdefault_env("CROW_CDP_ENDPOINT", "http://127.0.0.1:9223")
+
 import requests
 from src.captcha_solver import CaptchaSolver
 
-CDP = os.environ["FAPAI_CDP_ENDPOINT"]
+CDP = require_env("CROW_CDP_ENDPOINT")
 LOG_PATH = os.path.join(REPO, "output", "slider_monitor.jsonl")
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 

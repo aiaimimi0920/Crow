@@ -9,8 +9,10 @@ COPY tools/pc2_solver_*.py /app/tools/
 COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py
 COPY src/captcha_solver.py /app/src/captcha_solver.py
+COPY src/project_environment.py /app/src/project_environment.py
 COPY --chmod=0755 ops/pc2-linux/start-browser-solver.sh /usr/local/bin/start-browser-solver
 COPY ops/pc2-linux/process-supervisor.sh /usr/local/bin/process-supervisor.sh
+COPY scripts/project-environment.sh /usr/local/bin/project-environment.sh
 
 FROM ${FAPAI_BASE_IMAGE}
 

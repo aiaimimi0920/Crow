@@ -5,12 +5,18 @@ import json
 import os
 import re
 import signal
+import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
 
 import websocket
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.project_environment import getenv as project_getenv
 
 
 DEFAULT_CDP_ENDPOINT = "http://127.0.0.1:9223"
@@ -419,15 +425,15 @@ def main() -> int:
         description="Apply a coherent Windows browser identity before every PC2 CDP page runs."
     )
     parser.add_argument("--cdp-endpoint", default=DEFAULT_CDP_ENDPOINT)
-    parser.add_argument("--user-agent", default=os.environ.get("FAPAI_BROWSER_USER_AGENT", ""))
+    parser.add_argument("--user-agent", default=project_getenv("CROW_BROWSER_USER_AGENT", ""))
     parser.add_argument(
         "--full-version",
-        default=os.environ.get("FAPAI_BROWSER_IDENTITY_FULL_VERSION", ""),
+        default=project_getenv("CROW_BROWSER_IDENTITY_FULL_VERSION", ""),
     )
     parser.add_argument(
         "--ready-path",
         type=Path,
-        default=Path(os.environ.get("FAPAI_BROWSER_IDENTITY_READY_PATH", str(DEFAULT_READY_PATH))),
+        default=Path(project_getenv("CROW_BROWSER_IDENTITY_READY_PATH", str(DEFAULT_READY_PATH))),
     )
     args = parser.parse_args()
     controller = BrowserIdentityController(

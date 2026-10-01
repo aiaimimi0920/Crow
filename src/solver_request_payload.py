@@ -1,13 +1,13 @@
 """Normalize solver requests without initializing the server runtime."""
 
-import os
 from urllib.parse import urlparse, urlsplit
 
 from src.collection.adapters.taobao_solver_target import _normalize_solver_target_url
+from src.project_environment import getenv as project_getenv
 
 
 def _runtime_env_flag(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
@@ -15,7 +15,7 @@ def _runtime_env_flag(name: str, default: bool) -> bool:
 
 def _real_taobao_auto_solver_enabled() -> bool:
     """Require an explicit production opt-in for automatic Taobao solving."""
-    return _runtime_env_flag("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", False)
+    return _runtime_env_flag("CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED", False)
 
 
 def _normalize_challenge_scope(value: object) -> str:
@@ -42,7 +42,9 @@ def _solver_target_requires_manual_only(solver_request: object) -> bool:
 
 def _normalize_solver_cdp_endpoint(value: object) -> str:
     cdp_endpoint = str(value or "").strip()
-    runtime_endpoint = str(os.getenv("FAPAI_CDP_ENDPOINT") or "").strip().rstrip("/")
+    runtime_endpoint = (
+        str(project_getenv("CROW_CDP_ENDPOINT") or "").strip().rstrip("/")
+    )
 
     if not cdp_endpoint:
         return runtime_endpoint

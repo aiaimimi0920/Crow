@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +16,7 @@ import sys
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import getenv as project_getenv
 from src.avm.canonical_mapper import map_raw_to_canonical
 from src.storage.repository import create_repository_from_env
 from tools.avm_data_loader import discover_raw_record_files, load_json_payload
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+    raw = project_getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
@@ -113,7 +113,7 @@ def _analysis_missing_fields(row: dict[str, Any], canonical: dict[str, Any]) -> 
 
 
 def _iter_recent_rows(data_root: Path, window_days: int, prefer_db: bool | None = None) -> list[dict[str, Any]]:
-    use_db = _env_flag("FAPAI_DB_PREFER_CONTROL_PLANE_SOURCE", False) if prefer_db is None else prefer_db
+    use_db = _env_flag("CROW_DB_PREFER_CONTROL_PLANE_SOURCE", False) if prefer_db is None else prefer_db
     if use_db:
         repo = create_repository_from_env()
         if repo.enabled:

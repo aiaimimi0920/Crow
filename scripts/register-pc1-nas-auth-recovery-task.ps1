@@ -2,12 +2,12 @@ param(
     [string]$TaskName = "FapaiFangNasAuthRecovery",
     [string]$TaskPath = "\FapaiFang\",
     [string]$ApiBase = "",
-    [string]$DataRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData"),
+    [string]$DataRoot = "",
     [string]$OutputPath = "",
     [string]$TokenPath = "",
     [string]$ApiCaFile = "",
     [string]$Python = "",
-    [string]$ProfileDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData\chrome-cdp-profile-pc1-human-clean"),
+    [string]$ProfileDir = "",
     [string]$BrowserPath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     [int]$Port = 9225,
     [int]$IntervalMinutes = 1,
@@ -17,14 +17,21 @@ param(
     [switch]$UseSystemProxy,
     [switch]$StartNow
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+if (-not $ProfileDir) { $ProfileDir = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot) "chrome-cdp-profile-pc1-human-clean" }
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 . (Join-Path $PSScriptRoot "collection-api-origin.ps1")
 if (-not $ApiBase) {
-    $ApiBase = if ($env:FAPAI_COLLECTOR_API_BASE) { $env:FAPAI_COLLECTOR_API_BASE } else { $env:FAPAI_API_BASE_URL }
+    $ApiBase = if ((Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')) { (Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE') } else { (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL') }
 }
 $ApiBase = (ConvertTo-CollectionApiOrigin $ApiBase) + "/api"
-if (-not $ApiCaFile) { $ApiCaFile = $env:FAPAI_API_CA_FILE }
+if (-not $ApiCaFile) { $ApiCaFile = (Get-CrowEnvironmentValue -Name 'CROW_API_CA_FILE' -PathValue) }
 if ($ApiCaFile -and -not (Test-Path -LiteralPath $ApiCaFile -PathType Leaf)) {
     throw "Collection API CA file is unavailable."
 }
@@ -47,8 +54,8 @@ if (-not $OutputPath) {
     $OutputPath = Join-Path $DataRoot "secrets\nodes\pc2\taobao-cookies.json"
 }
 if (-not $TokenPath) {
-    $TokenPath = if ($env:FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE) {
-        $env:FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE
+    $TokenPath = if ((Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -PathValue)) {
+        (Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -PathValue)
     } else {
         Join-Path $DataRoot "secrets\nas-auth-recovery.token"
     }
@@ -83,7 +90,7 @@ if ($LauncherMode -eq "NoConsole") {
             throw "No-console task launcher dependency is unavailable: $required"
         }
     }
-    $statusPath = Join-Path $repoRoot "FPFData\runtime\pc1-nas-auth-task.json"
+    $statusPath = Join-Path $DataRoot "runtime\pc1-nas-auth-task.json"
     $arguments = @(
         "-I", "`"$launcher`"", "--status-path", "`"$statusPath`"",
         "--", "`"$executable`""

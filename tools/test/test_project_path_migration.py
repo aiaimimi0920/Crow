@@ -106,6 +106,6 @@ def test_powershell_script_tree_rejects_missing_dot_sourced_module(tmp_path: Pat
 def test_repository_rules_protect_live_pc2_and_nas() -> None:
     rules = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
-    assert "Never deploy" in rules
-    assert "PC2 or NAS" in rules
-    assert "Source changes do not authorize deployment" in rules
+    assert "Preserve runtime" in rules
+    assert "database contents" in rules
+    assert "A specific user instruction to defer deployment takes precedence" in rules

@@ -5,6 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 
 if (-not (Test-Path -LiteralPath $EnvFile)) {
   throw "PC2 worker environment file does not exist: $EnvFile"
@@ -19,15 +20,22 @@ if (-not (Test-Path -LiteralPath $SnapshotPath)) {
 }
 
 $required = [ordered]@{
-  FAPAI_LIST_BROWSER_FALLBACK = '0'
-  FAPAI_DETAIL_BROWSER_FALLBACK = '0'
-  FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'
-  FAPAI_COOKIE_SNAPSHOT_PREFER = '1'
-  FAPAI_CAPTCHA_SOLVER_ENABLED = '0'
-  FAPAI_COOKIE_SNAPSHOT = $SnapshotPath
-  FAPAI_HOST_DETAIL_WORKER_COUNT = '4'
-  FAPAI_HOST_ANALYSIS_WORKER_COUNT = '4'
+  CROW_LIST_BROWSER_FALLBACK = '0'
+  CROW_DETAIL_BROWSER_FALLBACK = '0'
+  CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'
+  CROW_COOKIE_SNAPSHOT_PREFER = '1'
+  CROW_CAPTCHA_SOLVER_ENABLED = '0'
+  CROW_COOKIE_SNAPSHOT = $SnapshotPath
+  CROW_HOST_DETAIL_WORKER_COUNT = '4'
+  CROW_HOST_ANALYSIS_WORKER_COUNT = '4'
 }
+$compatibleRequired = [ordered]@{}
+foreach ($entry in $required.GetEnumerator()) {
+  foreach ($name in @(Get-CrowEnvironmentNames -Name $entry.Key)) {
+    $compatibleRequired[$name] = $entry.Value
+  }
+}
+$required = $compatibleRequired
 $seen = @{}
 $lines = foreach ($line in [System.IO.File]::ReadAllLines($EnvFile, [System.Text.Encoding]::UTF8)) {
   $separator = $line.IndexOf('=')

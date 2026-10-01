@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts" && pwd)/project-environment.sh"
+crow_sync_env
 
 app_root="/srv/apps/fapaifang-worker"
 data_root="/srv/data/fapaifang-worker"
 shared_root="$app_root/shared"
 runtime_env="$shared_root/runtime.env"
-control_root="${FAPAI_COLLECTION_CONTROL_ROOT:-$shared_root/collection-control}"
+control_root="$(crow_env CROW_COLLECTION_CONTROL_ROOT "$shared_root/collection-control")"
 vnc_password_file="$shared_root/vnc-password"
 project_name="fapaifang-pc2"
 expected_ip="192.168.15.104"
@@ -19,8 +21,8 @@ browser_only=0
 # Capacity checks are intentionally read-only.  Crow retains historical
 # evidence and release metadata, so deployment must stop before exhaustion
 # instead of pruning data or Docker state automatically.
-min_free_space_percent="${FAPAI_MIN_FREE_SPACE_PERCENT:-10}"
-min_free_inodes_percent="${FAPAI_MIN_FREE_INODES_PERCENT:-5}"
+min_free_space_percent="$(crow_env CROW_MIN_FREE_SPACE_PERCENT 10)"
+min_free_inodes_percent="$(crow_env CROW_MIN_FREE_INODES_PERCENT 5)"
 
 usage() {
   cat <<'EOF'
@@ -130,8 +132,8 @@ validate_capacity_threshold() {
 }
 
 check_capacity() {
-  validate_capacity_threshold FAPAI_MIN_FREE_SPACE_PERCENT "$min_free_space_percent"
-  validate_capacity_threshold FAPAI_MIN_FREE_INODES_PERCENT "$min_free_inodes_percent"
+  validate_capacity_threshold CROW_MIN_FREE_SPACE_PERCENT "$min_free_space_percent"
+  validate_capacity_threshold CROW_MIN_FREE_INODES_PERCENT "$min_free_inodes_percent"
 
   local path probe space_line inode_line used_pct free_pct free_inodes_pct
   local -a paths=("$app_root" "$data_root" "$control_root")
@@ -160,7 +162,7 @@ check_capacity() {
 }
 
 prepare_host_display_access() {
-  local display_mode host_display display_number display_socket runtime_dir host_xauthority
+  local display_mode host_display display_number display_socket runtime_dir host_xauthority host_user
   display_mode="$(sed -n 's/^FAPAI_BROWSER_DISPLAY_MODE=//p' "$runtime_env" | tail -n 1)"
   display_mode="${display_mode:-auto}"
   [[ "$display_mode" != "xvfb" ]] || return 0
@@ -172,9 +174,10 @@ prepare_host_display_access() {
   runtime_dir="/run/user/$(id -u)"
   host_xauthority="$(find "$runtime_dir" -maxdepth 1 -type f -name '.mutter-Xwaylandauth.*' -readable -print -quit 2>/dev/null || true)"
 
+  host_user="$(crow_env CROW_BROWSER_XHOST_USER)"
   if [[ -S "$display_socket" && -n "$host_xauthority" ]] \
     && DISPLAY="$host_display" XAUTHORITY="$host_xauthority" \
-      xhost +SI:localuser:"${FAPAI_BROWSER_XHOST_USER:-$(id -un)}" >/dev/null 2>&1; then
+      xhost +SI:localuser:"${host_user:-$(id -un)}" >/dev/null 2>&1; then
     echo "Prepared logged-in host display for the browser solver: $host_display"
     return 0
   fi
@@ -265,6 +268,8 @@ validate_release_tree() {
   [[ -f "$target_release/tools/pc2_linux_healthcheck.py" ]]
   [[ -f "$target_release/requirements.lock" ]]
   [[ -f "$target_release/ops/pc2-linux/process-supervisor.sh" ]]
+  [[ -f "$target_release/scripts/project-environment.sh" ]]
+  bash -n "$target_release/scripts/project-environment.sh"
   bash -n "$target_release/ops/pc2-linux/process-supervisor.sh"
   bash -n "$target_release/ops/pc2-linux/start-browser-solver.sh"
   compose_for "$target_release" config --quiet

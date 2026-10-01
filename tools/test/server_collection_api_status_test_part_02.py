@@ -176,7 +176,7 @@ def test_collection_observer_page_contains_three_collection_modules() -> None:
 
     html = server._collection_observer_page_html()
 
-    assert "FapaiFang 采集观察台" in html
+    assert "Crow 采集观察台" in html
     if "商品链接采集" in html:
         assert "商品详情页采集" in html
         assert "商品详情页 AI 分析" in html

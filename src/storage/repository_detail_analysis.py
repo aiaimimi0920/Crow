@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from .models import FapaiAnalysisRun, FapaiSeedItem
+from .models import CollectionAnalysisRun, CollectionSeedItem
 from .repository_context import _resolve_collection_artifact_path, _utc_now
 
 
@@ -21,7 +21,7 @@ class RepositoryDetailAnalysisMixin:
             return
         self.initialize()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedItem, str(item_id))
+            row = session.get(CollectionSeedItem, str(item_id))
             if row is None:
                 return
             row.status = "raw_detail_captured" if restore_raw else "analysis_failed" if retryable else "analysis_blocked"
@@ -54,9 +54,9 @@ class RepositoryDetailAnalysisMixin:
             error_text = str(error or "").strip() or None
         terminal_statuses = {"finalized", "needs_review", "candidate_partial", "adjudication_failed", "failed"}
         with self.session_factory.begin() as session:
-            row = session.get(FapaiAnalysisRun, run_id)
+            row = session.get(CollectionAnalysisRun, run_id)
             if row is None:
-                row = FapaiAnalysisRun(
+                row = CollectionAnalysisRun(
                     run_id=run_id,
                     item_id=str(item_id),
                     pipeline_version=pipeline_version,
@@ -85,7 +85,7 @@ class RepositoryDetailAnalysisMixin:
             return None
         self.initialize()
         with self.session_factory() as session:
-            row = session.get(FapaiAnalysisRun, str(run_id))
+            row = session.get(CollectionAnalysisRun, str(run_id))
             if row is None:
                 return None
             return {
@@ -117,7 +117,7 @@ class RepositoryDetailAnalysisMixin:
             return
         self.initialize()
         with self.session_factory.begin() as session:
-            row = session.get(FapaiSeedItem, str(item_id))
+            row = session.get(CollectionSeedItem, str(item_id))
             if row is None:
                 return
             if restore_pending:
@@ -132,7 +132,7 @@ class RepositoryDetailAnalysisMixin:
             session.add(row)
 
     @staticmethod
-    def _seed_artifacts_from_row(row: FapaiSeedItem) -> Dict[str, str | None]:
+    def _seed_artifacts_from_row(row: CollectionSeedItem) -> Dict[str, str | None]:
         payload = dict(row.source_payload or {})
         artifacts = dict(payload.get("_raw_detail_artifacts") or {})
         if row.selected_json_path:

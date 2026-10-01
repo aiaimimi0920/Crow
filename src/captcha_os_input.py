@@ -4,6 +4,8 @@ import logging
 import math
 import os
 import random
+from src.project_environment import getenv as project_getenv
+
 from .captcha_budget import SolveStopped
 from .captcha_pointer_backend import (
     OSPointerBackend, PyAutoGUIPointerBackend, UInputPointerBackend, Win32PointerBackend,
@@ -152,11 +154,11 @@ class CaptchaOSInputMixin:
         # PyAutoGUI is the production-proven input path for Aliyun NC. Keep the
         # lower-level Win32 injector as an explicit fallback instead of silently
         # changing the mouse event stream on every Windows deployment.
-        backend = str(os.getenv("FAPAI_SOLVER_OS_INPUT_BACKEND", "pyautogui")).strip().lower()
+        backend = str(project_getenv("CROW_SOLVER_OS_INPUT_BACKEND", "pyautogui")).strip().lower()
         return os.name == "nt" and backend in {"native", "win32"}
 
     def _uinput_os_input_enabled(self):
-        backend = str(os.getenv("FAPAI_SOLVER_OS_INPUT_BACKEND", "pyautogui")).strip().lower()
+        backend = str(project_getenv("CROW_SOLVER_OS_INPUT_BACKEND", "pyautogui")).strip().lower()
         return os.name != "nt" and backend == "uinput"
 
     def _get_uinput_handle(self):

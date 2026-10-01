@@ -1,6 +1,9 @@
 # Project-local runtime data
 
-`FPFData/` is the repository-relative management root for local runtime data.
+`FPFData/` is the legacy management root and remains supported in place.
+New installations default to `CrowData/`; see the
+[compatibility guide](../docs/runbooks/crow-data-root-compatibility.md).
+There is no need to rename or copy an existing data directory.
 Code and local operator scripts should derive this directory from the current
 repository root instead of relying on a drive letter, UNC path, checkout name,
 or user profile.
@@ -12,7 +15,8 @@ artifacts. Only this README and `.gitignore` are versioned.
 ## Legacy imports
 
 Use `scripts/import-legacy-fpfdata.ps1` to make a non-destructive, resumable
-archive-only copy under `FPFData/imports/<source-id>/`:
+archive-only copy under the selected management root’s `imports/<source-id>/`
+(`FPFData` for an existing installation, `CrowData` for a new one):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\import-legacy-fpfdata.ps1 `

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from typing import cast
 
+from src.project_environment import getenv as project_getenv
 from tools.internal_api_http import post_json
 from tools.pc2_solver_auth import (
     _resume_after_cooldown_response_confirmed,
@@ -34,17 +34,17 @@ from tools.pc2_solver_state_store import (
 )
 
 FALLBACK_FAIL_THRESHOLD = int(
-    os.environ.get("FAPAI_SOLVER_FALLBACK_FAIL_THRESHOLD", "10")
+    project_getenv("CROW_SOLVER_FALLBACK_FAIL_THRESHOLD", "10")
 )
 
 FALLBACK_STALL_SECONDS = int(
-    os.environ.get("FAPAI_SOLVER_FALLBACK_STALL_SECONDS", "600")
+    project_getenv("CROW_SOLVER_FALLBACK_STALL_SECONDS", "600")
 )
 
 
 def manual_fallback_enabled() -> bool:
     """Keep automatic solving primary unless manual escalation is explicitly enabled."""
-    value = os.environ.get("FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED", "0")
+    value = project_getenv("CROW_SOLVER_MANUAL_FALLBACK_ENABLED", "0")
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -65,7 +65,7 @@ def _report_manual_captcha(
     payload = {
         "url": target_url or "",
         "cdp_endpoint": cdp_endpoint,
-        "node_id": os.environ.get("FAPAI_NODE_ID", "").strip() or None,
+        "node_id": project_getenv("CROW_NODE_ID", "").strip() or None,
         "manual_only": True,
         "timestamp": int(time.time() * 1000),
     }
@@ -153,7 +153,7 @@ def _retry_node_solver_blocked_report(
 
 
 def _new_collection_resume_request_id() -> str:
-    node_id = os.environ.get("FAPAI_NODE_ID", "pc2").strip() or "pc2"
+    node_id = project_getenv("CROW_NODE_ID", "pc2").strip() or "pc2"
     return f"{node_id}-resume-{int(time.time() * 1000)}-{uuid.uuid4().hex}"
 
 

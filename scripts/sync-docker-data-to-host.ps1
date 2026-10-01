@@ -5,29 +5,16 @@ param(
     [string]$PostgresContainer = "fapaifang-postgres",
     [string]$PostgresDb = "fapaifang",
     [string]$PostgresUser = "fapaifang",
-    [string]$PostgresPassword = $env:FAPAI_POSTGRES_PASSWORD
+    [string]$PostgresPassword = ""
 )
-
 $ErrorActionPreference = "Stop"
 
-if (-not $DataRoot) {
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        $DataRoot = $env:FAPAI_DATA_ROOT_HOST
-    }
-    else {
-        $localEnvPath = Join-Path $PSScriptRoot "..\docker.local.env"
-        if (Test-Path -LiteralPath $localEnvPath) {
-            $configuredRoot = Select-String -LiteralPath $localEnvPath -Pattern "^FAPAI_DATA_ROOT_HOST=(.+)$" | Select-Object -First 1
-            if ($configuredRoot) {
-                $DataRoot = $configuredRoot.Matches[0].Groups[1].Value.Trim()
-            }
-        }
-    }
-}
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+if (-not $PSBoundParameters.ContainsKey('PostgresPassword')) { $PostgresPassword = (Get-CrowEnvironmentValue -Name 'CROW_POSTGRES_PASSWORD') }
 
-if (-not $DataRoot) {
-    $DataRoot = Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData"
-}
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 
 function Copy-VolumeToHost {
     param(

@@ -20,27 +20,31 @@ def main():
     root = Path(__file__).resolve().parents[1]
     runtime = tempfile.mkdtemp(prefix="crow-quality-")
     env = dict(os.environ)
-    env.update(
-        {
-            "PYTHONPATH": str(root),
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "FAPAI_DB_ENABLED": "0",
-            "FAPAI_DB_URL": "",
-            "FAPAI_DB_AUTO_CREATE": "0",
-            "FAPAI_SOLVER_STATE_DIR": runtime,
-            "FAPAI_DATA_ROOT": runtime,
-            "FAPAI_DATA_ROOT_HOST": runtime,
-            "FAPAI_NAS_AUTH_RECOVERY_ENABLED": "0",
-            "FAPAI_SOLVER_OS_MOUSE": "0",
-            "FAPAI_COLLECTION_WORKER_TOKEN_FILE": "",
-            "FAPAI_API_CA_FILE": "",
-            "FAPAI_ENGINE_OPERATOR_TOKEN_FILE": "",
-            "FAPAI_ENGINE_AGENT_TOKEN_FILE": "",
-            "FAPAI_CONTROL_PLANE_TOKEN": "",
-            "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE": "",
-            "FAPAI_ANALYSIS_MODEL_POOL_PATH": str(Path(runtime) / "model-pool.sqlite3"),
-        }
-    )
+    runtime_settings = {
+        "PYTHONPATH": str(root),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "FAPAI_DB_ENABLED": "0",
+        "FAPAI_DB_URL": "",
+        "FAPAI_DB_AUTO_CREATE": "0",
+        "FAPAI_SOLVER_STATE_DIR": runtime,
+        "FAPAI_DATA_ROOT": runtime,
+        "FAPAI_DATA_ROOT_HOST": runtime,
+        "FAPAI_NAS_AUTH_RECOVERY_ENABLED": "0",
+        "FAPAI_SOLVER_OS_MOUSE": "0",
+        "FAPAI_COLLECTION_WORKER_TOKEN_FILE": "",
+        "FAPAI_API_CA_FILE": "",
+        "FAPAI_ENGINE_OPERATOR_TOKEN_FILE": "",
+        "FAPAI_ENGINE_AGENT_TOKEN_FILE": "",
+        "FAPAI_CONTROL_PLANE_TOKEN": "",
+        "FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE": "",
+        "FAPAI_ANALYSIS_MODEL_POOL_PATH": str(Path(runtime) / "model-pool.sqlite3"),
+    }
+    # Keep the legacy fixture namespace to exercise backward compatibility.
+    # New-name process settings must not escape the same isolated overrides.
+    for key in runtime_settings:
+        if key.startswith("FAPAI_"):
+            env.pop("CROW_" + key[len("FAPAI_") :], None)
+    env.update(runtime_settings)
     if args.suite != "postgres":
         env["CROW_TEST_POSTGRES_URL"] = ""
     elif not env.get("CROW_TEST_POSTGRES_URL"):

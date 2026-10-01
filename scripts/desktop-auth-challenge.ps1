@@ -10,8 +10,13 @@ param(
     [string]$PeerUrl = "",
     [string]$PeerChallengeId = ""
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
 $previous = @{
     PYTHONPATH = $env:PYTHONPATH
@@ -26,7 +31,7 @@ function Write-LaunchFailure {
     param([string]$Kind, [int]$Code)
     # Persist only bounded metadata, never stderr, URLs, cookies or credentials.
     try {
-        $directory = Join-Path $root "FPFData\desktop-auth"
+        $directory = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot $root) "desktop-auth"
         [IO.Directory]::CreateDirectory($directory) | Out-Null
         $receipt = [ordered]@{
             version = 1
@@ -40,13 +45,13 @@ function Write-LaunchFailure {
 }
 
 try {
-    $python = $env:FAPAI_DESKTOP_PYTHON_PATH
+    $python = (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)
     $configPath = Join-Path $root "crow-desktop.runtime.json"
     if (Test-Path -LiteralPath $configPath) {
         if ((Get-Item -LiteralPath $configPath).Length -gt 16384) { throw "runtime_config_invalid" }
         $config = [IO.File]::ReadAllText($configPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
         if ($config.version -ne 1 -or $config.environment -isnot [pscustomobject]) { throw "runtime_config_invalid" }
-        if (-not $python) { $python = $config.environment.FAPAI_DESKTOP_PYTHON_PATH }
+        if (-not $python) { $python = (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -Environment (ConvertTo-CrowEnvironmentMap -Value $config.environment) -PathValue) }
     }
     $failure = "python_unavailable"
     if ($null -ne $python -and $python -ne "") {

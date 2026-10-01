@@ -20,6 +20,8 @@ def bundle(tmp_path):
     (root / "scripts").mkdir(parents=True)
     (root / "tools").mkdir()
     shutil.copyfile(ROOT / "scripts/desktop-auth-challenge.ps1", root / "scripts/desktop-auth-challenge.ps1")
+    shutil.copyfile(ROOT / "scripts/project-data-root.ps1", root / "scripts/project-data-root.ps1")
+    shutil.copyfile(ROOT / "scripts/project-environment.ps1", root / "scripts/project-environment.ps1")
     (root / "tools/__init__.py").write_text("", encoding="utf-8")
     (root / "tools/pc1_desktop_auth.py").write_text(
         "import json, os, sys\n"
@@ -40,7 +42,7 @@ def write_config(root, python):
 
 def launch(root, *, environ=None, cwd=None, extra=()):
     environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(("FAPAI_", "PYTHON"))}
+                   if not key.startswith(("FAPAI_", "CROW_", "PYTHON"))}
     environment.update(PATH=str(POWERSHELL.parent.parent.parent), PYTHONDONTWRITEBYTECODE="1")
     environment.update(environ or {})
     return subprocess.run(
@@ -85,7 +87,7 @@ def test_invalid_configured_python_fails_closed_without_path_fallback(bundle, py
     process = launch(bundle, environ={"PATH": str(Path(sys.executable).parent)})
     assert process.returncode != 0
     assert b"CROW_AUTH_RESULT=" not in process.stdout
-    receipt = (bundle / "FPFData/desktop-auth/last-launch-failure.json").read_text(encoding="utf-8")
+    receipt = (bundle / "CrowData/desktop-auth/last-launch-failure.json").read_text(encoding="utf-8")
     assert json.loads(receipt)["failure"] in {"runtime_config_invalid", "python_unavailable"}
     assert "do-not-log" not in receipt
 
@@ -103,7 +105,7 @@ def test_helper_exit_is_recorded_without_stderr_arguments_or_credentials(bundle)
     )
     process = launch(bundle, extra=("-TargetUrl", "https://example.invalid/?secret=do-not-log"))
     assert process.returncode == 7
-    receipt = (bundle / "FPFData/desktop-auth/last-launch-failure.json").read_text(encoding="utf-8")
+    receipt = (bundle / "CrowData/desktop-auth/last-launch-failure.json").read_text(encoding="utf-8")
     assert json.loads(receipt)["exit_code"] == 7
     assert json.loads(receipt)["failure"] == "python_exit"
     assert "do-not-log" not in receipt
@@ -127,7 +129,7 @@ def test_call_operator_invocation_reports_the_helper_exit_code(bundle):
     # exit code must still be observed instead of defaulting to python_launch.
     script = str(bundle / "scripts/desktop-auth-challenge.ps1").replace("'", "''")
     environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(("FAPAI_", "PYTHON"))}
+                   if not key.startswith(("FAPAI_", "CROW_", "PYTHON"))}
     environment.update(PATH=str(POWERSHELL.parent.parent.parent), PYTHONDONTWRITEBYTECODE="1")
     process = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
@@ -135,4 +137,4 @@ def test_call_operator_invocation_reports_the_helper_exit_code(bundle):
         cwd=bundle.parent, env=environment, capture_output=True, timeout=30,
     )
     assert result(process)["phase"] == "pending_human"
-    assert not (bundle / "FPFData/desktop-auth/last-launch-failure.json").exists()
+    assert not (bundle / "CrowData/desktop-auth/last-launch-failure.json").exists()

@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_solver_watchdog import heartbeat_age_seconds
 
 
@@ -73,13 +74,13 @@ def _check_solver_heartbeat(
     now: float | None = None,
 ) -> None:
     path = heartbeat_path or Path(
-        os.environ.get(
-            "FAPAI_LOCAL_SOLVER_HEARTBEAT_PATH",
+        project_getenv(
+            "CROW_LOCAL_SOLVER_HEARTBEAT_PATH",
             "/tmp/fapaifang-local-solver-heartbeat.json",
         )
     )
     maximum_age = (
-        float(os.environ.get("FAPAI_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300"))
+        float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300"))
         if stale_seconds is None
         else float(stale_seconds)
     )
@@ -114,12 +115,12 @@ def _check_solver_api_credentials() -> None:
 
 def check_browser() -> None:
     cdp_endpoint = str(
-        os.environ.get("FAPAI_CDP_ENDPOINT") or "http://127.0.0.1:9223"
+        project_getenv("CROW_CDP_ENDPOINT") or "http://127.0.0.1:9223"
     ).rstrip("/")
     version = _read_json(f"{cdp_endpoint}/json/version")
     if not version.get("webSocketDebuggerUrl"):
         raise RuntimeError("CDP websocket endpoint is missing")
-    public_port = int(str(os.environ.get("FAPAI_CDP_PUBLIC_PORT") or "9224"))
+    public_port = int(str(project_getenv("CROW_CDP_PUBLIC_PORT") or "9224"))
     public_version = _read_json(f"http://127.0.0.1:{public_port}/json/version")
     if not public_version.get("webSocketDebuggerUrl"):
         raise RuntimeError("public CDP relay websocket endpoint is missing")
@@ -142,8 +143,8 @@ def check_browser() -> None:
 
 def check_worker() -> None:
     path = Path(
-        os.environ.get(
-            "FAPAI_WORKER_HEARTBEAT_PATH", "/tmp/fapaifang-worker-heartbeat.json"
+        project_getenv(
+            "CROW_WORKER_HEARTBEAT_PATH", "/tmp/fapaifang-worker-heartbeat.json"
         )
     )
     try:
@@ -154,12 +155,12 @@ def check_worker() -> None:
         raise RuntimeError("worker progress heartbeat is missing or invalid") from error
     age = time.time() - updated
     maximum = max(
-        1, float(os.environ.get("FAPAI_WORKER_HEARTBEAT_STALE_SECONDS", "900"))
+        1, float(project_getenv("CROW_WORKER_HEARTBEAT_STALE_SECONDS", "900"))
     )
     if not 0 <= age <= maximum or pid < 1 or heartbeat.get("stage") == "stopped":
         raise RuntimeError("worker progress heartbeat is stale or stopped")
     os.kill(pid, 0)
-    output_root = Path(os.environ.get("FAPAI_OUTPUT_DIR", "/data/output"))
+    output_root = Path(project_getenv("CROW_OUTPUT_DIR", "/data/output"))
     if not output_root.is_dir() or not os.access(output_root, os.W_OK):
         raise RuntimeError("worker output root is not writable")
 

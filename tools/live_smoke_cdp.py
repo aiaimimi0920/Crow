@@ -103,7 +103,7 @@ def compact_cdp_page_targets_if_needed(
     return summary
 
 def _cdp_reconnect_attempts() -> int:
-    raw = os.environ.get("FAPAI_CDP_RECONNECT_ATTEMPTS", str(DEFAULT_CDP_RECONNECT_ATTEMPTS))
+    raw = project_getenv("CROW_CDP_RECONNECT_ATTEMPTS", str(DEFAULT_CDP_RECONNECT_ATTEMPTS))
     try:
         value = int(str(raw or "").strip())
     except ValueError:
@@ -111,7 +111,7 @@ def _cdp_reconnect_attempts() -> int:
     return max(1, min(value, 10))
 
 def _cdp_reconnect_backoff_seconds() -> float:
-    raw = os.environ.get("FAPAI_CDP_RECONNECT_BACKOFF_SECONDS", str(DEFAULT_CDP_RECONNECT_BACKOFF_SECONDS))
+    raw = project_getenv("CROW_CDP_RECONNECT_BACKOFF_SECONDS", str(DEFAULT_CDP_RECONNECT_BACKOFF_SECONDS))
     try:
         value = float(str(raw or "").strip())
     except ValueError:
@@ -124,19 +124,23 @@ def _cdp_endpoint_healthy_for_reconnect(cdp_endpoint: str) -> bool:
         health_check = getattr(probe, "cdp_endpoint_is_healthy", None)
         if callable(health_check):
             return bool(health_check(cdp_endpoint, timeout_seconds=DEFAULT_CDP_HTTP_TIMEOUT_SECONDS))
+    except EnvironmentAliasConflict:
+        raise
     except Exception:
         return False
     return bool(resolve_playwright_cdp_endpoint(cdp_endpoint))
 
 def connect_browser_over_cdp(playwright: Any, cdp_endpoint: str, *, timeout_ms: int = DEFAULT_CDP_CONNECT_TIMEOUT_MS) -> Any:
+    attempts = _cdp_reconnect_attempts()
+    backoff = _cdp_reconnect_backoff_seconds()
     try:
         compaction = compact_cdp_page_targets_if_needed(cdp_endpoint)
+    except EnvironmentAliasConflict:
+        raise
     except Exception as error:
         _raise_cdp_endpoint_unavailable(cdp_endpoint, "compact_cdp_page_targets", error)
     if compaction.get("triggered"):
         print(json.dumps({"event": "cdp_page_target_compaction", **compaction}, ensure_ascii=False))
-    attempts = _cdp_reconnect_attempts()
-    backoff = _cdp_reconnect_backoff_seconds()
     last_error: BaseException | None = None
     for attempt in range(1, attempts + 1):
         if attempt > 1 and not _cdp_endpoint_healthy_for_reconnect(cdp_endpoint):
@@ -147,6 +151,8 @@ def connect_browser_over_cdp(playwright: Any, cdp_endpoint: str, *, timeout_ms: 
         try:
             resolved_endpoint = resolve_playwright_cdp_endpoint(cdp_endpoint)
             return playwright.chromium.connect_over_cdp(resolved_endpoint, timeout=timeout_ms)
+        except EnvironmentAliasConflict:
+            raise
         except Exception as error:
             last_error = error
         if attempt < attempts and backoff > 0:
@@ -170,8 +176,8 @@ def _browser_identity_values(cdp_endpoint: str) -> tuple[str, str]:
     """Resolve the Windows UA identity shared by PC2 workers and the solver."""
     from tools.cdp_browser_identity import _chrome_full_version
 
-    user_agent = str(os.environ.get("FAPAI_BROWSER_USER_AGENT") or "").strip()
-    full_version = str(os.environ.get("FAPAI_BROWSER_IDENTITY_FULL_VERSION") or "").strip()
+    user_agent = str(project_getenv("CROW_BROWSER_USER_AGENT") or "").strip()
+    full_version = str(project_getenv("CROW_BROWSER_IDENTITY_FULL_VERSION") or "").strip()
     browser_product = ""
     if not user_agent or not full_version:
         response = _cdp_http_get(
@@ -328,6 +334,8 @@ def fetch_open_browser_pages(cdp_endpoint: str) -> dict[str, tuple[str, str]]:
 def load_open_browser_pages(cdp_endpoint: str) -> dict[str, tuple[str, str]]:
     try:
         return fetch_open_browser_pages(cdp_endpoint)
+    except EnvironmentAliasConflict:
+        raise
     except Exception:
         return {}
 

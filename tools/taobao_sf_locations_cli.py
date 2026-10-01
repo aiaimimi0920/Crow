@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     crawl = subparsers.add_parser("crawl", help="Low-frequency, resumable live crawl from an authenticated CDP browser.")
-    crawl.add_argument("--cdp-endpoint", default=os.environ.get("FAPAI_CDP_ENDPOINT_HOST", DEFAULT_CDP_ENDPOINT))
+    crawl.add_argument("--cdp-endpoint", default=project_getenv("CROW_CDP_ENDPOINT_HOST", DEFAULT_CDP_ENDPOINT))
     crawl.add_argument("--all-locations-file", type=Path, default=Path("datas") / "all_locations.json")
     crawl.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     crawl.add_argument("--category", default=DEFAULT_CATEGORY)

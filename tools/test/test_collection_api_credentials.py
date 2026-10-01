@@ -107,7 +107,7 @@ def test_invalid_configuration_fails_without_leaking_file_contents(
         credentials.request_headers("https://crow.test:8443/api/log")
     assert configured.read_text() not in str(error.value)
     monkeypatch.delenv(credentials.ORIGIN_ENV)
-    with pytest.raises(OSError, match="requires FAPAI_API_BASE_URL"):
+    with pytest.raises(OSError, match="requires CROW_API_BASE_URL"):
         credentials.request_headers("https://crow.test:8443/api/log")
 
 

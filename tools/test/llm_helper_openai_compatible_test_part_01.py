@@ -304,6 +304,7 @@ def test_llm_helper_import_allows_openai_env_without_secrets_json(tmp_path):
     src_dir.mkdir()
     (src_dir / "__init__.py").write_text("", encoding="utf-8")
     shutil.copy2(llm_helper.__file__, src_dir / "llm_helper.py")
+    shutil.copy2(Path(llm_helper.__file__).parent / "project_environment.py", src_dir / "project_environment.py")
     for module_path in Path(llm_helper.__file__).parent.glob("llm_*.py"):
         if module_path.name != "llm_helper.py":
             shutil.copy2(module_path, src_dir / module_path.name)

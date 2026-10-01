@@ -1,3 +1,4 @@
-$env:FAPAI_HOST_ANALYSIS_WORKER_ID = 'pc2-real-analysis-2'
-$env:FAPAI_HOST_ANALYSIS_OUTPUT_DIR = '\\192.168.15.200\home\project\project\FPFData\output\nodes\pc2-real\detail_analysis_worker_2'
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
+Set-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_WORKER_ID' -Value ('pc2-real-analysis-2')
+Set-CrowEnvironmentValue -Name 'CROW_HOST_ANALYSIS_OUTPUT_DIR' -Value ('\\192.168.15.200\home\project\project\FPFData\output\nodes\pc2-real\detail_analysis_worker_2')
 & 'C:\fapaifang-worker\ops\start-host-direct-analysis-worker.ps1'

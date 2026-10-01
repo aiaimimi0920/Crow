@@ -77,7 +77,7 @@ def test_open_uses_persisted_browser_profile_without_mutating_process_env(tmp_pa
     monkeypatch.setattr(desktop, "ROOT", tmp_path)
     def open_page(url, endpoint, port, data_root, *, environment):
         assert environment["FAPAI_AUTH_BROWSER_PROFILE_DIR"] == str(tmp_path / "human-profile")
-        assert port == 9333 and data_root == tmp_path / "FPFData"
+        assert port == 9333 and data_root == tmp_path / "CrowData"
         return {"phase": "ready_for_human"}
     monkeypatch.setattr(desktop, "open_challenge", open_page)
     assert desktop.main(["--action", "open", "--api-base", "http://127.0.0.1"]) == 0
@@ -124,3 +124,12 @@ def test_config_writer_rejects_missing_settings_credentials(tmp_path):
     )
     assert result.returncode != 0
     assert not (tmp_path / CONFIG_NAME).exists()
+
+
+def test_crow_data_root_alias_is_accepted_and_process_scope_wins(tmp_path):
+    write_config(tmp_path, {"CROW_DATA_ROOT_HOST": "saved-root"})
+    result = load_runtime_environment(tmp_path, {})
+    assert result["CROW_DATA_ROOT_HOST"] == str(tmp_path / "saved-root")
+    result = load_runtime_environment(tmp_path, {"FAPAI_DATA_ROOT_HOST": str(tmp_path / "process-root")})
+    assert "CROW_DATA_ROOT_HOST" not in result
+    assert result["FAPAI_DATA_ROOT_HOST"] == str(tmp_path / "process-root")

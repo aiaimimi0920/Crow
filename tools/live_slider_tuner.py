@@ -23,8 +23,13 @@ from pathlib import Path
 import requests
 import websocket
 
-CDP = os.environ.get("FAPAI_CDP_ENDPOINT", "http://127.0.0.1:9223")
 REPO = str(Path(__file__).resolve().parents[1])
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+
+from src.project_environment import getenv as project_getenv
+
+CDP = project_getenv("CROW_CDP_ENDPOINT", "http://127.0.0.1:9223")
 LOG_PATH = os.path.join(REPO, "output", "slider_tuner.jsonl")
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
@@ -367,7 +372,7 @@ def verify(tab, timeout=5.0):
 
 
 def notify_auth_complete(target_url):
-    api = os.environ.get("FAPAI_COLLECTION_API", "http://127.0.0.1:8001").rstrip("/")
+    api = project_getenv("CROW_COLLECTION_API", "http://127.0.0.1:8001").rstrip("/")
     try:
         resp = requests.post(
             api + "/api/collection/auth/complete",

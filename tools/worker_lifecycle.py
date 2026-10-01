@@ -10,6 +10,7 @@ from threading import Event
 import time
 from typing import Callable
 
+from src.project_environment import getenv as project_getenv
 
 _active: ContextVar["WorkerLifecycle | None"] = ContextVar("worker_lifecycle", default=None)
 
@@ -17,7 +18,7 @@ _active: ContextVar["WorkerLifecycle | None"] = ContextVar("worker_lifecycle", d
 class WorkerLifecycle:
     def __init__(self, worker_id: str, release: Callable[[str], object], heartbeat_path: Path | None = None):
         self.worker_id, self.release = worker_id, release
-        configured = os.environ.get("FAPAI_WORKER_HEARTBEAT_PATH")
+        configured = project_getenv("CROW_WORKER_HEARTBEAT_PATH") if heartbeat_path is None else None
         self.path = heartbeat_path or (Path(configured) if configured else None)
         self.stopping = Event()
         self.handlers = {}

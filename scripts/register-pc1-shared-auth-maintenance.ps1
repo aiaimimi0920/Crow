@@ -15,33 +15,33 @@ param(
     [string]$ApiCaFile = "",
     [int]$NasRecoveryIntervalMinutes = 1,
     [int]$LoginWindowSeconds = 300,
-    [string]$ProfileDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "FPFData\chrome-cdp-profile-pc1-human-clean"),
+    [string]$ProfileDir = "",
     [string]$BrowserPath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     [int]$NasRecoveryExecutionTimeLimitMinutes = 10,
     [string]$TaskPath = "\FapaiFang\",
     [switch]$UseSystemProxy,
     [switch]$StartWatchdogNow
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+if (-not $ProfileDir) { $ProfileDir = Join-Path (Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot) "chrome-cdp-profile-pc1-human-clean" }
 . (Join-Path $PSScriptRoot "collection-api-origin.ps1")
 if (-not $ApiBase) {
-    $ApiBase = if ($env:FAPAI_COLLECTOR_API_BASE) { $env:FAPAI_COLLECTOR_API_BASE } else { $env:FAPAI_API_BASE_URL }
+    $ApiBase = if ((Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')) { (Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE') } else { (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL') }
 }
 $ApiBase = (ConvertTo-CollectionApiOrigin $ApiBase) + "/api"
-if (-not $ApiCaFile) { $ApiCaFile = $env:FAPAI_API_CA_FILE }
+if (-not $ApiCaFile) { $ApiCaFile = (Get-CrowEnvironmentValue -Name 'CROW_API_CA_FILE' -PathValue) }
 if ($ApiCaFile -and -not (Test-Path -LiteralPath $ApiCaFile -PathType Leaf)) {
     throw "Collection API CA file is unavailable."
 }
 
 function Resolve-DefaultDataRoot {
-    if ($DataRoot) {
-        return $DataRoot
-    }
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        return $env:FAPAI_DATA_ROOT_HOST
-    }
-    return (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData")
+    return Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 }
 
 $resolvedDataRoot = Resolve-DefaultDataRoot

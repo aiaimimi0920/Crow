@@ -13,28 +13,17 @@ param(
     [switch]$IsolatedProfile,
     [switch]$DisableExtensions
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
 $script:manualAuthStartUrl = ""
 
 function Resolve-FapaiDataRoot {
-    if ($DataRoot) {
-        return $DataRoot
-    }
-
-    if ($env:FAPAI_DATA_ROOT_HOST) {
-        return $env:FAPAI_DATA_ROOT_HOST
-    }
-
-    $localEnvPath = Join-Path $PSScriptRoot "..\docker.local.env"
-    if (Test-Path -LiteralPath $localEnvPath) {
-        $configuredRoot = Select-String -LiteralPath $localEnvPath -Pattern "^FAPAI_DATA_ROOT_HOST=(.+)$" | Select-Object -First 1
-        if ($configuredRoot) {
-            return $configuredRoot.Matches[0].Groups[1].Value.Trim()
-        }
-    }
-
-    return (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData")
+    return Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 }
 
 function Test-CdpEndpoint {
@@ -137,7 +126,7 @@ function Complete-ManualBrowserHandoff {
         -ExecutionPolicy Bypass `
         -File $bridgeScript `
         -LocalCdpPort $ResolvedPort `
-        -RemoteCdpPort $(if ($env:FAPAI_AUTH_REMOTE_CDP_PORT) { [int]$env:FAPAI_AUTH_REMOTE_CDP_PORT } else { 9225 }) `
+        -RemoteCdpPort $(if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_REMOTE_CDP_PORT')) { [int](Get-CrowEnvironmentValue -Name 'CROW_AUTH_REMOTE_CDP_PORT') } else { 9225 }) `
         -ProfileDir $profileDir `
         -BrowserPath $browserPath `
         -DataRoot $ResolvedDataRoot `
@@ -160,20 +149,20 @@ else {
 
 $dataRootResolved = Resolve-FapaiDataRoot
 if (-not $OutputPath) {
-    $OutputPath = if ($env:FAPAI_COOKIE_SNAPSHOT) {
-        $env:FAPAI_COOKIE_SNAPSHOT
+    $OutputPath = if ((Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue)) {
+        (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue)
     } else {
         Join-Path $dataRootResolved "secrets\taobao-cookies.json"
     }
 }
 
-$resolvedPort = if ($env:FAPAI_AUTH_LOCAL_CDP_PORT) {
-    [int]$env:FAPAI_AUTH_LOCAL_CDP_PORT
+$resolvedPort = if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_PORT')) {
+    [int](Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_PORT')
 } else {
     $Port
 }
-$cdpEndpoint = if ($env:FAPAI_AUTH_LOCAL_CDP_ENDPOINT) {
-    $env:FAPAI_AUTH_LOCAL_CDP_ENDPOINT.TrimEnd('/')
+$cdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_ENDPOINT')) {
+    (Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_ENDPOINT').TrimEnd('/')
 } else {
     "http://127.0.0.1:$resolvedPort"
 }
@@ -380,10 +369,10 @@ public_payload.pop("cookie_summary", None)
 print(json.dumps(public_payload, ensure_ascii=False))
 sys.exit(0 if payload["healthy"] else 2)
 '@ | Set-Content -LiteralPath $validationScript -Encoding UTF8
-    $env:FAPAI_COOKIE_SNAPSHOT_CANDIDATE = $candidatePath
-    $env:FAPAI_COOKIE_SNAPSHOT_SAMPLE_URLS_JSON = ConvertTo-Json -InputObject @($SampleUrl) -Compress
-    $env:FAPAI_COOKIE_SNAPSHOT_DETAIL_SAMPLE_URLS_JSON = ConvertTo-Json -InputObject @($detailSampleUrls) -Compress
-    $env:FAPAI_COOKIE_SNAPSHOT_CDP_ENDPOINT = $cdpEndpoint
+    Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_CANDIDATE' -Value ($candidatePath)
+    Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_SAMPLE_URLS_JSON' -Value (ConvertTo-Json -InputObject @($SampleUrl) -Compress)
+    Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_DETAIL_SAMPLE_URLS_JSON' -Value (ConvertTo-Json -InputObject @($detailSampleUrls) -Compress)
+    Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_CDP_ENDPOINT' -Value ($cdpEndpoint)
     & $Python $validationScript *> $validationOutput
     $validationJson = if (Test-Path -LiteralPath $validationOutput) { Get-Content -Raw -LiteralPath $validationOutput } else { "" }
     if ($LASTEXITCODE -ne 0) {
@@ -418,7 +407,7 @@ summary.pop('names', None)
 summary['path'] = str(path)
 print(json.dumps(summary, ensure_ascii=False))
 '@ | Set-Content -LiteralPath $summaryScript -Encoding UTF8
-    $env:FAPAI_COOKIE_SNAPSHOT_OUTPUT = $OutputPath
+    Set-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_OUTPUT' -Value ($OutputPath)
     & $Python $summaryScript *> $summaryOutput
     if ($LASTEXITCODE -ne 0) {
         throw "Cookie snapshot summary failed with exit code $LASTEXITCODE. Summary helper output was not printed to avoid leaking Taobao security tokens or cookie values."

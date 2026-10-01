@@ -7,19 +7,25 @@ param(
     [int]$PollSeconds = 5,
     [int]$MaxWaitSeconds = 1800
 )
-
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot 'project-environment.ps1')
+
+
+
+. (Join-Path $PSScriptRoot "project-data-root.ps1")
+$DataRoot = Resolve-CrowProjectDataRoot -RepoRoot (Join-Path $PSScriptRoot "..") -ExplicitRoot $DataRoot
 . (Join-Path $PSScriptRoot "collection-api-origin.ps1")
 
 function Resolve-ApiBase {
     if ($ApiBase) {
         return (ConvertTo-CollectionApiOrigin $ApiBase) + "/api"
     }
-    if ($env:FAPAI_COLLECTOR_API_BASE) {
-        return (ConvertTo-CollectionApiOrigin $env:FAPAI_COLLECTOR_API_BASE) + "/api"
+    if ((Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')) {
+        return (ConvertTo-CollectionApiOrigin (Get-CrowEnvironmentValue -Name 'CROW_COLLECTOR_API_BASE')) + "/api"
     }
-    if ($env:FAPAI_API_BASE_URL) {
-        return (ConvertTo-CollectionApiOrigin $env:FAPAI_API_BASE_URL) + "/api"
+    if ((Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')) {
+        return (ConvertTo-CollectionApiOrigin (Get-CrowEnvironmentValue -Name 'CROW_API_BASE_URL')) + "/api"
     }
     throw "An explicit HTTPS API origin or protected loopback tunnel is required."
 }
@@ -54,15 +60,8 @@ if (-not (Test-Path -LiteralPath $completeScript)) {
     throw "Missing complete-pc1-inplace-auth.ps1"
 }
 
-if (-not $DataRoot) {
-    $DataRoot = if ($env:FAPAI_DATA_ROOT_HOST) {
-        $env:FAPAI_DATA_ROOT_HOST
-    } else {
-        Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath "FPFData"
-    }
-}
 if (-not $OutputPath) {
-    $OutputPath = if ($env:FAPAI_COOKIE_SNAPSHOT) { $env:FAPAI_COOKIE_SNAPSHOT } else { Join-Path $DataRoot "secrets\nodes\pc2\taobao-cookies.json" }
+    $OutputPath = if ((Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue)) { (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -PathValue) } else { Join-Path $DataRoot "secrets\nodes\pc2\taobao-cookies.json" }
 }
 
 $stateDir = Join-Path $DataRoot "secrets"

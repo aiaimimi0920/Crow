@@ -26,14 +26,17 @@ def is_login_page(html: str, final_url: str) -> bool:
     )
 
 def _configured_cookie_snapshot_path() -> Path | None:
-    explicit = (os.environ.get("FAPAI_COOKIE_SNAPSHOT") or "").strip()
+    explicit = (project_getenv("CROW_COOKIE_SNAPSHOT") or "").strip()
     if explicit:
         return Path(explicit)
     shared_root = (
-        (os.environ.get("FAPAI_SHARED_DATA_ROOT_HOST") or "").strip()
-        or (os.environ.get("FAPAI_DATA_ROOT_HOST") or "").strip()
+        (project_getenv("CROW_SHARED_DATA_ROOT_HOST") or "").strip()
+        or (str(resolve_project_data_root(REPO_ROOT)) if any(
+            str(os.getenv(key) or "").strip()
+            for key in ("CROW_DATA_ROOT_HOST", "FAPAI_DATA_ROOT_HOST")
+        ) else "")
     )
-    node_id = (os.environ.get("FAPAI_NODE_ID") or "").strip()
+    node_id = (project_getenv("CROW_NODE_ID") or "").strip()
     if not shared_root or not node_id:
         return None
     return Path(shared_root) / "secrets" / "nodes" / node_id / "taobao-cookies.json"
@@ -49,7 +52,7 @@ def _write_cookie_snapshot_best_effort(browserless_seed_probe: Any, cookies: lis
 def export_cookies(cdp_endpoint: str) -> list[dict[str, Any]]:
     browserless_seed_probe = _browserless_seed_probe()
     snapshot = _configured_cookie_snapshot_path()
-    prefer_snapshot = (os.environ.get("FAPAI_COOKIE_SNAPSHOT_PREFER") or "").strip().lower() in TRUE_VALUES
+    prefer_snapshot = (project_getenv("CROW_COOKIE_SNAPSHOT_PREFER") or "").strip().lower() in TRUE_VALUES
     if prefer_snapshot and snapshot is not None:
         try:
             return browserless_seed_probe.load_cookie_snapshot(snapshot)
@@ -61,6 +64,8 @@ def export_cookies(cdp_endpoint: str) -> list[dict[str, Any]]:
         cookies = browserless_seed_probe.export_cdp_cookies(cdp_endpoint)
         _write_cookie_snapshot_best_effort(browserless_seed_probe, cookies, snapshot)
         return cookies
+    except EnvironmentAliasConflict:
+        raise
     except Exception as export_exc:
         if snapshot is None:
             raise
@@ -73,20 +78,20 @@ def export_cookies(cdp_endpoint: str) -> list[dict[str, Any]]:
             ) from snapshot_exc
 
 def list_browser_fallback_enabled() -> bool:
-    raw = os.environ.get("FAPAI_LIST_BROWSER_FALLBACK")
+    raw = project_getenv("CROW_LIST_BROWSER_FALLBACK")
     if raw is None:
         return True
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 def detail_browser_fallback_enabled() -> bool:
-    raw = os.environ.get("FAPAI_DETAIL_BROWSER_FALLBACK")
+    raw = project_getenv("CROW_DETAIL_BROWSER_FALLBACK")
     if raw is None:
         return True
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 def captcha_solver_enabled(*, default: bool = False) -> bool:
     for name in CAPTCHA_SOLVER_ENV_NAMES:
-        raw = os.environ.get(name)
+        raw = project_getenv(name)
         if raw is None:
             continue
         text = raw.strip()
@@ -95,7 +100,7 @@ def captcha_solver_enabled(*, default: bool = False) -> bool:
     return default
 
 def _positive_int_env(name: str, default: int) -> int:
-    raw = os.environ.get(name)
+    raw = project_getenv(name)
     if raw is None or not raw.strip():
         return default
     try:
@@ -105,7 +110,7 @@ def _positive_int_env(name: str, default: int) -> int:
     return parsed if parsed > 0 else default
 
 def _positive_float_env(name: str, default: float) -> float:
-    raw = os.environ.get(name)
+    raw = project_getenv(name)
     if raw is None or not raw.strip():
         return default
     try:
@@ -116,13 +121,13 @@ def _positive_float_env(name: str, default: float) -> float:
 
 def detail_browser_ready_timeout_ms() -> int:
     return _positive_int_env(
-        "FAPAI_DETAIL_BROWSER_READY_TIMEOUT_MS",
+        "CROW_DETAIL_BROWSER_READY_TIMEOUT_MS",
         DEFAULT_DETAIL_BROWSER_READY_TIMEOUT_MS,
     )
 
 def detail_browser_poll_interval_ms() -> int:
     return _positive_int_env(
-        "FAPAI_DETAIL_BROWSER_POLL_INTERVAL_MS",
+        "CROW_DETAIL_BROWSER_POLL_INTERVAL_MS",
         DEFAULT_DETAIL_BROWSER_POLL_INTERVAL_MS,
     )
 
@@ -167,19 +172,19 @@ def _wait_for_detail_ready(
 
 def list_browser_recovery_max_attempts() -> int:
     return _positive_int_env(
-        "FAPAI_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS",
+        "CROW_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS",
         DEFAULT_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS,
     )
 
 def list_browser_recovery_wait_seconds() -> float:
     return _positive_float_env(
-        "FAPAI_LIST_BROWSER_RECOVERY_WAIT_SECONDS",
+        "CROW_LIST_BROWSER_RECOVERY_WAIT_SECONDS",
         DEFAULT_LIST_BROWSER_RECOVERY_WAIT_SECONDS,
     )
 
 def list_http_timeout_seconds() -> float:
     return _positive_float_env(
-        "FAPAI_LIST_HTTP_TIMEOUT_SECONDS",
+        "CROW_LIST_HTTP_TIMEOUT_SECONDS",
         40.0,
     )
 
@@ -187,8 +192,8 @@ def build_http(cookies: list[dict[str, Any]]) -> requests.Session:
     browserless_seed_probe = _browserless_seed_probe()
     session = browserless_seed_probe.build_session_from_playwright_cookies(cookies)
     session.trust_env = False
-    explicit_proxy = os.environ.get("FAPAI_HTTP_PROXY") or os.environ.get("FAPAI_PROXY")
-    explicit_https_proxy = os.environ.get("FAPAI_HTTPS_PROXY") or explicit_proxy
+    explicit_proxy = project_getenv("CROW_HTTP_PROXY") or project_getenv("CROW_PROXY")
+    explicit_https_proxy = project_getenv("CROW_HTTPS_PROXY") or explicit_proxy
     session.proxies = {
         "http": explicit_proxy,
         "https": explicit_https_proxy,
@@ -262,7 +267,7 @@ def _default_list_referer_url(target_url: str) -> str:
     return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 def _cdp_page_target_limit() -> int:
-    raw = os.environ.get("FAPAI_CDP_MAX_PAGE_TARGETS")
+    raw = project_getenv("CROW_CDP_MAX_PAGE_TARGETS")
     if raw is None or not raw.strip():
         return DEFAULT_CDP_PAGE_TARGET_LIMIT
     try:
@@ -294,6 +299,8 @@ def _fallback_cached_playwright_cdp_endpoint(cdp_endpoint: str) -> str:
     if callable(cached_loader):
         try:
             cached = str(cached_loader(cdp_endpoint) or "").strip()
+        except EnvironmentAliasConflict:
+            raise
         except Exception:
             cached = ""
         if cached.startswith(("ws://", "wss://")):
@@ -303,6 +310,8 @@ def _fallback_cached_playwright_cdp_endpoint(cdp_endpoint: str) -> str:
     if callable(resolver):
         try:
             resolved = str(resolver(cdp_endpoint) or "").strip()
+        except EnvironmentAliasConflict:
+            raise
         except Exception:
             resolved = ""
         if resolved.startswith(("ws://", "wss://")):

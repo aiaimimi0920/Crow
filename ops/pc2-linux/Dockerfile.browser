@@ -46,6 +46,7 @@ RUN groupadd --gid "$FAPAI_BROWSER_GID" fapaifang 2>/dev/null || true \
 
 COPY ops/pc2-linux/start-browser-solver.sh /usr/local/bin/start-browser-solver
 COPY ops/pc2-linux/process-supervisor.sh /usr/local/bin/process-supervisor.sh
+COPY scripts/project-environment.sh /usr/local/bin/project-environment.sh
 COPY tools/internal_api_http.py /app/tools/internal_api_http.py
 COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py
 COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py
@@ -55,6 +56,7 @@ COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py
 COPY tools/pc2_solver_watchdog.py /app/tools/pc2_solver_watchdog.py
 COPY src/captcha_solver.py /app/src/captcha_solver.py
+COPY src/project_environment.py /app/src/project_environment.py
 RUN chmod 0755 /usr/local/bin/start-browser-solver
 
 USER fapaifang

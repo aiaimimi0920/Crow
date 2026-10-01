@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # All PIDs must be direct children started by this launcher.
+_crow_helpers="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/project-environment.sh"
+if [[ ! -f "$_crow_helpers" ]]; then
+  _crow_helpers="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts" && pwd)/project-environment.sh"
+fi
+source "$_crow_helpers"
 crow_stop_children() {
   local pid deadline grace
-  grace="${FAPAI_BROWSER_SHUTDOWN_GRACE_SECONDS:-30}"
+  grace="$(crow_env CROW_BROWSER_SHUTDOWN_GRACE_SECONDS 30)" || grace=30
   [[ "$grace" =~ ^[0-9]+$ ]] || grace=30
   deadline=$((SECONDS + grace))
   for pid in "${pids[@]}"; do

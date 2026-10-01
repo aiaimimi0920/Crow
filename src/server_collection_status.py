@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
+
+from src.project_environment import getenv as project_getenv
 
 from . import collection_repository_status, collection_status_payload
 from . import collection_statistics as _collection_statistics
@@ -22,10 +23,10 @@ if TYPE_CHECKING:
 
 def _build_info_payload() -> dict[str, str]:
     return {
-        "version": str(os.getenv("FAPAI_BUILD_VERSION") or "development"),
-        "commit": str(os.getenv("FAPAI_BUILD_COMMIT") or "unknown"),
-        "built_at": str(os.getenv("FAPAI_BUILD_TIME") or "unknown"),
-        "source_digest": str(os.getenv("FAPAI_SOURCE_DIGEST") or "unknown"),
+        "version": str(project_getenv("CROW_BUILD_VERSION") or "development"),
+        "commit": str(project_getenv("CROW_BUILD_COMMIT") or "unknown"),
+        "built_at": str(project_getenv("CROW_BUILD_TIME") or "unknown"),
+        "source_digest": str(project_getenv("CROW_SOURCE_DIGEST") or "unknown"),
     }
 
 

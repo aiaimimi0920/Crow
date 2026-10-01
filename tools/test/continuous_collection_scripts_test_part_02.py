@@ -9,20 +9,20 @@ def test_pc2_host_direct_nas_env_maps_home_share_and_uses_real_pc2_cdp_endpoint(
     assert "cmdkey /add:192.168.15.200" in script
     assert "net use \\\\192.168.15.200\\home" in script
     assert "\\\\192.168.15.200\\home\\project\\project\\FPFData" in script
-    assert "$cdpEndpoint = if ($env:FAPAI_CDP_ENDPOINT)" in script
+    assert "$cdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_CDP_ENDPOINT'))" in script
     assert "http://127.0.0.1:9223" in script
-    assert "$reportCdpEndpoint = if ($env:FAPAI_REPORT_CDP_ENDPOINT)" in script
+    assert "$reportCdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_REPORT_CDP_ENDPOINT'))" in script
     assert "http://192.168.15.104:9224" in script
-    assert "$cookieSnapshotPrefer = if ($env:FAPAI_COOKIE_SNAPSHOT_PREFER)" in script
-    assert "SetEnvironmentVariable('FAPAI_NODE_ID', 'pc2', 'Process')" in script
+    assert "$cookieSnapshotPrefer = if ((Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT_PREFER'))" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_NODE_ID' -Value ('pc2')" in script
 
 
 def test_pc2_host_direct_nas_env_loads_env_file_before_reading_share_credentials() -> None:
     script = _pc2_host_script("load-host-direct-nas-env.ps1")
 
-    env_file_index = script.index("if (Test-Path $envFile)")
-    share_user_index = script.index("$shareUser = [string]($env:FAPAI_NAS_SHARE_USER)")
-    share_password_index = script.index("$sharePassword = [string]($env:FAPAI_NAS_SHARE_PASSWORD)")
+    env_file_index = script.index("Import-CrowOperatorEnvironment -Path $envFile")
+    share_user_index = script.index("$shareUser = [string]((Get-CrowEnvironmentValue -Name 'CROW_NAS_SHARE_USER'))")
+    share_password_index = script.index("$sharePassword = [string]((Get-CrowEnvironmentValue -Name 'CROW_NAS_SHARE_PASSWORD'))")
 
     assert env_file_index < share_user_index < share_password_index
 
@@ -30,22 +30,22 @@ def test_pc2_host_direct_nas_env_loads_env_file_before_reading_share_credentials
 def test_pc2_host_direct_nas_env_maps_worker_node_detail_browser_flags() -> None:
     script = _pc2_host_script("load-host-direct-nas-env.ps1")
 
-    assert "$listBrowserFallback = if ($env:FAPAI_LIST_BROWSER_FALLBACK)" in script
-    assert "$detailBrowserFallback = if ($env:FAPAI_DETAIL_BROWSER_FALLBACK)" in script
-    assert "$detailLoadOpenBrowserPages = if ($env:FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES)" in script
-    assert "$detailCdpEndpoint = if ($env:FAPAI_DETAIL_CDP_ENDPOINT)" in script
-    assert "$seedCaptchaSolverEnabled = if ($env:FAPAI_SEED_CAPTCHA_SOLVER_ENABLED)" in script
-    assert "$detailCaptchaSolverEnabled = if ($env:FAPAI_DETAIL_CAPTCHA_SOLVER_ENABLED)" in script
-    assert "$captchaSolverEnabled = if ($env:FAPAI_CAPTCHA_SOLVER_ENABLED) { $env:FAPAI_CAPTCHA_SOLVER_ENABLED } else { '1' }" in script
-    assert "$realTaobaoAutoSolverEnabled = if ($env:FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED)" in script
-    assert "SetEnvironmentVariable('FAPAI_LIST_BROWSER_FALLBACK'" in script
-    assert "SetEnvironmentVariable('FAPAI_DETAIL_BROWSER_FALLBACK'" in script
-    assert "SetEnvironmentVariable('FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES'" in script
-    assert "SetEnvironmentVariable('FAPAI_CAPTCHA_SOLVER_ENABLED', $captchaSolverEnabled" in script
-    assert "SetEnvironmentVariable('FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED', $realTaobaoAutoSolverEnabled" in script
-    assert "SetEnvironmentVariable('FAPAI_SEED_CAPTCHA_SOLVER_ENABLED'" in script
-    assert "SetEnvironmentVariable('FAPAI_DETAIL_CAPTCHA_SOLVER_ENABLED'" in script
-    assert "SetEnvironmentVariable('FAPAI_DETAIL_CDP_ENDPOINT'" in script
+    assert "$listBrowserFallback = if ((Get-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK'))" in script
+    assert "$detailBrowserFallback = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_BROWSER_FALLBACK'))" in script
+    assert "$detailLoadOpenBrowserPages = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES'))" in script
+    assert "$detailCdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CDP_ENDPOINT'))" in script
+    assert "$seedCaptchaSolverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_SEED_CAPTCHA_SOLVER_ENABLED'))" in script
+    assert "$detailCaptchaSolverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CAPTCHA_SOLVER_ENABLED'))" in script
+    assert "$captchaSolverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED')) { (Get-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED') } else { '1' }" in script
+    assert "$realTaobaoAutoSolverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED'))" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_DETAIL_BROWSER_FALLBACK'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_CAPTCHA_SOLVER_ENABLED' -Value ($captchaSolverEnabled)" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED' -Value ($realTaobaoAutoSolverEnabled)" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_SEED_CAPTCHA_SOLVER_ENABLED'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_DETAIL_CAPTCHA_SOLVER_ENABLED'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_DETAIL_CDP_ENDPOINT'" in script
 
 
 def test_pc2_cookie_only_env_cutover_preserves_unrelated_settings_and_requires_snapshot() -> None:
@@ -54,17 +54,19 @@ def test_pc2_cookie_only_env_cutover_preserves_unrelated_settings_and_requires_s
     assert "ReadAllLines" in script
     assert "WriteAllLines" in script
     assert "UTF8Encoding($false)" in script
-    assert "FAPAI_LIST_BROWSER_FALLBACK = '0'" in script
-    assert "FAPAI_DETAIL_BROWSER_FALLBACK = '0'" in script
-    assert "FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'" in script
-    assert "FAPAI_COOKIE_SNAPSHOT_PREFER = '1'" in script
-    assert "FAPAI_CAPTCHA_SOLVER_ENABLED = '0'" in script
-    assert "FAPAI_HOST_DETAIL_WORKER_COUNT = '4'" in script
-    assert "FAPAI_HOST_ANALYSIS_WORKER_COUNT = '4'" in script
+    assert "CROW_LIST_BROWSER_FALLBACK = '0'" in script
+    assert "CROW_DETAIL_BROWSER_FALLBACK = '0'" in script
+    assert "CROW_DETAIL_LOAD_OPEN_BROWSER_PAGES = '0'" in script
+    assert "CROW_COOKIE_SNAPSHOT_PREFER = '1'" in script
+    assert "CROW_CAPTCHA_SOLVER_ENABLED = '0'" in script
+    assert "CROW_HOST_DETAIL_WORKER_COUNT = '4'" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_COUNT = '4'" in script
     assert "detail_worker_count = 4" in script
     assert "analysis_worker_count = 4" in script
     assert "$null = & $nasLoader" in script
     assert "if (-not (Test-Path -LiteralPath $SnapshotPath))" in script
+
+    assert "Get-CrowEnvironmentNames -Name $entry.Key" in script
 
 
 def test_pc2_cookie_only_install_script_backs_up_validates_and_restarts_watchdog() -> None:
@@ -92,14 +94,16 @@ def test_pc2_concurrency_env_only_updates_bounded_worker_counts() -> None:
 
     assert "[ValidateRange(3, 8)][int]$DetailWorkerCount = 4" in script
     assert "[ValidateRange(3, 8)][int]$AnalysisWorkerCount = 4" in script
-    assert "FAPAI_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount" in script
-    assert "FAPAI_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount" in script
+    assert "CROW_HOST_DETAIL_WORKER_COUNT = [string]$DetailWorkerCount" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_COUNT = [string]$AnalysisWorkerCount" in script
     assert "ReadAllLines" in script
     assert "WriteAllLines" in script
     assert "UTF8Encoding($false)" in script
     assert "unrelated_settings_preserved = $true" in script
-    assert "FAPAI_CAPTCHA_SOLVER_ENABLED" not in script
+    assert "CROW_CAPTCHA_SOLVER_ENABLED" not in script
     assert "OPENAI_MODEL" not in script
+
+    assert "Get-CrowEnvironmentNames -Name $entry.Key" in script
 
 
 def test_pc2_concurrency_installer_backs_up_and_preserves_auth_and_model_settings() -> None:
@@ -140,12 +144,12 @@ def test_pc2_host_direct_seed_worker_uses_db_queue_and_short_loop_for_pc2_real_c
     assert "$apiStatusReachable -and" not in script
     assert "-not $manualChallengeReportingSupported -and" not in script
     assert "'--solver-enabled'" in script
-    assert "$solverEnabled = if ($env:FAPAI_SEED_CAPTCHA_SOLVER_ENABLED)" in script
+    assert "$solverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_SEED_CAPTCHA_SOLVER_ENABLED'))" in script
     assert "-in @('1', 'true', 'yes', 'on')" in script
-    assert "SetEnvironmentVariable('FAPAI_LIST_BROWSER_FALLBACK', '0', 'Process')" in script
-    assert "FAPAI_LIST_HTTP_TIMEOUT_SECONDS" in script
-    assert "FAPAI_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS" in script
-    assert "FAPAI_LIST_BROWSER_RECOVERY_WAIT_SECONDS" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_LIST_BROWSER_FALLBACK' -Value ('0')" in script
+    assert "CROW_LIST_HTTP_TIMEOUT_SECONDS" in script
+    assert "CROW_LIST_BROWSER_RECOVERY_MAX_ATTEMPTS" in script
+    assert "CROW_LIST_BROWSER_RECOVERY_WAIT_SECONDS" in script
     assert "'--job-key'" not in script
     assert "'--jobs-file'" not in script
 
@@ -173,15 +177,15 @@ def test_pc2_host_direct_detail_worker_uses_raw_capture_loop_for_pc2_real_cutove
     assert "load-host-direct-nas-env.ps1" in script
     assert "pc2-real-detail-1" in script
     assert "output\\nodes\\pc2-real\\detail_worker" in script
-    assert "$targetSuccess = if ($env:FAPAI_HOST_DETAIL_TARGET_SUCCESS) { $env:FAPAI_HOST_DETAIL_TARGET_SUCCESS } else { '10' }" in script
-    assert "$maxAttempts = if ($env:FAPAI_HOST_DETAIL_MAX_ATTEMPTS) { $env:FAPAI_HOST_DETAIL_MAX_ATTEMPTS } else { '30' }" in script
+    assert "$targetSuccess = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_TARGET_SUCCESS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_TARGET_SUCCESS') } else { '10' }" in script
+    assert "$maxAttempts = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_MAX_ATTEMPTS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_MAX_ATTEMPTS') } else { '30' }" in script
     assert "'--target-success', $targetSuccess" in script
     assert "'--max-attempts', $maxAttempts" in script
     assert "'--item-max-attempts', '3'" in script
     assert "'--failure-cooldown-seconds', '120'" in script
-    assert "$activeLoopIntervalSeconds = if ($env:FAPAI_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS) { $env:FAPAI_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS } else { '0' }" in script
-    assert "$successDelaySeconds = if ($env:FAPAI_HOST_DETAIL_SUCCESS_DELAY_SECONDS) { $env:FAPAI_HOST_DETAIL_SUCCESS_DELAY_SECONDS } else { '0' }" in script
-    assert "$failureDelaySeconds = if ($env:FAPAI_HOST_DETAIL_FAILURE_DELAY_SECONDS) { $env:FAPAI_HOST_DETAIL_FAILURE_DELAY_SECONDS } else { '1' }" in script
+    assert "$activeLoopIntervalSeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS') } else { '0' }" in script
+    assert "$successDelaySeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_SUCCESS_DELAY_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_SUCCESS_DELAY_SECONDS') } else { '0' }" in script
+    assert "$failureDelaySeconds = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_FAILURE_DELAY_SECONDS')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_FAILURE_DELAY_SECONDS') } else { '1' }" in script
     assert "'--success-delay-seconds', $successDelaySeconds" in script
     assert "'--failure-delay-seconds', $failureDelaySeconds" in script
     assert "'--active-loop-interval-seconds', $activeLoopIntervalSeconds" in script
@@ -195,15 +199,15 @@ def test_pc2_host_direct_detail_worker_uses_raw_capture_loop_for_pc2_real_cutove
     assert "$apiStatusReachable -and" not in script
     assert "-not $manualChallengeReportingSupported -and" not in script
     assert "'--solver-enabled'" in script
-    assert "$detailCdpEndpoint = if ($env:FAPAI_DETAIL_CDP_ENDPOINT)" in script
-    assert "$solverEnabled = if ($env:FAPAI_DETAIL_CAPTCHA_SOLVER_ENABLED)" in script
+    assert "$detailCdpEndpoint = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CDP_ENDPOINT'))" in script
+    assert "$solverEnabled = if ((Get-CrowEnvironmentValue -Name 'CROW_DETAIL_CAPTCHA_SOLVER_ENABLED'))" in script
     assert "-in @('1', 'true', 'yes', 'on')" in script
 
 
 def test_pc2_host_direct_detail_worker_2_wraps_primary_direct_detail_worker() -> None:
     script = _pc2_host_script("start-host-direct-detail-worker-2.ps1")
 
-    assert "FAPAI_HOST_DETAIL_WORKER_ID" in script
+    assert "CROW_HOST_DETAIL_WORKER_ID" in script
     assert "pc2-real-detail-2" in script
     assert "start-host-direct-detail-worker.ps1" in script
 
@@ -212,12 +216,12 @@ def test_pc2_host_direct_detail_worker_3_is_http_only() -> None:
     script = _pc2_host_script("start-host-direct-detail-worker-3.ps1")
     primary = _pc2_host_script("start-host-direct-detail-worker.ps1")
 
-    assert "FAPAI_HOST_DETAIL_WORKER_ID" in script
+    assert "CROW_HOST_DETAIL_WORKER_ID" in script
     assert "pc2-real-detail-3" in script
     assert "detail_worker_3" in script
-    assert "FAPAI_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE = '0'" in script
+    assert "Set-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE' -Value ('0')" in script
     assert "start-host-direct-detail-worker.ps1" in script
-    assert "FAPAI_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE" in primary
+    assert "CROW_HOST_DETAIL_BROWSER_FALLBACK_OVERRIDE" in primary
     assert "SetEnvironmentVariable" in primary
 
 
@@ -232,8 +236,8 @@ def test_pc2_host_direct_analysis_worker_uses_small_retrying_batches_without_cdp
     assert "load-host-direct-nas-env.ps1" in script
     assert "pc2-real-analysis-1" in script
     assert "output\\nodes\\pc2-real\\detail_analysis_worker" in script
-    assert "FAPAI_HOST_ANALYSIS_TARGET_SUCCESS" in script
-    assert "FAPAI_HOST_ANALYSIS_MAX_ATTEMPTS" in script
+    assert "CROW_HOST_ANALYSIS_TARGET_SUCCESS" in script
+    assert "CROW_HOST_ANALYSIS_MAX_ATTEMPTS" in script
     assert "'--analysis-only'" in script
     assert "'--target-success', $targetSuccess" in script
     assert "'--max-attempts', $maxAttempts" in script
@@ -248,9 +252,9 @@ def test_pc2_host_direct_analysis_worker_uses_small_retrying_batches_without_cdp
 def test_pc2_host_direct_analysis_worker_2_uses_distinct_worker_and_output() -> None:
     script = _pc2_host_script("start-host-direct-analysis-worker-2.ps1")
 
-    assert "FAPAI_HOST_ANALYSIS_WORKER_ID" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_ID" in script
     assert "pc2-real-analysis-2" in script
-    assert "FAPAI_HOST_ANALYSIS_OUTPUT_DIR" in script
+    assert "CROW_HOST_ANALYSIS_OUTPUT_DIR" in script
     assert "detail_analysis_worker_2" in script
     assert "start-host-direct-analysis-worker.ps1" in script
 
@@ -258,9 +262,9 @@ def test_pc2_host_direct_analysis_worker_2_uses_distinct_worker_and_output() -> 
 def test_pc2_host_direct_analysis_worker_3_uses_distinct_worker_and_output() -> None:
     script = _pc2_host_script("start-host-direct-analysis-worker-3.ps1")
 
-    assert "FAPAI_HOST_ANALYSIS_WORKER_ID" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_ID" in script
     assert "pc2-real-analysis-3" in script
-    assert "FAPAI_HOST_ANALYSIS_OUTPUT_DIR" in script
+    assert "CROW_HOST_ANALYSIS_OUTPUT_DIR" in script
     assert "detail_analysis_worker_3" in script
     assert "start-host-direct-analysis-worker.ps1" in script
 
@@ -380,8 +384,8 @@ def test_pc2_host_watchdog_scales_detail_and_analysis_workers_with_bounded_count
     assert "[int]$DetailWorkerCount = 0" in script
     assert "[int]$AnalysisWorkerCount = 0" in script
     assert "function Resolve-WorkerCount" in script
-    assert "FAPAI_HOST_DETAIL_WORKER_COUNT" in script
-    assert "FAPAI_HOST_ANALYSIS_WORKER_COUNT" in script
+    assert "CROW_HOST_DETAIL_WORKER_COUNT" in script
+    assert "CROW_HOST_ANALYSIS_WORKER_COUNT" in script
     assert script.count("-DefaultCount 4") == 2
     assert "$resolved -lt 3 -or $resolved -gt 8" in script
     assert "for ($index = 4; $index -le $DetailWorkerCount; $index++)" in script
@@ -402,10 +406,10 @@ def test_pc2_local_solver_launcher_uses_only_local_9223() -> None:
 
     assert "http://127.0.0.1:9223" in script
     assert "--cdp-endpoint $CdpEndpoint" in script
-    assert "FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED" in script
-    assert "FAPAI_SOLVER_COOLDOWN_FAIL_THRESHOLD = '10'" in script
-    assert "FAPAI_SOLVER_COOLDOWN_SECONDS = '180'" in script
-    assert "FAPAI_SLIDER_RETRY_INTERVAL_SECONDS = '5'" in script
-    assert "FAPAI_LOCAL_SOLVER_POLL_SECONDS = '5'" in script
+    assert "CROW_REAL_TAOBAO_AUTO_SOLVER_ENABLED" in script
+    assert "CROW_SOLVER_COOLDOWN_FAIL_THRESHOLD = '10'" in script
+    assert "CROW_SOLVER_COOLDOWN_SECONDS = '180'" in script
+    assert "CROW_SLIDER_RETRY_INTERVAL_SECONDS = '5'" in script
+    assert "CROW_LOCAL_SOLVER_POLL_SECONDS = '5'" in script
     assert "env.worker.local" in script
     assert "9225" not in script

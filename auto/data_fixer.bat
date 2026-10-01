@@ -17,8 +17,8 @@ if defined PYTHON_CMD (
 
 REM Execute
 call "%PYTHON_CMD%" src/data_fixer.py
-set "FAPAI_DATA_FIXER_EXIT_CODE=%ERRORLEVEL%"
-echo [INFO] data_fixer.bat finished with exit code %FAPAI_DATA_FIXER_EXIT_CODE%
+set "CROW_DATA_FIXER_EXIT_CODE=%ERRORLEVEL%"
+echo [INFO] data_fixer.bat finished with exit code %CROW_DATA_FIXER_EXIT_CODE%
 popd >nul
 pause
-exit /b %FAPAI_DATA_FIXER_EXIT_CODE%
+exit /b %CROW_DATA_FIXER_EXIT_CODE%

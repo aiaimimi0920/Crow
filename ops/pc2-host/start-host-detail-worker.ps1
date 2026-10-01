@@ -1,7 +1,8 @@
+. (Join-Path $PSScriptRoot 'crow-environment.ps1')
 $ctx = & 'C:\fapaifang-worker\ops\load-host-worker-env.ps1'
 Set-Location $ctx.SrcRoot
 $outputDir = Join-Path $ctx.SharedRoot 'output\nodes\pc2-host\detail_worker'
-$workerId = if ($env:FAPAI_HOST_DETAIL_WORKER_ID) { $env:FAPAI_HOST_DETAIL_WORKER_ID } else { 'pc2-host-detail-1' }
+$workerId = if ((Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_WORKER_ID')) { (Get-CrowEnvironmentValue -Name 'CROW_HOST_DETAIL_WORKER_ID') } else { 'pc2-host-detail-1' }
 
 $args = @(
   'tools\detail_worker.py',

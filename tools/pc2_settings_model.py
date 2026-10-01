@@ -3,9 +3,14 @@ from copy import deepcopy
 import re
 
 from src.collection_settings_schema import environment_changes, validate
+from src.project_environment import getenv, set_env
 
 STAGES = {"links": "seed", "details": "detail", "analysis": "analysis"}
 WORKER = re.compile(r"pc2-(seed|detail|analysis)-([1-8])\Z")
+
+
+def _read(environment, key, default=None):
+    return getenv(key, default, reader=environment.get)
 
 
 def workers(model):
@@ -28,31 +33,31 @@ def inventory(model):
     config = {
         "workers": {stage: len(group) for stage, group in groups.items()},
         "intervals": {
-            "links": int(env["links"].get("FAPAI_SEED_ACTIVE_LOOP_INTERVAL_SECONDS", env["links"].get("FAPAI_SEED_LOOP_INTERVAL_SECONDS", 1800))),
-            "details": int(detail.get("FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS", detail.get("FAPAI_DETAIL_LOOP_INTERVAL_SECONDS", 900))),
-            "analysis": int(ai.get("FAPAI_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS", ai.get("FAPAI_DETAIL_LOOP_INTERVAL_SECONDS", 900))),
-            "links_idle": int(env["links"].get("FAPAI_SEED_LOOP_INTERVAL_SECONDS", 1800)),
-            "details_idle": int(detail.get("FAPAI_DETAIL_LOOP_INTERVAL_SECONDS", 900)),
-            "analysis_idle": int(ai.get("FAPAI_DETAIL_LOOP_INTERVAL_SECONDS", 900)),
-            "success_delay": float(detail.get("FAPAI_DETAIL_SUCCESS_DELAY_SECONDS", 6)),
-            "failure_delay": float(detail.get("FAPAI_DETAIL_FAILURE_DELAY_SECONDS", 15)),
+            "links": int(_read(env["links"], "CROW_SEED_ACTIVE_LOOP_INTERVAL_SECONDS", _read(env["links"], "CROW_SEED_LOOP_INTERVAL_SECONDS", 1800))),
+            "details": int(_read(detail, "CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS", _read(detail, "CROW_DETAIL_LOOP_INTERVAL_SECONDS", 900))),
+            "analysis": int(_read(ai, "CROW_DETAIL_ACTIVE_LOOP_INTERVAL_SECONDS", _read(ai, "CROW_DETAIL_LOOP_INTERVAL_SECONDS", 900))),
+            "links_idle": int(_read(env["links"], "CROW_SEED_LOOP_INTERVAL_SECONDS", 1800)),
+            "details_idle": int(_read(detail, "CROW_DETAIL_LOOP_INTERVAL_SECONDS", 900)),
+            "analysis_idle": int(_read(ai, "CROW_DETAIL_LOOP_INTERVAL_SECONDS", 900)),
+            "success_delay": float(_read(detail, "CROW_DETAIL_SUCCESS_DELAY_SECONDS", 6)),
+            "failure_delay": float(_read(detail, "CROW_DETAIL_FAILURE_DELAY_SECONDS", 15)),
         },
-        "retries": {"detail_item_attempts": int(detail.get("FAPAI_DETAIL_ITEM_MAX_ATTEMPTS", 3)),
-                    "analysis_item_attempts": int(ai.get("FAPAI_DETAIL_ITEM_MAX_ATTEMPTS", 3)),
-                    "detail_batch_attempts": int(detail.get("FAPAI_DETAIL_MAX_ATTEMPTS", 20)),
-                    "analysis_batch_attempts": int(ai.get("FAPAI_DETAIL_MAX_ATTEMPTS", 20)),
-                    "ai_attempts": int(ai.get("OPENAI_MAX_RETRIES", 3))},
-        "ai": {"base_url": ai.get("OPENAI_BASE_URL", ""), "model": ai.get("OPENAI_MODEL", ""),
-               "timeout_seconds": int(float(ai.get("OPENAI_TIMEOUT_SECONDS", 180)))},
+        "retries": {"detail_item_attempts": int(_read(detail, "CROW_DETAIL_ITEM_MAX_ATTEMPTS", 3)),
+                    "analysis_item_attempts": int(_read(ai, "CROW_DETAIL_ITEM_MAX_ATTEMPTS", 3)),
+                    "detail_batch_attempts": int(_read(detail, "CROW_DETAIL_MAX_ATTEMPTS", 20)),
+                    "analysis_batch_attempts": int(_read(ai, "CROW_DETAIL_MAX_ATTEMPTS", 20)),
+                    "ai_attempts": int(_read(ai, "OPENAI_MAX_RETRIES", 3))},
+        "ai": {"base_url": _read(ai, "OPENAI_BASE_URL", ""), "model": _read(ai, "OPENAI_MODEL", ""),
+               "timeout_seconds": int(float(_read(ai, "OPENAI_TIMEOUT_SECONDS", 180)))},
     }
     config = validate(config)
     for stage, group in groups.items():
         keys = set(environment_changes(config, stage))
         if stage == "analysis":
             keys.add("OPENAI_API_KEY")
-        if any(any(service["environment"].get(key) != env[stage].get(key) for key in keys) for service in group):
+        if any(any(_read(service["environment"], key) != _read(env[stage], key) for key in keys) for service in group):
             raise ValueError("Workers in one stage must share the exposed settings")
-    return {"effective": config, "api_key_configured": bool(ai.get("OPENAI_API_KEY"))}
+    return {"effective": config, "api_key_configured": bool(_read(ai, "OPENAI_API_KEY"))}
 
 
 def render(model, config, api_key=None):
@@ -69,10 +74,12 @@ def render(model, config, api_key=None):
             service["container_name"] = "fapaifang-" + name
             env = service["environment"]
             old_values = environment_changes(previous, stage)
-            env.update({key: value for key, value in environment_changes(config, stage).items() if old_values[key] != value})
+            for key, value in environment_changes(config, stage).items():
+                if old_values[key] != value:
+                    set_env(key, value, environ=env)
             if name not in model["services"]:
-                env["FAPAI_SEED_WORKER_ID" if stage == "links" else "FAPAI_DETAIL_WORKER_ID"] = f"{role}-{index}"
-                env["FAPAI_OUTPUT_DIR"] = templates[stage]["environment"]["FAPAI_OUTPUT_DIR"] + f"_{index}"
+                set_env("CROW_SEED_WORKER_ID" if stage == "links" else "CROW_DETAIL_WORKER_ID", f"{role}-{index}", environ=env)
+                set_env("CROW_OUTPUT_DIR", _read(templates[stage]["environment"], "CROW_OUTPUT_DIR") + f"_{index}", environ=env)
             if stage == "analysis" and api_key:
                 env["OPENAI_API_KEY"] = api_key
             result["services"][name] = service

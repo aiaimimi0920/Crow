@@ -54,7 +54,7 @@ def test_real_auth_payload_is_importable_and_handles_offline_request_in_isolatio
         env={
             key: value
             for key, value in os.environ.items()
-            if not key.startswith("FAPAI_")
+            if not key.startswith(("FAPAI_", "CROW_"))
         },
         capture_output=True,
         timeout=30,
@@ -91,4 +91,4 @@ def test_real_installed_launcher_and_modules_work_without_checkout_or_python_pat
     write_config(bundle, sys.executable)
     payload = result(launch(bundle))
     assert payload == {"phase": "unavailable", "code": "api_not_configured"}
-    assert not (bundle / "FPFData/desktop-auth/last-launch-failure.json").exists()
+    assert not (bundle / "CrowData/desktop-auth/last-launch-failure.json").exists()

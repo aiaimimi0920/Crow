@@ -1,7 +1,12 @@
 import { READ_TIMEOUT_MS } from "./desktop_config.ts";
 import { object } from "./desktop_value.ts";
 
+let configurationBlocked = false;
+export function isConfigurationBlocked(): boolean { return configurationBlocked; }
+export function setConfigurationBlocked(blocked: boolean): void { configurationBlocked = blocked; }
+
 export async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = READ_TIMEOUT_MS): Promise<Response> {
+  if (configurationBlocked) throw new Error("Crow API configuration conflict");
   const controller = new AbortController();
   let timedOut = false;
   const cancel = () => controller.abort(options.signal?.reason);

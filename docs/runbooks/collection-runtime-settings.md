@@ -1,5 +1,9 @@
 # Collection runtime settings
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](crow-data-root-compatibility.md).
+
 Status: activated on NAS and PC2 on 2026-09-07 (Asia/Shanghai), with an installed
 desktop/native HTTPS probe and a successful no-op apply receipt. See
 `docs/design/neuro/HTTPS-CONTROL-ACTIVATION-20260907.md` for exact runtime evidence.
@@ -90,7 +94,7 @@ not mutual TLS; a normal browser does not automatically trust the private CA.
    HTTP request or replay the POST. Pending/unknown operations block apply, not draft edits.
 
 NAS state defaults to `<runtime-root>/control/collection-settings/`; PC2 state defaults
-to the repository-derived `FPFData/settings-controller/`, with a CLI override supported.
+to the repository-derived `CrowData/settings-controller/`, with a CLI override supported.
 State directories are owner-only on Linux; secret/Compose files are mode 0600. Keys are
 not encrypted at rest: host filesystem permissions and backup access remain essential.
 Unclaimed NAS keys are removed after claim/expiry on a subsequent mailbox transaction;

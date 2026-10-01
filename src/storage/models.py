@@ -176,7 +176,7 @@ class PropertySearchTask(Base, TimestampMixin):
     last_seen_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime())
 
 
-class FapaiSeedScanJob(Base, TimestampMixin):
+class CollectionSeedScanJob(Base, TimestampMixin):
     __tablename__ = "fapai_seed_scan_job"
 
     job_key: Mapped[str] = mapped_column(String(192), primary_key=True)
@@ -191,7 +191,7 @@ class FapaiSeedScanJob(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
 
 
-class FapaiSeedScanProgress(Base, TimestampMixin):
+class CollectionSeedScanProgress(Base, TimestampMixin):
     __tablename__ = "fapai_seed_scan_progress"
 
     progress_key: Mapped[str] = mapped_column(String(256), primary_key=True)
@@ -221,7 +221,7 @@ class FapaiSeedScanProgress(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint("job_key", "sort_key", name="uq_fapai_seed_scan_progress_job_sort"),)
 
 
-class FapaiSeedItem(Base, TimestampMixin):
+class CollectionSeedItem(Base, TimestampMixin):
     __tablename__ = "fapai_seed_item"
     __table_args__ = (Index("ix_fapai_seed_item_status_first_seen", "status", "first_seen_at"),)
 
@@ -245,7 +245,7 @@ class FapaiSeedItem(Base, TimestampMixin):
     selected_json_path: Mapped[str | None] = mapped_column(Text)
 
 
-class FapaiAnalysisRun(Base, TimestampMixin):
+class CollectionAnalysisRun(Base, TimestampMixin):
     __tablename__ = "fapai_analysis_run"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -277,7 +277,7 @@ class FapaiAnalysisRun(Base, TimestampMixin):
     )
 
 
-class FapaiSeedOccurrence(Base):
+class CollectionSeedOccurrence(Base):
     __tablename__ = "fapai_seed_occurrence"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -353,3 +353,12 @@ class ManualReviewReceiptOperation(Base):
     deleted: Mapped[bool | None] = mapped_column(Boolean)
     resolution_notes: Mapped[str | None] = mapped_column(Text)
     requested_at: Mapped[datetime] = mapped_column(UtcNaiveDateTime(), nullable=False, index=True, server_default=func.now())
+
+
+# Public import compatibility only. Tables, indexes, FKs and stored rows keep their
+# historical names; canonical Python classes describe the source-neutral engine.
+FapaiSeedScanJob = CollectionSeedScanJob
+FapaiSeedScanProgress = CollectionSeedScanProgress
+FapaiSeedItem = CollectionSeedItem
+FapaiAnalysisRun = CollectionAnalysisRun
+FapaiSeedOccurrence = CollectionSeedOccurrence

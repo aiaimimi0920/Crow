@@ -1,5 +1,9 @@
 # 商品分析动态模型池
 
+> Data-root compatibility: `CrowData` is the new-install default. Existing populated
+> `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
+> See [the compatibility guide](crow-data-root-compatibility.md).
+
 此功能只服务于采集引擎中的商品资料清洗/AI 归档，不代表 Crow 的独立数据分析、预测引擎已完成。
 
 ## 工作方式
@@ -38,7 +42,7 @@
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` | 沿用设置界面的 AI 地址与凭据 |
 | `OPENAI_MODEL` / `OPENAI_MODEL_CANDIDATES` | 发现时优先尝试的显式非 GPT 路由；启用动态池后不再是唯一可用路由 |
 | `FAPAI_ANALYSIS_MODEL_POOL_ENABLED` | `1` 启用；PC2 analysis Compose 模板默认启用，普通本地调用默认关闭 |
-| `FAPAI_ANALYSIS_MODEL_POOL_PATH` | PC2 为 `/data/datas/model-pool/pool.sqlite3`；未指定时使用项目 `FPFData/model-pool/pool.sqlite3` |
+| `FAPAI_ANALYSIS_MODEL_POOL_PATH` | PC2 为 `/data/datas/model-pool/pool.sqlite3`；未指定时使用项目 `CrowData/model-pool/pool.sqlite3` |
 
 修改服务地址、密钥、推理参数或超时配置会自动使用新的资格命名空间，旧请求条件的结果不能为新配置背书。密码不写入资格文件；命名空间使用上述条件及用例版本的摘要。旧资格记录保留，不迁移或删除业务 PostgreSQL 数据。
 

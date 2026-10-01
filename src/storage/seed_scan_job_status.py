@@ -7,11 +7,11 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import FapaiSeedScanJob, FapaiSeedScanProgress
+from .models import CollectionSeedScanJob, CollectionSeedScanProgress
 
 
 def apply_job_status(
-    session: Session, job: FapaiSeedScanJob, statuses: set[str], now: datetime
+    session: Session, job: CollectionSeedScanJob, statuses: set[str], now: datetime
 ) -> None:
     if statuses and statuses.issubset({"exhausted"}):
         job.status = "completed"
@@ -36,12 +36,12 @@ def refresh_job_statuses(
     if not keys:
         return
     jobs = session.scalars(
-        select(FapaiSeedScanJob).where(FapaiSeedScanJob.job_key.in_(keys))
+        select(CollectionSeedScanJob).where(CollectionSeedScanJob.job_key.in_(keys))
     ).all()
     statuses: dict[str, set[str]] = defaultdict(set)
     for job_key, status in session.execute(
-        select(FapaiSeedScanProgress.job_key, FapaiSeedScanProgress.status)
-        .where(FapaiSeedScanProgress.job_key.in_(keys))
+        select(CollectionSeedScanProgress.job_key, CollectionSeedScanProgress.status)
+        .where(CollectionSeedScanProgress.job_key.in_(keys))
         .distinct()
     ):
         statuses[job_key].add(status)
