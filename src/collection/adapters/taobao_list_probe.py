@@ -13,6 +13,10 @@ import requests
 
 from src.cdp_cookie_transport import DEFAULT_USER_AGENT
 from src.collection.adapters.taobao_health import redact_taobao_sensitive_text
+from src.collection.adapters.taobao_solver_target import (
+    _is_taobao_login_target,
+    _split_web_target_url,
+)
 
 DEFAULT_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
 DEFAULT_NAVIGATION_ACCEPT = (
@@ -105,7 +109,7 @@ def extract_list_payload(html: str) -> object:
 
 
 def _looks_like_login_page(text: str, final_url: str) -> bool:
-    if "login.taobao.com" in final_url:
+    if _is_taobao_login_target(_split_web_target_url(final_url)):
         return True
     strong_markers = ("扫码登录", "账户登录", "密码登录", "短信登录", "忘记密码")
     return any(marker in text for marker in strong_markers)

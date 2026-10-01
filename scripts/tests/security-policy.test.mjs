@@ -49,6 +49,9 @@ test("CodeQL covers every code ecosystem with explicit no-build analysis", () =>
   assert.match(text, /queries: security-extended/);
   assert.match(text, /security-events: write/);
   assert.match(text, /branches: \[master\]/);
+  assert.match(text, /output: codeql-results/);
+  assert.match(text, /run: python3 scripts\/summarize_codeql_results\.py codeql-results/);
+  assert.doesNotMatch(text, /upload:\s*never|skip-queries:\s*true/);
 });
 
 test("Dependabot covers both npm apps, Rust, Python and CI actions", () => {
