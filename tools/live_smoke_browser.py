@@ -54,6 +54,7 @@ def _reuse_existing_taobao_challenge_page(
     cdp_endpoint: str,
 ) -> tuple[str, str] | None:
     """Reuse an obvious Taobao challenge tab before opening another target."""
+    from src.collection.adapters.taobao_auth_target import DETAIL_PATHS
     from tools import taobao_login_health
 
     try:
@@ -66,6 +67,9 @@ def _reuse_existing_taobao_challenge_page(
         target_url = str(target.get("url") or "")
         parsed = urlparse(target_url)
         host = (parsed.hostname or "").lower()
+        # Detail challenges belong to a separate scope, not the seed pause gate.
+        if host in DETAIL_PATHS:
+            continue
         obvious_challenge = _is_taobao_challenge_target_url(target_url)
         is_taobao_list = host == "sf.taobao.com" and "/list/" in (parsed.path or "")
         if not obvious_challenge and not is_taobao_list:

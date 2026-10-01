@@ -8,10 +8,10 @@ from pathlib import Path
 from tools import run_isolated_collection_api
 
 
-def test_build_runtime_config_defaults_to_safe_isolated_flags(monkeypatch):
+def test_build_runtime_config_defaults_to_safe_isolated_flags(monkeypatch, tmp_path):
     monkeypatch.delenv("FAPAI_DATA_ROOT_HOST", raising=False)
     monkeypatch.delenv("CROW_DATA_ROOT_HOST", raising=False)
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = tmp_path
 
     config = run_isolated_collection_api.build_runtime_config(repo_root, port=8011)
 

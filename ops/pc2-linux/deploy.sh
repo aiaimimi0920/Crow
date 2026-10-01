@@ -161,6 +161,36 @@ check_capacity() {
   done
 }
 
+browser_apparmor_name() {
+  printf 'crow-browser-sandbox-%s' "$(sha256sum "$1/ops/pc2-linux/crow-browser.apparmor" | cut -c1-12)"
+}
+
+prepare_browser_security() {
+  local target_release="$1"
+  local profile="$target_release/ops/pc2-linux/crow-browser.apparmor"
+  local name generated installed
+  name="$(browser_apparmor_name "$target_release")"
+  generated="$target_release/crow-browser.apparmor.generated"
+  installed="/etc/apparmor.d/$name"
+  [[ "$(uname -m)" == "x86_64" ]] || {
+    echo "The Crow browser seccomp policy requires an amd64 PC2 host." >&2
+    return 1
+  }
+  python3 "$target_release/tools/pc2_browser_security.py" \
+    --output "$target_release/ops/pc2-linux/seccomp-browser.json"
+  sed "s/crow-browser-sandbox/$name/g" "$profile" >"$generated"
+  sudo -n apparmor_parser -Q "$generated"
+  if [[ -f "$installed" ]]; then
+    sudo -n cmp -s "$generated" "$installed" || {
+      echo "Existing content-addressed AppArmor policy differs; refusing overwrite." >&2
+      return 1
+    }
+  else
+    sudo -n install -m 0644 "$generated" "$installed"
+  fi
+  sudo -n apparmor_parser -r "$installed"
+}
+
 prepare_host_display_access() {
   local display_mode host_display display_number display_socket runtime_dir host_xauthority host_user
   display_mode="$(sed -n 's/^FAPAI_BROWSER_DISPLAY_MODE=//p' "$runtime_env" | tail -n 1)"
@@ -268,8 +298,14 @@ validate_release_tree() {
   [[ -f "$target_release/tools/pc2_linux_healthcheck.py" ]]
   [[ -f "$target_release/requirements.lock" ]]
   [[ -f "$target_release/ops/pc2-linux/process-supervisor.sh" ]]
-  [[ -f "$target_release/scripts/project-environment.sh" ]]
-  bash -n "$target_release/scripts/project-environment.sh"
+  if [[ -f "$target_release/scripts/project-environment.sh" ]]; then
+    bash -n "$target_release/scripts/project-environment.sh"
+  elif grep -q 'project-environment\.sh' \
+    "$target_release/ops/pc2-linux/process-supervisor.sh" \
+    "$target_release/ops/pc2-linux/start-browser-solver.sh"; then
+    echo "Release requires missing project-environment.sh helper." >&2
+    return 1
+  fi
   bash -n "$target_release/ops/pc2-linux/process-supervisor.sh"
   bash -n "$target_release/ops/pc2-linux/start-browser-solver.sh"
   compose_for "$target_release" config --quiet
@@ -286,6 +322,8 @@ write_release_metadata() {
   cat >"$target_release/.release.env" <<EOF
 FAPAI_IMAGE=$app_image
 FAPAI_BROWSER_IMAGE=$browser_image
+FAPAI_BROWSER_SECCOMP_PROFILE=$target_release/ops/pc2-linux/seccomp-browser.json
+FAPAI_BROWSER_APPARMOR_PROFILE=$(browser_apparmor_name "$target_release")
 EOF
   cat >"$target_release/release-manifest.txt" <<EOF
 release_id=$release_id
@@ -410,6 +448,7 @@ deploy_release() {
   fi
   write_release_metadata "$release_dir" "$app_image" "$browser_image"
   validate_release_tree "$release_dir"
+  prepare_browser_security "$release_dir"
   prepare_host_display_access
 
   if (( browser_only )); then
