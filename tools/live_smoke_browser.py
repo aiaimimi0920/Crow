@@ -52,8 +52,11 @@ def _reuse_existing_taobao_login_page(
 
 def _reuse_existing_taobao_challenge_page(
     cdp_endpoint: str,
+    *,
+    target_url: str | None = None,
 ) -> tuple[str, str] | None:
     """Reuse an obvious Taobao challenge tab before opening another target."""
+    from src.collection.adapters.taobao_auth_target import DETAIL_PATHS
     from tools import taobao_login_health
 
     try:
@@ -63,18 +66,31 @@ def _reuse_existing_taobao_challenge_page(
     for target in targets:
         if not isinstance(target, dict) or str(target.get("type") or "").lower() != "page":
             continue
-        target_url = str(target.get("url") or "")
-        parsed = urlparse(target_url)
+        page_url = str(target.get("url") or "")
+        parsed = urlparse(page_url)
         host = (parsed.hostname or "").lower()
-        obvious_challenge = _is_taobao_challenge_target_url(target_url)
+        # Detail challenges belong to a separate scope, not the seed pause gate.
+        if host in DETAIL_PATHS:
+            continue
+        obvious_challenge = _is_taobao_challenge_target_url(page_url)
         is_taobao_list = host == "sf.taobao.com" and "/list/" in (parsed.path or "")
         if not obvious_challenge and not is_taobao_list:
+            continue
+        if (
+            is_taobao_list
+            and target_url
+            and _normalize_browser_match_url(page_url)
+            != _normalize_browser_match_url(target_url)
+        ):
+            # An old regional challenge is not the page this worker claimed.
+            # Preserve it for its owner, but do not recycle it forever as the
+            # current job's evidence while the solver targets another URL.
             continue
         try:
             html, final_url = _read_cdp_list_target_html(cdp_endpoint, target)
         except Exception:
             if obvious_challenge:
-                return "", target_url
+                return "", page_url
             continue
         if is_challenge_page(html, final_url):
             return html, final_url
@@ -230,7 +246,9 @@ def fetch_browser_navigation_list_page(cdp_endpoint: str, target_url: str) -> tu
         existing_login_page = _reuse_existing_taobao_login_page(cdp_endpoint)
         if existing_login_page is not None:
             return existing_login_page
-        existing_challenge_page = _reuse_existing_taobao_challenge_page(cdp_endpoint)
+        existing_challenge_page = _reuse_existing_taobao_challenge_page(
+            cdp_endpoint, target_url=target_url
+        )
         if existing_challenge_page is not None:
             return existing_challenge_page
         taobao_login_health.compact_cdp_pages_if_needed(cdp_endpoint, reserve_for_new_page=True)

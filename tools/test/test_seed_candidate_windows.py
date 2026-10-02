@@ -78,6 +78,63 @@ def test_first_claim_materializes_one_window_not_whole_queue(queue, parallel):
 
 
 @pytest.mark.parametrize("parallel", [False, True])
+def test_candidate_window_only_loads_complete_models_for_locked_claim(queue, parallel):
+    populate(queue, CANDIDATE_BATCH_SIZE * 2 + 1)
+    loaded = []
+    queries = []
+
+    def on_load(session, instance):
+        if isinstance(instance, (FapaiSeedScanJob, FapaiSeedScanProgress)):
+            loaded.append(instance)
+
+    def on_query(conn, cursor, statement, parameters, context, executemany):
+        if "JOIN fapai_seed_scan_job" in statement:
+            queries.append(statement)
+
+    event.listen(queue.session_factory, "loaded_as_persistent", on_load)
+    event.listen(queue.engine, "before_cursor_execute", on_query)
+    try:
+        claim = queue.claim_seed_scan_page("worker", parallel_sorts=parallel)
+    finally:
+        event.remove(queue.session_factory, "loaded_as_persistent", on_load)
+        event.remove(queue.engine, "before_cursor_execute", on_query)
+    assert claim["job_key"] == "job-00000"
+    assert len(loaded) == 2
+    assert queries
+    for statement in queries:
+        projection = statement.split("FROM", 1)[0]
+        assert "last_fetch_url" not in projection
+        assert "last_error" not in projection
+        assert "source_url_template" not in projection
+
+
+def test_breadth_first_covers_shallow_work_without_discarding_deep_history(queue):
+    populate(queue, 2)
+    with queue.session_factory.begin() as session:
+        session.execute(
+            update(FapaiSeedScanProgress)
+            .where(FapaiSeedScanProgress.job_key == "job-00000")
+            .values(next_page=30)
+        )
+        session.execute(
+            update(FapaiSeedScanProgress)
+            .where(FapaiSeedScanProgress.job_key == "job-00001")
+            .values(next_page=2)
+        )
+    claim = queue.claim_seed_scan_page(
+        "worker", parallel_sorts=True, breadth_first=True
+    )
+    assert (claim["job_key"], claim["page"]) == ("job-00001", 2)
+    queue.complete_seed_scan_page(
+        progress_key=claim["progress_key"], page=2, item_count=0, has_next=False
+    )
+    remaining = queue.claim_seed_scan_page(
+        "worker", parallel_sorts=True, breadth_first=True
+    )
+    assert (remaining["job_key"], remaining["page"]) == ("job-00000", 30)
+
+
+@pytest.mark.parametrize("parallel", [False, True])
 @pytest.mark.parametrize("blocked", ["lease", "cooldown", "exhausted"])
 def test_later_work_not_starved_by_full_unavailable_windows(queue, parallel, blocked):
     count = CANDIDATE_BATCH_SIZE * 4 + 1

@@ -472,7 +472,7 @@ def test_collector_desktop_local_deploy_script_builds_to_temp_and_copies_local_r
 def test_remote_auth_browser_helper_can_use_ssh_key_without_password() -> None:
     script = REPO_ROOT.joinpath("scripts", "open-remote-auth-browser.ps1").read_text(encoding="utf-8")
 
-    assert "FAPAI_REMOTE_AUTH_KEY_PATH" in script
+    assert "Get-CrowEnvironmentValue -Name 'CROW_REMOTE_AUTH_KEY_PATH'" in script
     assert "key_filename" in script
     assert "\"allow_agent\": True" in script
     assert "\"look_for_keys\": True" in script

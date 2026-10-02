@@ -274,11 +274,13 @@ def test_start_does_not_clear_challenges(
     assert calls == ([expected] if expected else [])
 
 
-def test_runtime_root_is_project_local_by_default(monkeypatch):
+def test_runtime_root_is_project_local_by_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(restart, "__file__", str(tmp_path / "src" / "restart.py"))
+    monkeypatch.delenv("CROW_ENGINE_CONTROL_ROOT", raising=False)
     monkeypatch.delenv("FAPAI_ENGINE_CONTROL_ROOT", raising=False)
     monkeypatch.delenv("FAPAI_DATA_ROOT_HOST", raising=False)
     monkeypatch.delenv("CROW_DATA_ROOT_HOST", raising=False)
-    assert restart.runtime_root().name == "CrowData"
+    assert restart.runtime_root() == tmp_path / "CrowData"
 
 
 def test_engine_control_server_entrypoint_delegates_to_native_owner(monkeypatch):

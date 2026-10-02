@@ -9,7 +9,7 @@ def _build_runtime_context(config: DetailWorkerConfig) -> RuntimeContext:
     cookies = export_cookies(config.cdp_endpoint)
     browser_pages = (
         {}
-        if not _env_bool("FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES", True)
+        if not _env_bool("FAPAI_DETAIL_LOAD_OPEN_BROWSER_PAGES", False)
         else load_open_browser_pages(config.cdp_endpoint)
     )
     return build_http(cookies), browser_pages

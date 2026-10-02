@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 class CaptchaOSInputMixin:
     def _os_drag_profiles(self):
         # Keep the historically successful fast profile first. NC has a short
-        # interaction window, and slower multi-second paths were consistently
-        # rejected even when the cursor reached the exact physical endpoint.
+        # interaction window, so preserve movement timing while holding the
+        # final endpoint for a random 1.5-2.5 seconds before release.
         return (
             {
                 "name": "fast_exact_v3",
@@ -34,7 +34,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (0.0, 1.2),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (2, 3),
-                "hold_before_release": (0.08, 0.18),
+                "hold_before_release": (1.5, 2.5),
                 "release_mode": "exact_release",
                 "warmup_px": (1.0, 3.0),
                 "warmup_steps": (1, 2),
@@ -54,7 +54,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (4.0, 8.0),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (3, 5),
-                "hold_before_release": (0.15, 0.3),
+                "hold_before_release": (1.5, 2.5),
                 "release_mode": "exact_release",
                 "warmup_px": (2.0, 5.0),
                 "warmup_steps": (2, 3),
@@ -74,7 +74,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (5.0, 9.0),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (4, 6),
-                "hold_before_release": (0.18, 0.35),
+                "hold_before_release": (1.5, 2.5),
                 "release_mode": "exact_release",
                 "warmup_px": (2.0, 6.0),
                 "warmup_steps": (2, 4),

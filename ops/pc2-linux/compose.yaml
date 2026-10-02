@@ -140,6 +140,8 @@ services:
     shm_size: 1gb
     security_opt:
       - no-new-privileges:true
+      - apparmor=${FAPAI_BROWSER_APPARMOR_PROFILE:-crow-browser-sandbox}
+      - seccomp=${FAPAI_BROWSER_SECCOMP_PROFILE:-./seccomp-browser.json}
     cap_drop:
       - ALL
     group_add:

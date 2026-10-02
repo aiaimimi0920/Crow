@@ -6,19 +6,26 @@ import time
 
 import requests
 
-from src.project_environment import getenv as project_getenv
 from src.llm_analysis_policy import require_non_gpt_analysis_model
 from src.llm_model_selector import LLMBackendUnavailableError
 from src.llm_qualification_cases import CASES, INSTRUCTION, VERSION, exact_match
 from src.llm_qualification_runtime import (
-    QualificationCancelled, check_cancelled, shared_store, wait_for_slot,
+    QualificationCancelled,
+    check_cancelled,
+    shared_store,
+    wait_for_slot,
 )
-from src.llm_qualification_transport import ModelHttpError, ModelRateLimitedError, request_json
+from src.llm_qualification_transport import (
+    ModelHttpError,
+    ModelRateLimitedError,
+    request_json,
+)
+from src.project_environment import getenv as project_getenv
 
 MAX_CANDIDATES = 8
 PROBE_TIMEOUT = 60
 QUALIFICATION_TTL = 86400
-MEDIA = re.compile(r"image|embedding|rerank|(?:^|[-_/])(?:tts|asr|ocr|video|audio)(?:$|[-_/])|flux", re.I)
+MEDIA = re.compile(r"image|embedding|rerank|(?:^|[-_/])(?:tts|asr|ocr|video|audio)(?:$|[-_/])|flux", re.IGNORECASE)
 _REFRESH_LOCK = threading.Lock()
 _REFRESH_THREADS = {}
 
@@ -83,8 +90,8 @@ class QualifiedModelPool:
             self.store.defer_scan(seconds)
 
     def request(self, model, content, *, probe=False, deadline=None):
-        from src.llm_request_policy import MAX_OUTPUT_TOKENS
         from src.llm_evidence_prompt import request_messages
+        from src.llm_request_policy import MAX_OUTPUT_TOKENS
 
         check_cancelled(self.cancel_event)
         if not eligible_model(model):
@@ -186,11 +193,25 @@ class QualifiedModelPool:
                 return []
             records = self.store.snapshot()["models"]
             now = time.time()
-            ordered = [name for name in candidates if name not in records or
-                       records[name]["checked_at"] + (QUALIFICATION_TTL if qualified_score(records[name]) else 900) <= now]
+            ordered = [
+                name for name in candidates if name not in records or (
+                    records[name].get("blocked_until", 0) <= now
+                    and records[name]["checked_at"]
+                    + (QUALIFICATION_TTL if qualified_score(records[name]) else 900) <= now
+                )
+            ]
             # Catalogs can shrink during provider cooldown. Remember IDs, not positions,
             # so changing catalogs cannot repeatedly restart the first eight probes.
-            ordered.sort(key=lambda name: (name in records, records.get(name, {}).get("checked_at", 0)))
+            # Renew explicit and previously qualified routes before exploring aliases;
+            # a large failing catalog must not starve the routes that carried business.
+            preferred = {name: index for index, name in enumerate(self.config.get("models", []))}
+
+            def priority(name):
+                row = records.get(name, {})
+                tier = 0 if name in preferred else 1 if qualified_score(row) else 2
+                return tier, preferred.get(name, 0), name in records, row.get("checked_at", 0)
+
+            ordered.sort(key=priority)
             tested = 0
             for model in ordered[:MAX_CANDIDATES]:
                 check_cancelled(self.cancel_event)

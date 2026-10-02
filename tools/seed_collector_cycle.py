@@ -74,6 +74,8 @@ def run_seed_collector_once(
     if ensure_jobs:
         _ensure_seed_scan_jobs(config, repository)
     policy_kwargs = {"policy": config.seed_scan_policy} if config.seed_scan_policy else {}
+    if config.breadth_first:
+        policy_kwargs["breadth_first"] = True
     task = repository.claim_seed_scan_page(
         config.worker_id,
         lease_seconds=config.lease_seconds,
@@ -162,11 +164,20 @@ def run_seed_collector_once(
                 summary["captcha_solver_report"] = captcha_solver_report
             _write_runtime_summary(config.output_dir, summary)
             return summary
-        if _browser_page_payload_missing_without_challenge(fetch_method, list_summary):
-            _fail_claimed_seed_page(config, repository, task, "browser_list_payload_missing")
+        if (
+            list_summary.get("has_script") is False
+            and list_summary.get("item_count") is None
+        ):
+            # Transport success alone cannot prove an empty source list.
+            missing_reason = (
+                "browser_list_payload_missing"
+                if str(fetch_method).startswith("browser_page")
+                else "list_payload_missing"
+            )
+            _fail_claimed_seed_page(config, repository, task, missing_reason)
             summary = {
                 "decision": "seed_page_retryable_failure",
-                "reason": "browser_list_payload_missing",
+                "reason": missing_reason,
                 "task": task,
                 "list_summary": list_summary,
                 "fetch": {
@@ -245,7 +256,7 @@ def run_seed_collector_once(
             summary["auth_probe"] = auth_probe_summary
         _write_runtime_summary(config.output_dir, summary)
         return summary
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Release the claim and report every per-page failure.
         if not page_completed:
             _fail_claimed_seed_page(config, repository, task, safe_exception_text(exc))
         if isinstance(exc, CdpEndpointUnavailableError):
