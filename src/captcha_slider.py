@@ -446,8 +446,8 @@ class CaptchaSliderMixin:
         if not self._dispatch_mouse("mouseMoved", start_x + distance, target_y, buttons=1):
             return None
 
-        # 7. Hold before release (important!)
-        self._wait_interruptibly(random.uniform(0.9, 2.2))
+        # 7. Sample a fresh 1.5-2.5 second hold at the final endpoint.
+        self._wait_interruptibly(random.uniform(1.5, 2.5))
 
         # 8. Release
         if not self._dispatch_mouse(
