@@ -74,6 +74,8 @@ def run_seed_collector_once(
     if ensure_jobs:
         _ensure_seed_scan_jobs(config, repository)
     policy_kwargs = {"policy": config.seed_scan_policy} if config.seed_scan_policy else {}
+    if config.breadth_first:
+        policy_kwargs["breadth_first"] = True
     task = repository.claim_seed_scan_page(
         config.worker_id,
         lease_seconds=config.lease_seconds,

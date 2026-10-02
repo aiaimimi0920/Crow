@@ -40,10 +40,19 @@ def wait_after_detail_batch(
             status = fetch_json(config.api_base_url.rstrip("/") + "/status", timeout=5)
         except (OSError, ValueError, TimeoutError):
             continue
-        if not isinstance(status, dict) or status.get("paused") is not False:
+        if not isinstance(status, dict):
             continue
         scopes = status.get("collection_scopes")
         detail = scopes.get("detail") if isinstance(scopes, dict) else None
+        seed = scopes.get("seed") if isinstance(scopes, dict) else None
+        # The aggregate pause includes seed-only challenges. A confirmed clear
+        # detail scope must not inherit another stage's 15-minute backoff.
+        if status.get("paused") is not False and not (
+            status.get("paused") is True
+            and isinstance(seed, dict)
+            and seed.get("paused") is True
+        ):
+            continue
         if (
             isinstance(detail, dict)
             and detail.get("paused") is False

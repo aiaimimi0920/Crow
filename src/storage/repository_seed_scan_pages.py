@@ -22,6 +22,7 @@ class RepositorySeedScanPagesMixin:
         failure_cooldown_threshold: int | None = None,
         failure_cooldown_seconds: int | None = None,
         policy: SeedScanPolicy | None = None,
+        breadth_first: bool = False,
     ) -> Optional[Dict[str, Any]]:
         if not self.enabled:
             return None
@@ -54,6 +55,7 @@ class RepositorySeedScanPagesMixin:
                 active_policy,
                 parallel_sorts=parallel_sorts,
                 blocked_job_keys=blocked_job_keys,
+                breadth_first=breadth_first,
             )
             for row, job in ordered:
                 if row.job_key in blocked_job_keys:
@@ -72,6 +74,8 @@ class RepositorySeedScanPagesMixin:
                         blocked_job_keys.add(row.job_key)
                         continue
                     locked_job_keys.add(row.job_key)
+                else:
+                    job = session.get(CollectionSeedScanJob, row.job_key)
                 # Refresh only this candidate; a job can have many configured sorts.
                 row = session.scalars(
                     select(CollectionSeedScanProgress)

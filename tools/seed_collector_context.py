@@ -148,6 +148,7 @@ class SeedCollectorConfig:
     source_url_template: str = ""
     seed_scan_policy: SeedScanPolicy | None = None
     collection_adapter: CollectionAdapter | None = None
+    breadth_first: bool = False
 
     def __post_init__(self) -> None:
         if self.collection_adapter is None:

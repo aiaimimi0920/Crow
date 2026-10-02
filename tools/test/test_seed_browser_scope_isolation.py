@@ -74,3 +74,69 @@ def test_seed_and_unattributed_challenges_still_preserve_authentication(
     monkeypatch.setattr(module, "_read_cdp_list_target_html", lambda *args: page)
 
     assert module._reuse_existing_taobao_challenge_page("http://127.0.0.1:9224") == page
+
+
+@pytest.mark.parametrize("module", [live_batch_smoke, live_smoke_browser])
+@pytest.mark.parametrize(
+    "other_url",
+    [
+        "https://sf.taobao.com/list/50025969__2.htm?location_code=371602&page=1",
+        "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=15",
+        "https://sf.taobao.com/list/200782003__2.htm?location_code=445302&page=1",
+    ],
+)
+def test_seed_navigation_does_not_recycle_another_jobs_challenge(
+    monkeypatch, module, other_url
+):
+    requested = "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=1"
+    foreign = {"id": "old-challenge", "type": "page", "url": other_url}
+    fresh = {
+        "id": "fresh-job",
+        "type": "page",
+        "url": requested,
+        "webSocketDebuggerUrl": "ws://127.0.0.1/devtools/page/fresh-job",
+    }
+    actions = []
+    monkeypatch.setattr(module, "_reuse_existing_taobao_login_page", lambda _: None)
+    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [foreign])
+    monkeypatch.setattr(
+        taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
+    )
+    monkeypatch.setattr(taobao_login_health, "read_cdp_json", lambda *a, **k: fresh)
+
+    def read(_endpoint, target):
+        assert target["id"] == "fresh-job", "an unrelated challenge must not be read"
+        return '<script id="sf-item-list-data">{"data":[]}</script>', requested
+
+    monkeypatch.setattr(module, "_read_cdp_list_target_html", read)
+    monkeypatch.setattr(
+        taobao_login_health,
+        "close_cdp_target",
+        lambda _endpoint, target_id: actions.append(target_id),
+    )
+    html, final_url = module.fetch_browser_navigation_list_page(
+        "http://127.0.0.1:9224", requested
+    )
+    assert "sf-item-list-data" in html
+    assert final_url == requested
+    assert actions == ["fresh-job"]
+
+
+@pytest.mark.parametrize("module", [live_batch_smoke, live_smoke_browser])
+def test_current_job_challenge_is_still_reused_without_navigation(monkeypatch, module):
+    requested = "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=1"
+    redirected = requested.replace(".htm?", ".htm/_____tmd_____/punish?") + "&x5step=1"
+    target = {"id": "current-challenge", "type": "page", "url": redirected}
+    page = ("<html>_____tmd_____/punish challenge</html>", redirected)
+    monkeypatch.setattr(module, "_reuse_existing_taobao_login_page", lambda _: None)
+    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [target])
+    monkeypatch.setattr(module, "_read_cdp_list_target_html", lambda *a: page)
+    monkeypatch.setattr(
+        taobao_login_health,
+        "read_cdp_json",
+        lambda *a, **k: pytest.fail("do not reopen an active matching challenge"),
+    )
+    assert (
+        module.fetch_browser_navigation_list_page("http://127.0.0.1:9224", requested)
+        == page
+    )

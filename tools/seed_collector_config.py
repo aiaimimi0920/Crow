@@ -218,6 +218,12 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[SeedCol
         default=project_getenv("CROW_SEED_PARALLEL_SORTS", "").lower() in {"1", "true", "yes", "on"},
     )
     parser.add_argument(
+        "--breadth-first",
+        action="store_true",
+        default=project_getenv("CROW_SEED_BREADTH_FIRST", "").lower() in {"1", "true", "yes", "on"},
+        help="With parallel sorts, cover shallow pages across regions before deep history.",
+    )
+    parser.add_argument(
         "--solver-enabled",
         "--captcha-solver-enabled",
         action="store_true",
@@ -275,6 +281,7 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[SeedCol
             api_base_url=_clean_text(args.api_base_url),
             seed_jobs=seed_jobs,
             parallel_sorts=bool(args.parallel_sorts),
+            breadth_first=bool(args.breadth_first),
             failure_cooldown_threshold=max(int(args.failure_cooldown_threshold), 0),
             failure_cooldown_seconds=max(int(args.failure_cooldown_seconds), 0),
             source_url_template=_clean_text(args.source_url_template),

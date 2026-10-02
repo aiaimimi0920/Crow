@@ -15,6 +15,7 @@ def run_seed_collector_loop(
     progress_emit_func: SeedProgressEmitFunc | None = None,
 ) -> dict[str, Any]:
     from tools.worker_lifecycle import checkpoint, wait
+    from tools.seed_collector_wait import wait_after_seed_run
 
     if runtime_context_factory is None:
         if http_session is None:
@@ -195,7 +196,7 @@ def run_seed_collector_loop(
                 "counts": run_event.get("counts"),
             }
         )
-        wait(sleep_seconds)
+        wait_after_seed_run(config, run_results, sleep_seconds)
     summary = {
         "decision": "seed_collector_loop_finished",
         "runs": runs,

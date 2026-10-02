@@ -1,6 +1,7 @@
 """Bounded, ordered candidate reads for seed-page claims."""
 
 from collections.abc import Iterator
+from typing import NamedTuple
 
 from sqlalchemy import case, func, select, tuple_
 from sqlalchemy.orm import Session
@@ -13,13 +14,24 @@ from .models import CollectionSeedScanJob, CollectionSeedScanProgress
 CANDIDATE_BATCH_SIZE = 128
 
 
+class SeedPageCandidate(NamedTuple):
+    progress_key: str
+    job_key: str
+
+
+class SeedJobCandidate(NamedTuple):
+    job_key: str
+    metadata_json: dict | None
+
+
 def seed_scan_candidates(
     session: Session,
     policy: SeedScanPolicy,
     *,
     parallel_sorts: bool,
     blocked_job_keys: set[str],
-) -> Iterator[tuple[CollectionSeedScanProgress, CollectionSeedScanJob]]:
+    breadth_first: bool = False,
+) -> Iterator[tuple[SeedPageCandidate, SeedJobCandidate]]:
     job, progress = CollectionSeedScanJob, CollectionSeedScanProgress
     categories = session.scalars(select(job.category).distinct()).all()
     if not categories:
@@ -63,8 +75,13 @@ def seed_scan_candidates(
             progress.next_page,
             progress.progress_key,
         )
+    if parallel_sorts and breadth_first:
+        # Cover shallow pages across regions before repeatedly scanning a deep
+        # historical tail. Existing per-region order remains the default.
+        order = (progress.next_page, *order)
     query = (
-        select(progress, job, *order)
+        # Only the eventually locked page/job need their complete payloads.
+        select(progress.progress_key, progress.job_key, job.metadata_json, *order)
         .join(job, progress.job_key == job.job_key)
         .where(progress.status.in_(("pending", "in_progress")))
         .order_by(*order)
@@ -79,9 +96,10 @@ def seed_scan_candidates(
         rows = session.execute(window).all()
         if not rows:
             return
-        cursor = tuple(rows[-1][2:])
+        cursor = tuple(rows[-1][3:])
         for row in rows:
-            page, owner = row[0], row[1]
+            page = SeedPageCandidate(row[0], row[1])
+            owner = SeedJobCandidate(row[1], row[2])
             if owner.job_key in blocked_job_keys:
                 continue
             if not policy.owns_job(owner.job_key, owner.metadata_json):
