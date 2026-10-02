@@ -21,7 +21,7 @@ class SeedPageCandidate(NamedTuple):
 
 class SeedJobCandidate(NamedTuple):
     job_key: str
-    metadata_json: dict | None
+    metadata_json: dict[str, object] | None
 
 
 def seed_scan_candidates(
