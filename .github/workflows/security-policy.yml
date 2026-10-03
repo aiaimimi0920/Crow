@@ -2,10 +2,16 @@ name: Security Policy
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, production, 'release/**']
+    tags: ['v*']
   schedule:
     - cron: '45 18 * * 0'
   workflow_dispatch:
+    inputs:
+      enforce:
+        description: Fail on findings for release validation
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -24,6 +30,8 @@ jobs:
         with:
           node-version: '24'
       - run: node --test scripts/tests/security-policy.test.mjs scripts/tests/game-entry.test.mjs
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_security_scan_results.py'
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_static_result_parsers.py'
       - run: git diff --check
   secrets:
     name: Scan tracked files for secrets
@@ -33,4 +41,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: bash scripts/scan-secrets.sh
+      - name: Scan and report redacted secret inventory
+        env:
+          GITLEAKS_REPORT_PATH: .security-results/secrets.json
+        run: bash scripts/scan-secrets.sh advisory
+      - name: Preserve secret finding inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Secret finding inventory
+          path: .security-results/secrets.json
+          retention-days: 5
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Enforce release secret gate
+        if: ${{ startsWith(github.base_ref, 'release/') || github.base_ref == 'production' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/production' || (github.event_name == 'workflow_dispatch' && inputs.enforce) }}
+        run: python3 scripts/report_secret_scan.py --enforce .security-results/secrets.json
