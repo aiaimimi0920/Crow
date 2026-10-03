@@ -79,13 +79,24 @@ test("CodeQL covers every code ecosystem with explicit no-build analysis", () =>
   assert.doesNotMatch(text, /upload:\s*never|skip-queries:\s*true/);
 });
 
-test("Dependabot covers both npm apps, Rust, Python and CI actions", () => {
+test("Dependabot covers both npm apps, Rust, Python, CI actions and Docker", () => {
   const text = read(".github/dependabot.yml");
-  for (const ecosystem of ["github-actions", "pip", "npm", "cargo"])
+  for (const ecosystem of ["github-actions", "pip", "npm", "cargo", "docker"])
     assert.match(text, new RegExp(`package-ecosystem: ${ecosystem}\\n`));
   for (const directory of ["/collector-desktop", "/game/web-app", "/collector-desktop/src-tauri"])
     assert.ok(text.includes(directory), directory);
   assert.doesNotMatch(text, /ignore:\s*\n/);
+});
+
+test("Docker updates cover the root with a bounded weekly schedule and cooldown", () => {
+  const entries = read(".github/dependabot.yml").split(/(?=^  - package-ecosystem:)/m);
+  const docker = entries.filter((entry) => /^  - package-ecosystem: docker\n/.test(entry));
+  assert.equal(docker.length, 1);
+  assert.match(docker[0], /^    directory: \/$/m);
+  assert.match(docker[0], /^    schedule:\n      interval: weekly$/m);
+  assert.match(docker[0], /^    open-pull-requests-limit: 2$/m);
+  assert.match(docker[0], /^    cooldown:\n      default-days: 7$/m);
+  assert.doesNotMatch(docker[0], /semver-(?:major|minor|patch)-days:/);
 });
 
 test("secret scanning verifies its binary and never prints raw findings", () => {
