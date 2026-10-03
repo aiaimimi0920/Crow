@@ -46,7 +46,7 @@ def test_collect_list_union_stops_remaining_pages_after_fetch_error(monkeypatch)
     )
 
     assert len(fetched_urls) == 2
-    assert result["list_union"]["sources"][1]["error"] == "RuntimeError('browser challenge timeout')"
+    assert result["list_union"]["sources"][1]["error"] == "RuntimeError: runtime_error"
     assert result["list_union"]["sources"][2]["skipped"] is True
     assert result["list_union"]["sources"][3]["skipped"] is True
 

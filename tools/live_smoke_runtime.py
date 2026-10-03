@@ -244,7 +244,7 @@ def run_live_smoke(config: LiveSmokeConfig) -> int:
                 save_resume_state(resume_state_path, resume_state)
         except Exception as exc:
             is_challenge = isinstance(exc, DetailChallengeError)
-            errors.append({"item_id": seed_id, "error": repr(exc), "traceback": traceback.format_exc()})
+            errors.append({"item_id": seed_id, "error": safe_exception_text(exc), "traceback": safe_exception_traceback(exc)})
             write_json(config.output_dir / f"{seed_id}.error.json", errors[-1])
             if config.resume_enabled:
                 mark_resume_item(
@@ -260,11 +260,11 @@ def run_live_smoke(config: LiveSmokeConfig) -> int:
                         "list_category": seed.get("list_category"),
                         "list_st_param": seed.get("list_st_param"),
                         "list_page": seed.get("list_page"),
-                        "error": repr(exc),
+                        "error": safe_exception_text(exc),
                     },
                 )
                 save_resume_state(resume_state_path, resume_state)
-            print(f"[SMOKE][ERROR] item={seed_id}: {exc}")
+            print(f"[SMOKE][ERROR] item={seed_id}: {safe_exception_text(exc)}")
             if is_challenge:
                 challenge_break = {
                     "item_id": seed_id,
@@ -349,8 +349,8 @@ def run_loop(
             exit_codes.append(1)
             error = {
                 "run": run_count,
-                "error": repr(exc),
-                "traceback": traceback.format_exc(),
+                "error": safe_exception_text(exc),
+                "traceback": safe_exception_traceback(exc),
                 "timestamp": utc_now_iso(),
             }
             errors.append(error)

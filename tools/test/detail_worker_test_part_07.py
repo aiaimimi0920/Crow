@@ -50,7 +50,7 @@ def test_run_detail_worker_loop_retries_after_runtime_context_refresh_failure(tm
     ]
     assert events[0]["run"] == 1
     assert events[0]["decision"] == "detail_runtime_refresh_failed"
-    assert "cdp unavailable" in events[0]["error"]
+    assert events[0]["error"] == "RuntimeError: runtime_error"
     assert summary["runs"] == 2
     assert summary["last_decision"] == "detail_worker_batch_finished"
 
@@ -107,6 +107,6 @@ def test_run_detail_worker_loop_reuses_last_runtime_context_after_later_refresh_
         "detail_worker_batch",
     ]
     assert events[2]["run"] == 2
-    assert "cdp refresh timed out" in events[2]["error"]
+    assert events[2]["error"] == "RuntimeError: runtime_error"
     assert summary["runs"] == 2
     assert summary["last_decision"] == "detail_worker_batch_finished"

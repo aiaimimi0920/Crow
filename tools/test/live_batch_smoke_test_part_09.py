@@ -70,14 +70,14 @@ def test_run_live_smoke_marks_failed_item_in_resume_state_and_summary_error(tmp_
     assert summary["processed_items"] == 0
     assert summary["error_count"] == 1
     assert summary["errors"][0]["item_id"] == "failed-item"
-    assert "detail pipeline exploded" in summary["errors"][0]["error"]
+    assert summary["errors"][0]["error"] == "RuntimeError: runtime_error"
     error_payload = live_batch_smoke.load_json(tmp_path / "failed-item.error.json")
     assert error_payload["item_id"] == "failed-item"
-    assert "detail pipeline exploded" in error_payload["error"]
+    assert error_payload["error"] == "RuntimeError: runtime_error"
     resume_state = live_batch_smoke.load_resume_state(resume_state_path)
     assert resume_state["items"]["failed-item"]["status"] == "failed"
     assert resume_state["items"]["failed-item"]["attempts"] == 1
-    assert "detail pipeline exploded" in resume_state["items"]["failed-item"]["error"]
+    assert resume_state["items"]["failed-item"]["error"] == "RuntimeError: runtime_error"
 
 def test_run_live_smoke_stops_after_target_success_without_processing_remaining_candidates(
     tmp_path: Path, monkeypatch
@@ -392,4 +392,4 @@ def test_run_loop_keeps_process_alive_after_transient_batch_error(tmp_path: Path
     assert summary["exit_codes"] == [1, 0]
     assert summary["ok"] is False
     assert len(summary["errors"]) == 1
-    assert summary["errors"][0]["error"] == "RuntimeError('cdp temporarily unavailable')"
+    assert summary["errors"][0]["error"] == "RuntimeError: runtime_error"

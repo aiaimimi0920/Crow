@@ -147,10 +147,10 @@ def run_detail_worker_once(
                 else:
                     captcha_solver_report = _report_captcha_solver(*report_args, manual_only=True)
             except Exception as solver_exc:
-                captcha_solver_report = {"status": "report_failed", "error": repr(solver_exc)}
+                captcha_solver_report = {"status": "report_failed", "error": safe_exception_text(solver_exc)}
         repository.mark_seed_detail_failed(
             item_id,
-            repr(exc),
+            safe_exception_text(exc),
             retryable=True,
             revert_attempt=preserve_retry_budget,
             restore_pending=preserve_retry_budget,
@@ -172,8 +172,8 @@ def run_detail_worker_once(
                 else "exception"
             ),
             "item_id": item_id,
-            "error": repr(exc),
-            "traceback": traceback.format_exc(),
+            "error": safe_exception_text(exc),
+            "traceback": safe_exception_traceback(exc),
             "counts": repository.seed_queue_counts(),
         }
         if pause_override:
@@ -257,9 +257,10 @@ def run_detail_analysis_once(
             receipt=_load_analysis_module_b_latest(config.output_dir, item_id),
         )
         if _is_llm_backend_unavailable_error(exc):
+            backend_error = "LLM backend unavailable; " + safe_exception_text(exc)
             repository.mark_seed_detail_analysis_failed(
                 item_id,
-                repr(exc),
+                backend_error,
                 retryable=True,
                 revert_attempt=True,
                 restore_raw=True,
@@ -267,18 +268,18 @@ def run_detail_analysis_once(
             summary = {
                 "decision": "detail_analysis_backend_unavailable",
                 "item_id": item_id,
-                "error": repr(exc),
-                "traceback": traceback.format_exc(),
+                "error": backend_error,
+                "traceback": safe_exception_traceback(exc),
                 "counts": repository.seed_queue_counts(),
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
-        repository.mark_seed_detail_analysis_failed(item_id, repr(exc), retryable=True)
+        repository.mark_seed_detail_analysis_failed(item_id, safe_exception_text(exc), retryable=True)
         summary = {
             "decision": "detail_analysis_retryable_failure",
             "item_id": item_id,
-            "error": repr(exc),
-            "traceback": traceback.format_exc(),
+            "error": safe_exception_text(exc),
+            "traceback": safe_exception_traceback(exc),
             "counts": repository.seed_queue_counts(),
         }
         _write_runtime_summary(config.output_dir, summary)

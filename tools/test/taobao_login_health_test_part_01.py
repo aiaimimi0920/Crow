@@ -120,7 +120,7 @@ def test_report_captcha_via_api_returns_request_failed_on_transport_error(monkey
     )
 
     assert result["status"] == "request_failed"
-    assert "connection reset by peer" in str(result["error"])
+    assert result["error"] == "OSError: io_error"
 
 def test_report_captcha_via_api_normalizes_non_mapping_response(monkeypatch) -> None:
     monkeypatch.setattr(

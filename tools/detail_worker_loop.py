@@ -172,7 +172,7 @@ def run_detail_worker_loop(
                     "event": "detail_worker_runtime_refresh_reused_last_context",
                     "run": runs,
                     "decision": "detail_runtime_refresh_reused_last_context",
-                    "error": repr(exc),
+                    "error": safe_exception_text(exc),
                     "counts": repository.seed_queue_counts(),
                 }
                 emit_progress(reuse_event)
@@ -182,7 +182,7 @@ def run_detail_worker_loop(
                     "event": "detail_worker_runtime_refresh_failed",
                     "run": runs,
                     "decision": "detail_runtime_refresh_failed",
-                    "error": repr(exc),
+                    "error": safe_exception_text(exc),
                     "counts": repository.seed_queue_counts(),
                 }
                 emit_progress(failure_event)

@@ -45,6 +45,7 @@ from src.collection.pacing import jittered_delay_seconds
 from src.collection.runtime_adapter import resolve_record_adapter
 
 from tools.internal_api_http import fetch_json
+from tools.safe_exception_diagnostics import safe_exception_text, safe_exception_traceback
 
 from tools.live_batch_smoke import (
     CdpEndpointUnavailableError,
@@ -136,6 +137,8 @@ __all__ = (
     'jittered_delay_seconds',
     'resolve_record_adapter',
     'fetch_json',
+    'safe_exception_text',
+    'safe_exception_traceback',
     'CdpEndpointUnavailableError',
     'DEFAULT_CDP_ENDPOINT',
     'DEFAULT_OUTPUT_DIR',

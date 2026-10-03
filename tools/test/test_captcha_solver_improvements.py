@@ -55,7 +55,9 @@ def test_drag_timing_improvements():
     source = inspect.getsource(solver._do_drag)
 
     # Check for improved timings
-    assert "0.3, 0.8" in source or "0.9, 2.2" in source, "Should have longer delays"
+    assert "random.uniform(1.5, 2.5)" in source, (
+        "Should use the current endpoint hold range"
+    )
     assert "random.uniform" in source, "Should use randomization"
 
     print("✓ Drag timing includes improvements")

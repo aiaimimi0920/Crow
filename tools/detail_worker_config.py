@@ -46,7 +46,7 @@ def _run_llm_preflight(config: DetailWorkerConfig) -> dict[str, Any] | None:
         except Exception as exc:
             preflight = {
                 "enabled": True,
-                "error": repr(exc),
+                "error": safe_exception_text(exc),
             }
         if preflight is None:
             return None

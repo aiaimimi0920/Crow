@@ -1,16 +1,15 @@
 """Test the real installer payload, never importing helpers from the checkout."""
 
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from tools.test.test_desktop_auth_launcher import launch, result, write_config
-
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,6 +69,29 @@ def test_real_auth_payload_declares_its_lightweight_target_adapter(tmp_path):
     bundle = copy_declared_bundle(tmp_path / "installed bundle")
     assert (bundle / "src/collection/adapters/taobao_auth_target.py").is_file()
     assert (bundle / "src/collection/adapters/taobao_solver_target.py").is_file()
+
+
+def test_real_auth_payload_sanitizes_captcha_transport_error_in_isolation(tmp_path):
+    bundle = copy_declared_bundle(tmp_path / "installed bundle")
+    probe = (
+        "import pathlib, sys\n"
+        "root = pathlib.Path(sys.argv[1]).resolve()\n"
+        "sys.path.insert(0, str(root))\n"
+        "from tools import taobao_login_health as health\n"
+        "def fail(*args, **kwargs): raise OSError('synthetic-private-error')\n"
+        "health.post_json = fail\n"
+        "result = health.report_captcha_via_api('https://api.invalid', 'http://127.0.0.1:9223', 'https://sf.taobao.com/')\n"
+        "assert result == {'status': 'request_failed', 'error': 'OSError: io_error'}\n"
+        "from tools import safe_exception_diagnostics as diagnostic\n"
+        "assert pathlib.Path(diagnostic.__file__).resolve().is_relative_to(root)\n"
+    )
+    process = subprocess.run(
+        [sys.executable, "-I", "-c", probe, str(bundle)],
+        cwd=tmp_path,
+        capture_output=True,
+        timeout=30,
+    )
+    assert process.returncode == 0, process.stderr
 
 
 def test_real_browser_launcher_has_its_dot_sourced_modules_in_the_payload(tmp_path):

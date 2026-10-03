@@ -60,7 +60,7 @@ def compact_cdp_page_targets_if_needed(
         response.raise_for_status()
         targets = response.json()
     except Exception as error:
-        summary["errors"].append(repr(error))
+        summary["errors"].append(safe_exception_text(error))
         return summary
     if not isinstance(targets, list):
         summary["errors"].append("CDP /json/list response is not a list")
@@ -78,7 +78,7 @@ def compact_cdp_page_targets_if_needed(
     try:
         keepalive_target_id = open_cdp_keepalive_target(cdp_endpoint, timeout_seconds=timeout_seconds)
     except Exception as error:
-        summary["errors"].append(f"keepalive: {error!r}")
+        summary["errors"].append(f"keepalive: {safe_exception_text(error)}")
     if keepalive_target_id:
         summary["keepalive_target_id"] = keepalive_target_id
     preserve_target_id = keepalive_target_id or str(page_targets[0].get("id") or "").strip()
@@ -99,7 +99,7 @@ def compact_cdp_page_targets_if_needed(
             close_response.raise_for_status()
             summary["closed"] += 1
         except Exception as error:
-            summary["errors"].append(f"{target_id}: {error!r}")
+            summary["errors"].append(f"{target_id}: {safe_exception_text(error)}")
     return summary
 
 def _cdp_reconnect_attempts() -> int:

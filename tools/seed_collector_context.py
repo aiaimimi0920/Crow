@@ -41,6 +41,7 @@ from src.collection.seed_scan_policy import DEFAULT_SEED_SCAN_POLICY, GenericSee
 from src.collection.runtime_adapter import resolve_record_adapter
 
 from tools.internal_api_http import fetch_json, post_json
+from tools.safe_exception_diagnostics import safe_exception_text, safe_exception_traceback
 
 from tools.live_batch_smoke import (
     CdpEndpointUnavailableError,
@@ -173,6 +174,8 @@ __all__ = (
     'sys',
     'time',
     'traceback',
+    'safe_exception_text',
+    'safe_exception_traceback',
     'dataclass',
     'Path',
     'Any',

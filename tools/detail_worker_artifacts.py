@@ -63,7 +63,7 @@ def _record_analysis_module_b_receipt(
     except Exception as persistence_error:
         print(
             "[ANALYSIS-MODULE-B] unable to persist run receipt "
-            f"for {item_id}: {type(persistence_error).__name__}: {persistence_error}"
+            f"for {item_id}: {safe_exception_text(persistence_error)}"
         )
 
 
@@ -142,7 +142,7 @@ def _archive_raw_detail_if_configured(
             item_id=item_id,
         )
     except Exception as archive_error:
-        print(f"[DETAIL-ARCHIVE] durable archive failed for {item_id}: {archive_error}")
+        print(f"[DETAIL-ARCHIVE] durable archive failed for {item_id}: {safe_exception_text(archive_error)}")
         return ""
 
 
