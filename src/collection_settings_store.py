@@ -1,5 +1,4 @@
 """Single-flight, revisioned settings mailbox; secrets never enter public snapshots."""
-import hashlib
 import hmac
 import json
 import os
@@ -9,6 +8,7 @@ import sqlite3
 import time
 
 from .collection_engine_restart import RestartError, identifier
+from .collection_settings_fingerprint import create_fingerprint, verify_fingerprint
 from .collection_settings_schema import validate, validate_key
 
 
@@ -68,13 +68,16 @@ class SettingsStore:
         request_id = identifier(payload["request_id"])
         config, key = validate(payload["config"]), validate_key(payload["api_key"])
         encoded = json.dumps(config, sort_keys=True, separators=(",", ":"))
-        fingerprint = hashlib.sha256((encoded + "\n" + (key or "")).encode()).hexdigest()
 
         def enqueue(db, now):
             existing = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
             if existing:
-                if existing["fingerprint"] != fingerprint:
+                matches, needs_upgrade = verify_fingerprint(existing["fingerprint"], encoded, key)
+                if not matches:
                     raise RestartError("Request ID is already bound to different settings")
+                if needs_upgrade:
+                    db.execute("UPDATE requests SET fingerprint=? WHERE id=?",
+                               (create_fingerprint(encoded, key), request_id))
                 return {"ok": True, "request": self.public_request(existing)}
             row = db.execute("SELECT * FROM state WHERE id=1").fetchone()
             if not row or not 0 <= now - row["heartbeat"] <= 30:
@@ -83,6 +86,7 @@ class SettingsStore:
                 raise RestartError("Settings changed; reload before applying")
             if db.execute("SELECT 1 FROM requests WHERE status IN ('requested','applying','unknown')").fetchone():
                 raise RestartError("A settings operation is active or unconfirmed; inspect PC2 before continuing")
+            fingerprint = create_fingerprint(encoded, key)
             reference = None
             if key:
                 reference = secrets.token_hex(24)
