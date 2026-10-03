@@ -5,7 +5,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
+const normalizeLineEndings = (text) => text.replace(/\r\n/g, "\n");
+const read = (name) => normalizeLineEndings(fs.readFileSync(path.join(root, name), "utf8"));
 const workflows = fs.readdirSync(path.join(root, ".github/workflows"))
   .filter((name) => /\.ya?ml$/.test(name))
   .map((name) => [name, read(`.github/workflows/${name}`)]);
@@ -13,6 +14,15 @@ const lockfiles = [
   "requirements.lock", "requirements-dev.lock", "collector-desktop/package-lock.json",
   "collector-desktop/src-tauri/Cargo.lock", "game/web-app/package-lock.json",
 ];
+
+test("policy input normalization preserves content for LF and CRLF checkouts", () => {
+  const policy = "permissions:\n  contents: read\nfail-on-vuln: true\n";
+  assert.equal(normalizeLineEndings(policy), policy);
+  assert.equal(normalizeLineEndings(policy.replace(/\n/g, "\r\n")), policy);
+  const unsafe = "fail-on-vuln: false\r\ncontinue-on-error: true\r\n";
+  assert.doesNotMatch(normalizeLineEndings(unsafe), /fail-on-vuln: true/);
+  assert.match(normalizeLineEndings(unsafe), /continue-on-error:\s*true/);
+});
 
 test("workflow actions are immutable and checks do not run privileged PR code", () => {
   for (const [name, text] of workflows) {
