@@ -42,14 +42,20 @@ test("workflow actions are immutable and checks do not run privileged PR code", 
 
 test("OSV explicitly scans all production and development lockfiles and fails closed", () => {
   const text = read(".github/workflows/dependency-security.yml");
-  const scanned = [...text.matchAll(/--lockfile=(?:requirements\.txt:)?\.\/([^\s]+)/g)]
+  const runner = read("scripts/run_osv_scan.py");
+  const scanned = [...runner.matchAll(/--lockfile=(?:requirements\.txt:)?\.\/([^\s"]+)/g)]
     .map((match) => match[1]).sort();
   assert.deepEqual(scanned, [...lockfiles].sort());
   for (const file of lockfiles) assert.ok(fs.statSync(path.join(root, file)).isFile(), file);
-  assert.match(text, /fail-on-vuln: true/);
-  assert.match(text, /upload-sarif: true/);
-  assert.doesNotMatch(text, /--config|--ignore|--experimental/);
-  assert.equal((text.match(/--lockfile=requirements\.txt:/g) || []).length, 2);
+  assert.match(runner, /--fail-on-vuln=true/);
+  assert.match(text, /wait-for-processing: true/);
+  assert.match(text, /run_osv_scan.py enforce/);
+  assert.match(text, /refs\/tags\//);
+  assert.match(text, /if-no-files-found: error/);
+  assert.match(runner, /validate_exit\(status/);
+  assert.match(runner, /validate_exit\(reporter/);
+  assert.doesNotMatch(runner, /--config|--ignore|--experimental/);
+  assert.equal((runner.match(/--lockfile=requirements\.txt:/g) || []).length, 2);
 });
 
 test("game watcher override removes the vulnerable braces dependency chain", () => {
@@ -96,6 +102,22 @@ test("secret scanning verifies its binary and never prints raw findings", () => 
   assert.match(text, /--exit-code=1/);
   assert.match(text, /git -C "\$root" ls-files -z/);
   assert.doesNotMatch(text, /--exit-code=0|\|\| true/);
+});
+
+test("hidden report artifacts are uploaded and desktop type compilation stays functional", () => {
+  for (const [name, text] of workflows) {
+    for (const step of text.split(/\n      - /).filter((part) => part.includes("uses: actions/upload-artifact@"))) {
+      if (step.includes(".security-results/")) {
+        assert.match(step, /include-hidden-files: true/, name);
+        assert.match(step, /if-no-files-found: error/, name);
+      }
+    }
+  }
+  const desktop = read(".github/workflows/ci.yml").split("  desktop:\n")[1].split("  desktop-smoke:\n")[0];
+  assert.match(desktop, /run: npm run typecheck/);
+  assert.match(desktop, /run: npm run build/);
+  const runner = read("scripts/run_osv_scan.py");
+  assert.match(runner, /"--entrypoint", "\/root\/osv-scanner", IMAGE, "scan", "source"/);
 });
 
 test("reviewed secret false positives remain exact values scoped to one detector", () => {

@@ -17,9 +17,28 @@ collector, access PC2/NAS data, or require production credentials.
 - Existing Crow quality suites are preserved; the game gets a clean-checkout
   build gate and tests for its generated local entrypoint
 
-OSV fails on unresolved findings. There are currently no OSV suppressions. A
-successful configuration test is not a clean vulnerability scan. CodeQL and
-Gitleaks do not prove the absence of every security issue.
+Development PRs, master pushes and scheduled scans report security findings
+without failing solely because findings exist. This is not a clean security scan
+or release clearance. All five lockfiles, complete OSV JSON/SARIF, CodeQL alerts
+and redacted Gitleaks finding locations remain available. No suppressions are added.
+
+OSV accepts only the documented finding exit 1 paired with valid complete JSON
+and matching SARIF. Missing, malformed or partial results, unknown exits, scanner
+errors, downloads and uploads still fail. Gitleaks applies the same exit/result
+contract and never publishes Match, Secret, source snippets or raw scanner output.
+
+Release tags (`v*`), production/release branches and default manual dispatches
+retain strict OSV and Gitleaks finding gates after reports upload. For a manual
+development report, explicitly set `enforce` to false. Local `scan-secrets.sh`
+defaults to strict; `advisory` must be explicit. Functional builds and tests are
+unchanged. These workflows do not deploy or authorize production release.
+
+Track OSV and CodeQL findings in GitHub's existing deduplicated code-scanning
+alerts. Each run adds a step summary; the secret inventory artifact retains every
+finding's rule, file, line and stable fingerprint without secret values. Reviewers
+can create a targeted remediation issue from that inventory, checking existing
+issues first. No automatic issue spam, new credentials or issue-write permission
+is introduced.
 
 Repository settings such as dependency alerts, secret scanning, private
 vulnerability reporting, push protection, branch rules, and required checks
@@ -112,4 +131,30 @@ transition or a separately reviewed backport rather than a lockfile-only fix.
 `proc-macro-error` query are empty. Both appear in `--target all` through the
 Linux GTK3 stack. Crow's own Rust source contains no direct `VariantStrIter`
 reference, but this is not proof that framework calls are unreachable on
-Linux. This baseline therefore leaves those findings visible and blocking.
+Linux. These findings remain visible in development reports and blocking in release validation.
+
+## Development static quality reports
+
+All 133 existing Ruff/mypy commands retain their original options and paths in
+scripts/static-checks.json. They run in a separate workflow with complete finding
+locations and rule codes, without source snippets. Desktop oxlint and rustfmt
+findings are also reported independently, as are
+source-size policy findings. Unknown exits, malformed reports and syntax/tool
+errors still fail their own job. Release refs and default manual dispatch enforce
+findings. Functional pytest, Node tests, Rust tests, installers and web builds
+remain unchanged in Crow quality. Native required-check settings are unchanged.
+
+OSV invokes `/root/osv-scanner` directly in the pinned image and probes version
+2.6.0; it does not use the image exit-code redirect wrapper. Results are checked
+by alias group, package/version or commit, lockfile location and SARIF fingerprint,
+with harmless repeated alias rows deduplicated for comparison. Missing distinct
+package/source findings still fail. All report artifact steps explicitly include
+hidden files. Desktop `npm run typecheck` remains a product compilation gate.
+
+Both OSV commands explicitly use `--all-vulns`, retaining uncalled and unimportant
+findings. Scanner exit 1 is required when any vulnerability remains. The pinned
+2.6.0 reporter still uses its `GroupInfo.IsCalled` rule for exit status even with
+that flag: analysis-only uncalled findings legitimately return 0. We validate
+that exact rule from the complete JSON instead of treating reporter 0 as a clean
+scan. Release enforcement still blocks on every retained advisory, including
+uncalled and unimportant ones. No reachability suppression is introduced.
