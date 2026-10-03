@@ -52,6 +52,20 @@ test("OSV explicitly scans all production and development lockfiles and fails cl
   assert.equal((text.match(/--lockfile=requirements\.txt:/g) || []).length, 2);
 });
 
+test("game watcher override removes the vulnerable braces dependency chain", () => {
+  const manifest = JSON.parse(read("game/web-app/package.json"));
+  const { packages } = JSON.parse(read("game/web-app/package-lock.json"));
+  const version = manifest.overrides["@tailwindcss/cli"]["@parcel/watcher"];
+  assert.equal(packages["node_modules/@parcel/watcher"].version, version);
+  for (const [name, dependency] of Object.entries(packages)) {
+    assert.doesNotMatch(name, /\/node_modules\/(?:braces|micromatch)$/);
+    assert.doesNotMatch(name, /^node_modules\/(?:braces|micromatch)$/);
+    if (name.startsWith("node_modules/@parcel/watcher-")) {
+      assert.equal(dependency.version, version, name);
+    }
+  }
+});
+
 test("CodeQL covers every code ecosystem with explicit no-build analysis", () => {
   const text = read(".github/workflows/codeql.yml");
   assert.match(text, /language: \[python, javascript-typescript, rust, actions\]/);

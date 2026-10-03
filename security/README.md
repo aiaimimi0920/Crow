@@ -45,6 +45,19 @@ Use `--upgrade-package NAME` for a reviewed targeted update. Do not use an
 unbounded upgrade merely to clear a vulnerability check. CI installs the
 committed development lock with `--require-hashes`, including on Windows.
 
+## Game CLI watcher dependency
+
+`@tailwindcss/cli 4.3.3` pins `@parcel/watcher 2.5.1`, which brings
+`micromatch -> braces 3.0.3` and
+[GHSA-vfj7-8cjw-p6xm](https://osv.dev/GHSA-vfj7-8cjw-p6xm).
+The game manifest narrowly overrides that CLI's watcher to `2.6.0`, whose
+upstream implementation uses `picomatch` without the vulnerable chain. The
+watcher remains a development dependency; this does not change game data or
+the shipped UI. Keep native watcher packages aligned in the lockfile. Remove
+the override when the CLI itself adopts a reviewed unaffected watcher; do not
+replace it with an OSV exclusion. Reverting the manifest and lockfile together
+restores the previous build tooling, but also restores the advisory.
+
 ## Reviewed Gitleaks false positives
 
 The default `generic-api-key` rule also matches public identifiers containing

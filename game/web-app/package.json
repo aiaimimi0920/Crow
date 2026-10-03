@@ -23,5 +23,10 @@
     "postcss": "^8.5.14",
     "tailwindcss": "^4.1.18",
     "vite": "^8.0.13"
+  },
+  "overrides": {
+    "@tailwindcss/cli": {
+      "@parcel/watcher": "2.6.0"
+    }
   }
 }
