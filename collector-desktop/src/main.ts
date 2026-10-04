@@ -50,6 +50,10 @@ export async function reloadAll(options: RefreshOptions = {}): Promise<void> {
   setAutoRefreshStatus(silent ? "自动刷新中..." : "刷新中...");
   try {
     if (await loadOverview() === false || !current()) return;
+    if (!silent) {
+      await loadRegions({ silent: true });
+      if (!current()) return;
+    }
     await loadItems();
     if (!current()) return;
     state.lastRefreshAt = new Date();
@@ -167,7 +171,6 @@ $("applyApiBase").addEventListener("click", async () => {
   $<HTMLInputElement>("restartToken").value = "";
   resetRuntimeSettings();
   resetAuthChallenge();
-  await loadRegions();
   await reloadAll();
 });
 $("closeDetail").addEventListener("click", () => {
@@ -197,7 +200,6 @@ if (initialConfig.blocked) {
   $("connectionStatus").textContent = CONFIGURATION_ERROR;
   setAutoRefreshStatus("配置冲突，自动请求已暂停");
 } else {
-  await loadRegions();
   await reloadAll();
 }
 setInterval(() => { if (!isConfigurationBlocked()) void reloadAll({ silent: true }); }, AUTO_REFRESH_INTERVAL_MS);

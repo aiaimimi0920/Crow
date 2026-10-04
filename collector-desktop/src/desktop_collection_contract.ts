@@ -12,6 +12,7 @@ export interface CollectionRegion {
   label: string;
   status_label: string;
   completed: boolean;
+  counts?: CollectionRecord;
 }
 
 export interface RegionCity {
@@ -40,6 +41,7 @@ export function collectionRegions(value: unknown): CollectionRegion[] {
     label: String(row.label ?? ""),
     status_label: String(row.status_label ?? ""),
     completed: row.completed === true,
+    counts: object(row.counts),
   }));
 }
 

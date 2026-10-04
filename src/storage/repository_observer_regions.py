@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from .models import (
     CollectionSeedScanJob,
     CollectionSeedScanProgress,
 )
+from .observer_region_counts import region_link_counts
 from .repository_context import _load_taobao_region_override_filter, _utc_now
 from .repository_seed_scan_jobs import SEED_SCAN_MAINTENANCE_BATCH_SIZE
 
@@ -33,7 +34,7 @@ class RepositoryObserverRegionsMixin:
             return [CollectionSeedItem.status == "detail_completed"]
         return [CollectionSeedItem.status.in_(("pending_detail", "in_progress", "detail_failed", "detail_blocked"))]
 
-    def _latest_seed_occurrence_payload(self, session: Session, item_id: str) -> Dict[str, Any] | None:
+    def _latest_seed_occurrence_payload(self, session: Session, item_id: str) -> dict[str, Any] | None:
         occurrence = session.scalars(
             select(CollectionSeedOccurrence)
             .join(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
@@ -102,7 +103,7 @@ class RepositoryObserverRegionsMixin:
             "seen_at": self._fmt_dt(occurrence.seen_at),
         }
 
-    def _seed_item_observer_payload(self, session: Session, row: CollectionSeedItem, occurrences: dict | None = None) -> Dict[str, Any]:
+    def _seed_item_observer_payload(self, session: Session, row: CollectionSeedItem, occurrences: dict | None = None) -> dict[str, Any]:
         return {
             "item_id": row.item_id,
             "source_item_id": row.source_item_id,
@@ -137,7 +138,9 @@ class RepositoryObserverRegionsMixin:
         return f"地区代码 {location_code}"
 
     @staticmethod
-    def _region_stage_status(stage: str, counts: Dict[str, int]) -> tuple[bool, str]:
+    def _region_stage_status(
+        stage: str, counts: dict[str, Any], *, link_status: tuple[bool, str] = (False, "待采集")
+    ) -> tuple[bool, str]:
         if stage == "links":
             total_jobs = int(counts.get("total_jobs", 0) or 0)
             total_progress = int(counts.get("total_progress", 0) or 0)
@@ -164,16 +167,17 @@ class RepositoryObserverRegionsMixin:
         blocked = int(counts.get("blocked", 0) or 0)
         pending = int(counts.get("pending", 0) or 0)
         completed_items = int(counts.get("completed_items", 0) or 0)
-        completed = total_items > 0 and completed_items == total_items and failed == 0 and blocked == 0 and pending == 0
+        links_completed, links_label = link_status
+        completed = links_completed and completed_items == total_items and failed == 0 and blocked == 0 and pending == 0
         if completed:
             return True, "收集完成"
-        if failed or blocked:
+        if failed or blocked or links_label == "存在失败/阻塞":
             return False, "存在失败/阻塞"
         if total_items == 0:
-            return False, "待采集"
+            return False, links_label
         return False, "采集中"
 
-    def collection_observer_regions(self, *, stage: str = "links") -> Dict[str, Any]:
+    def collection_observer_regions(self, *, stage: str = "links") -> dict[str, Any]:
         normalized_stage = (stage or "links").strip().lower()
         if normalized_stage not in {"links", "details", "analysis"}:
             normalized_stage = "links"
@@ -198,45 +202,9 @@ class RepositoryObserverRegionsMixin:
                 )
             ).all()
             taobao_override_codes, taobao_replace_admin_provinces = _load_taobao_region_override_filter()
-            if normalized_stage == "links":
-                job_counts_by_code: dict[str, dict[str, int]] = {}
-                for location_code, status, count_value in session.execute(
-                    select(
-                        CollectionSeedScanJob.location_code,
-                        CollectionSeedScanJob.status,
-                        func.count(CollectionSeedScanJob.job_key),
-                    )
-                    .where(CollectionSeedScanJob.status != "archived")
-                    .group_by(CollectionSeedScanJob.location_code, CollectionSeedScanJob.status)
-                ):
-                    code = str(location_code or "").strip()
-                    if not code:
-                        continue
-                    job_counts_by_code.setdefault(code, {})[str(status)] = int(count_value or 0)
-
-                progress_counts_by_code: dict[str, dict[str, int]] = {}
-                for location_code, status, count_value in session.execute(
-                    select(
-                        CollectionSeedScanJob.location_code,
-                        CollectionSeedScanProgress.status,
-                        func.count(CollectionSeedScanProgress.progress_key),
-                    )
-                    .join(CollectionSeedScanJob, CollectionSeedScanProgress.job_key == CollectionSeedScanJob.job_key)
-                    .where(
-                        CollectionSeedScanJob.status != "archived",
-                        CollectionSeedScanProgress.status != "archived",
-                    )
-                    .group_by(CollectionSeedScanJob.location_code, CollectionSeedScanProgress.status)
-                ):
-                    code = str(location_code or "").strip()
-                    if not code:
-                        continue
-                    progress_counts_by_code.setdefault(code, {})[str(status)] = int(count_value or 0)
-                item_status_counts_by_code: dict[str, dict[str, int]] = {}
-            else:
-                job_counts_by_code = {}
-                progress_counts_by_code = {}
-                item_status_counts_by_code = {}
+            link_counts_by_code = region_link_counts(session)
+            item_status_counts_by_code: dict[str, dict[str, int]] = {}
+            if normalized_stage != "links":
                 for location_code, status, count_value in session.execute(
                     select(
                         CollectionSeedScanJob.location_code,
@@ -252,7 +220,7 @@ class RepositoryObserverRegionsMixin:
                     if not code:
                         continue
                     item_status_counts_by_code.setdefault(code, {})[str(status)] = int(count_value or 0)
-            regions: list[Dict[str, Any]] = []
+            regions: list[dict[str, Any]] = []
             for location_code, province, city, district in region_rows:
                 code = str(location_code or "").strip()
                 if not code:
@@ -263,22 +231,11 @@ class RepositoryObserverRegionsMixin:
                     and code not in taobao_override_codes
                 ):
                     continue
-                counts: Dict[str, int] = {}
+                link_counts = link_counts_by_code.get(code, {})
+                link_status = self._region_stage_status("links", link_counts)
+                counts: dict[str, Any] = {}
                 if normalized_stage == "links":
-                    job_counts = job_counts_by_code.get(code, {})
-                    progress_counts = progress_counts_by_code.get(code, {})
-                    counts = {
-                        "total_jobs": sum(job_counts.values()),
-                        "pending_jobs": job_counts.get("pending", 0),
-                        "in_progress_jobs": job_counts.get("in_progress", 0),
-                        "completed_jobs": job_counts.get("completed", 0),
-                        "blocked_jobs": job_counts.get("blocked", 0),
-                        "total_progress": sum(progress_counts.values()),
-                        "pending_progress": progress_counts.get("pending", 0),
-                        "in_progress_progress": progress_counts.get("in_progress", 0),
-                        "exhausted_progress": progress_counts.get("exhausted", 0),
-                        "blocked_progress": progress_counts.get("blocked", 0),
-                    }
+                    counts = link_counts
                 else:
                     status_counts = item_status_counts_by_code.get(code, {})
                     total_items = sum(status_counts.values())
@@ -305,7 +262,7 @@ class RepositoryObserverRegionsMixin:
                         "blocked": blocked,
                         "by_status": status_counts,
                     }
-                completed, status_label = self._region_stage_status(normalized_stage, counts)
+                completed, status_label = self._region_stage_status(normalized_stage, counts, link_status=link_status)
                 regions.append(
                     {
                         "location_code": code,
@@ -320,7 +277,7 @@ class RepositoryObserverRegionsMixin:
                 )
             return {"ok": True, "stage": normalized_stage, "regions": regions}
 
-    def reset_seed_link_region(self, location_code: str) -> Dict[str, Any]:
+    def reset_seed_link_region(self, location_code: str) -> dict[str, Any]:
         safe_location_code = str(location_code or "").strip()
         if not self.enabled or not safe_location_code:
             return {"ok": False, "location_code": safe_location_code, "error": "location_code is required"}

@@ -4,6 +4,7 @@ import { $, fmt, formatRefreshTime, getJson, postJson, setRegionRefreshStatus, c
 import { escapeHtml as esc } from "./desktop_dom.ts";
 import { errorMessage, object } from "./desktop_value.ts";
 import { collectionRegions, type CollectionRecord, type CollectionRegion, type RefreshOptions, type RegionCity, type RegionProvince } from "./desktop_collection_contract.ts";
+import { regionProgress } from "./desktop_region_progress.ts";
 
 export function itemRegion(item: CollectionRecord): string {
   const payload = object(item.source_payload);
@@ -83,6 +84,9 @@ export function aggregateRegionStatus(regions: CollectionRegion[]) {
   });
   if (hasProblem) {
     return { completed: false, status_label: "存在失败/阻塞", className: "bad" };
+  }
+  if (scopedRegions.every((region) => region.status_label === "待采集")) {
+    return { completed: false, status_label: "待采集", className: "warn" };
   }
   return { completed: false, status_label: "采集中", className: "warn" };
 }
@@ -201,9 +205,10 @@ export function renderDistrictTabs(city: RegionCity | null): void {
       const active = region.location_code === state.selectedLocationCode ? "active" : "";
       const completed = region.completed ? "completed" : "";
       const badgeClass = regionStatusClass(region);
+      const progress = regionProgress(region);
       return `<button class="region-tab district-tab ${active} ${completed}" data-location-code="${esc(region.location_code)}">
         <span>${fmt(region.displayDistrict || region.label || region.location_code)}</span>
-        <span class="region-status ${badgeClass}">${fmt(region.status_label || "采集中")}</span>
+        <span class="region-status ${badgeClass}" title="${esc(progress.hint)}">${fmt(region.status_label || "采集中")}${esc(progress.label)}</span>
       </button>`;
     }),
   ];
