@@ -10,7 +10,7 @@ def test_fetch_browser_navigation_list_page_preserves_challenge_target_for_solve
     }
 
     monkeypatch.setattr(taobao_login_health, "compact_cdp_pages_if_needed", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(taobao_login_health, "read_cdp_json", lambda *_args, **_kwargs: target)
+    monkeypatch.setattr("tools.cdp_background_page.open_background_page", lambda *_args, **_kwargs: target)
     monkeypatch.setattr(
         live_batch_smoke,
         "_read_cdp_list_target_html",
@@ -281,7 +281,6 @@ def test_fetch_open_browser_list_page_reuses_resolved_cdp_target_after_solver_bg
     assert "sf-item-list-data" in html
     assert final_url == "https://sf.taobao.com/list/50025969__2.htm?location_code=530121&st_param=1&auction_start_seg=-1&page=5"
     assert events == [
-        "activate:http://127.0.0.1:9223:page-5",
         "evaluate:ws://cdp/page-5",
     ]
 
@@ -341,7 +340,6 @@ def test_fetch_open_browser_list_page_skips_punish_url_after_normalization_via_c
 
     assert result is None
     assert events == [
-        "activate:http://127.0.0.1:9223:page-punish",
         "evaluate:ws://cdp/page-punish",
     ]
 

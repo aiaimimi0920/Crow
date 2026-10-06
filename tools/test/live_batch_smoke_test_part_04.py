@@ -109,8 +109,7 @@ def test_fetch_list_page_falls_back_to_open_browser_page(monkeypatch) -> None:
 
 def test_fetch_browser_navigation_list_page_wraps_cdp_target_open_timeout(monkeypatch) -> None:
     monkeypatch.setattr(
-        taobao_login_health,
-        "compact_cdp_pages_if_needed",
+        "tools.cdp_background_page.open_background_page",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("timed out")),
     )
 

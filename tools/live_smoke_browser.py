@@ -43,7 +43,6 @@ def _reuse_existing_taobao_login_page(
             except Exception:
                 pass
     try:
-        taobao_login_health.activate_cdp_target(cdp_endpoint, selected)
         html, final_url = _read_cdp_list_target_html(cdp_endpoint, selected)
     except Exception:
         return None
@@ -241,6 +240,10 @@ def _build_detail_analysis_input(
 
 def fetch_browser_navigation_list_page(cdp_endpoint: str, target_url: str) -> tuple[str, str]:
     from tools import taobao_login_health
+    from tools.cdp_background_page import (
+        BackgroundPageCapacityError,
+        open_background_page,
+    )
 
     try:
         existing_login_page = _reuse_existing_taobao_login_page(cdp_endpoint)
@@ -251,12 +254,10 @@ def fetch_browser_navigation_list_page(cdp_endpoint: str, target_url: str) -> tu
         )
         if existing_challenge_page is not None:
             return existing_challenge_page
-        taobao_login_health.compact_cdp_pages_if_needed(cdp_endpoint, reserve_for_new_page=True)
-        opened = taobao_login_health.read_cdp_json(
-            cdp_endpoint,
-            "/json/new?" + quote(target_url, safe=""),
-            method="PUT",
-        )
+        opened = open_background_page(cdp_endpoint, target_url)
+    except BackgroundPageCapacityError:
+        # Backpressure is retryable; do not report a healthy CDP endpoint as down.
+        raise
     except Exception as error:
         _raise_cdp_endpoint_unavailable(cdp_endpoint, "open_list_page_target", error)
     target: dict[str, Any] | None = dict(opened) if isinstance(opened, dict) else None

@@ -308,17 +308,14 @@ def test_fetch_browser_navigation_list_page_closes_raw_cdp_target_without_playwr
         events.append(f"compact:{endpoint}:{reserve_for_new_page}")
         return {"triggered": False}
 
-    def _read_cdp_json(endpoint: str, path: str, *, method: str = "GET", timeout: int = 5):
-        events.append(f"read:{endpoint}:{method}:{path}")
-        assert timeout == 5
-        if method == "PUT":
-            return {
-                "id": "page-2",
-                "type": "page",
-                "url": "https://sf.taobao.com/list/page=2",
-                "webSocketDebuggerUrl": "ws://cdp/page-2",
-            }
-        raise AssertionError(f"unexpected read_cdp_json call: {method} {path}")
+    def _open_background(endpoint: str, url: str):
+        events.append(f"background:{endpoint}:{url}")
+        return {
+            "id": "page-2",
+            "type": "page",
+            "url": url,
+            "webSocketDebuggerUrl": "ws://cdp/page-2",
+        }
 
     def _activate(endpoint: str, target: dict[str, object]) -> None:
         events.append(f"activate:{endpoint}:{target['id']}")
@@ -347,7 +344,7 @@ def test_fetch_browser_navigation_list_page_closes_raw_cdp_target_without_playwr
 
     monkeypatch.setattr(taobao_login_health, "compact_cdp_pages_if_needed", _compact)
     monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _endpoint: [])
-    monkeypatch.setattr(taobao_login_health, "read_cdp_json", _read_cdp_json)
+    monkeypatch.setattr("tools.cdp_background_page.open_background_page", _open_background)
     monkeypatch.setattr(taobao_login_health, "activate_cdp_target", _activate)
     monkeypatch.setattr(taobao_login_health, "evaluate_cdp_expression", _evaluate)
     monkeypatch.setattr(taobao_login_health, "close_cdp_target", _close)
@@ -360,9 +357,7 @@ def test_fetch_browser_navigation_list_page_closes_raw_cdp_target_without_playwr
     assert "sf-item-list-data" in html
     assert final_url == "https://sf.taobao.com/list/page=2"
     assert events == [
-        "compact:http://127.0.0.1:9223:True",
-        "read:http://127.0.0.1:9223:PUT:/json/new?https%3A%2F%2Fsf.taobao.com%2Flist%2Fpage%3D2",
-        "activate:http://127.0.0.1:9223:page-2",
+        "background:http://127.0.0.1:9223:https://sf.taobao.com/list/page=2",
         "evaluate:ws://cdp/page-2",
         "close:http://127.0.0.1:9223:page-2",
     ]
@@ -402,4 +397,4 @@ def test_fetch_browser_navigation_list_page_reuses_single_existing_login_tab(mon
 
     assert html == "<html>淘宝登录</html>"
     assert urlparse(final_url).hostname == "login.taobao.com"
-    assert events == ["close:login-2", "activate:login-1"]
+    assert events == ["close:login-2"]

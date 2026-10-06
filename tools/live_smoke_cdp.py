@@ -385,7 +385,7 @@ def _read_cdp_list_target_html(
 ) -> tuple[str, str]:
     from tools import taobao_login_health
 
-    taobao_login_health.activate_cdp_target(cdp_endpoint, target)
+    # DOM reads must not steal focus from another scope's physical input.
     websocket_url = str(target.get("webSocketDebuggerUrl") or "").strip()
     if not websocket_url:
         raise RuntimeError(f"CDP target missing webSocketDebuggerUrl: {target!r}")

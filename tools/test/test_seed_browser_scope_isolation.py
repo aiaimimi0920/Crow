@@ -2,7 +2,12 @@
 
 import pytest
 
-from tools import live_batch_smoke, live_smoke_browser, taobao_login_health
+from tools import (
+    cdp_background_page,
+    live_batch_smoke,
+    live_smoke_browser,
+    taobao_login_health,
+)
 
 
 @pytest.mark.parametrize("module", [live_batch_smoke, live_smoke_browser])
@@ -31,8 +36,8 @@ def test_seed_navigation_ignores_detail_challenge_without_reading_or_closing_it(
         taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
     )
 
-    def open_seed(_endpoint, path, *, method):
-        assert method == "PUT" and path.startswith("/json/new?")
+    def open_seed(_endpoint, url):
+        assert url == list_url
         actions.append("open-seed")
         return seed
 
@@ -40,7 +45,7 @@ def test_seed_navigation_ignores_detail_challenge_without_reading_or_closing_it(
         assert target["id"] == "seed-page", "seed must not read another stage's target"
         return '<script id="sf-item-list-data">{"data":[]}</script>', list_url
 
-    monkeypatch.setattr(taobao_login_health, "read_cdp_json", open_seed)
+    monkeypatch.setattr(cdp_background_page, "open_background_page", open_seed)
     monkeypatch.setattr(module, "_read_cdp_list_target_html", read_seed)
     monkeypatch.setattr(
         taobao_login_health,
@@ -102,7 +107,7 @@ def test_seed_navigation_does_not_recycle_another_jobs_challenge(
     monkeypatch.setattr(
         taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
     )
-    monkeypatch.setattr(taobao_login_health, "read_cdp_json", lambda *a, **k: fresh)
+    monkeypatch.setattr(cdp_background_page, "open_background_page", lambda *a, **k: fresh)
 
     def read(_endpoint, target):
         assert target["id"] == "fresh-job", "an unrelated challenge must not be read"

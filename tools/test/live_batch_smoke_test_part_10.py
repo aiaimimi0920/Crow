@@ -263,7 +263,7 @@ def test_list_challenge_url_detection_ignores_unrelated_query_value() -> None:
     )
 
 
-def test_list_navigation_reuses_challenge_from_another_list_query(monkeypatch) -> None:
+def test_list_navigation_reuses_challenge_with_reordered_same_job_query(monkeypatch) -> None:
     from tools import taobao_login_health
 
     challenge_target = {
@@ -303,7 +303,7 @@ def test_list_navigation_reuses_challenge_from_another_list_query(monkeypatch) -
 
     result = live_batch_smoke.fetch_browser_navigation_list_page(
         "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/50025969__2.htm?location_code=110101&st_param=2&page=1",
+        "https://sf.taobao.com/list/50025969__2.htm?page=4&st_param=1&location_code=310101",
     )
 
     assert result == challenge_page
