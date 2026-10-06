@@ -220,6 +220,8 @@ def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> Non
     assert "Configured browser user agent does not match" in start_script
     assert 'browser_identity_args+=(--user-agent="$browser_user_agent")' in start_script
     assert '"${browser_identity_args[@]}"' in start_script
+    assert "--accept-lang=zh-CN,zh \\" in start_script
+    assert "--accept-lang=zh-CN,zh;q=" not in start_script
     assert "tools/cdp_browser_identity.py" in start_script
     assert "CROW_BROWSER_IDENTITY_READY_PATH" in start_script
     assert (
@@ -229,7 +231,7 @@ def test_browser_uses_a_pinned_official_chrome_with_a_coherent_identity() -> Non
 
 
 def test_browser_enables_webgl_in_the_xvfb_runtime() -> None:
-    start_script = _read(OPS_ROOT / "start-browser-solver.sh")
+    graphics = _read(REPO_ROOT / "tools" / "pc2_browser_graphics.py")
 
     for flag in (
         "--ignore-gpu-blocklist",
@@ -238,7 +240,7 @@ def test_browser_enables_webgl_in_the_xvfb_runtime() -> None:
         "--use-gl=angle",
         "--use-angle=swiftshader",
     ):
-        assert flag in start_script
+        assert flag in graphics
 
 
 def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
@@ -259,7 +261,9 @@ def test_browser_prefers_the_logged_in_host_display_and_hardware_gpu() -> None:
     )
     assert "xhost +SI:localuser:root" not in _read(OPS_ROOT / "deploy.sh")
     assert "xhost +SI:localuser:root" not in start_script
-    assert "browser_graphics_args+=(--ozone-platform=x11)" in start_script
+    assert "--ozone-platform=x11" in _read(
+        REPO_ROOT / "tools" / "pc2_browser_graphics.py"
+    )
     assert "about:blank >/tmp/chromium.log 2>&1 &" in start_script
     assert "python - \"$start_url\" <<'PY'" in start_script
     assert '"method": "Page.navigate"' in start_script
@@ -385,6 +389,7 @@ def test_pc2_auth_recovery_browser_hotfix_only_overlays_browser_side_files() -> 
         "COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py",
         "COPY tools/pc2_solver_*.py /app/tools/",
         "COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py",
+        "COPY tools/pc2_browser_graphics.py /app/tools/pc2_browser_graphics.py",
         "COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py",
         "COPY src/captcha_solver.py /app/src/captcha_solver.py",
         "COPY src/project_environment.py /app/src/project_environment.py",

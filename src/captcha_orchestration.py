@@ -146,7 +146,13 @@ class CaptchaOrchestrationMixin:
                             retry_delay=0,
                         )
                     if not slider_info:
-                        challenge_summary = self._page_challenge_summary()
+                        challenge_summary = self._refresh_challenge_summary({})
+                        if challenge_summary.get("probeFailed"):
+                            self._preflight_retryable_failure()
+                            return finish(False)
+                        if challenge_summary.get("readyState") == "loading" and not challenge_summary.get("hasSlider"):
+                            self._preflight_retryable_failure("challenge_loading")
+                            return finish(False)
                         if challenge_summary.get("authenticatedPage"):
                             logger.info("[SOLVER] Auction page became accessible; captcha is already resolved.")
                             self.last_failure_reason = None
@@ -169,14 +175,23 @@ class CaptchaOrchestrationMixin:
                                         pass
                                     self.ws = None
                                 continue
-                            logger.warning("[SOLVER] Unsupported hard block detected; manual verification required.")
-                            self.last_failure_reason = "manual_required"
-                            if self.ws:
-                                try:
-                                    self.ws.close()
-                                except Exception:
-                                    pass
-                            return finish(False)
+                            challenge_summary = self._refresh_challenge_summary(challenge_summary)
+                            if challenge_summary.get("probeFailed"):
+                                self._preflight_retryable_failure()
+                                return finish(False)
+                            if challenge_summary.get("readyState") == "loading" and not challenge_summary.get("hasSlider"):
+                                self._preflight_retryable_failure("challenge_loading")
+                                return finish(False)
+                            if challenge_summary.get("authenticatedPage"):
+                                self._preflight_already_authenticated()
+                                return finish(True)
+                            if challenge_summary.get("hasSlider"):
+                                self._close_solver_ws()
+                                continue
+                            if challenge_summary.get("hardBlock"):
+                                logger.warning("[SOLVER] Unsupported hard block detected; manual verification required.")
+                                self._preflight_manual_required()
+                                return finish(False)
                         if challenge_summary.get("loginRequired"):
                             logger.warning("[SOLVER] Login page detected; manual login is required.")
                             self.last_failure_reason = "manual_required"

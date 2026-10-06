@@ -5,10 +5,17 @@ from dataclasses import dataclass
 from typing import ClassVar, Protocol, cast
 
 from .auth_cookie_paths import EnvironmentReader
+from .auth_cookie_scope_policy import bound_detail_snapshot_target
 from .auth_cookie_snapshot_state import AuthCookieSnapshotState
 from .project_environment import getenv as project_getenv
 from .runtime_state import RuntimeState
 from .solver_captcha_reports import PayloadFlag
+
+
+class CookieExporter(Protocol):
+    def __call__(
+        self, cdp_endpoint: str, *, detail_target_url: str = ""
+    ) -> list[dict[str, object]]: ...
 
 
 class CookieHealthProbe(Protocol):
@@ -18,6 +25,7 @@ class CookieHealthProbe(Protocol):
         sample_urls: list[str],
         *,
         cdp_endpoint: str = "",
+        detail_target_url: str = "",
     ) -> dict[str, object]: ...
 
 
@@ -29,12 +37,13 @@ class AuthCookieSnapshot:
     resolve_path: Callable[[dict[str, object]], str]
     normalize_endpoint: Callable[[object], str]
     permitted: Callable[[str], bool]
-    export: Callable[[str], list[dict[str, object]]]
+    export: CookieExporter
     summarize: Callable[[list[dict[str, object]]], Mapping[str, object]]
     sample_urls: Callable[[dict[str, object]], list[str]]
     health: CookieHealthProbe
     write: Callable[[list[dict[str, object]], str], None]
     state: Callable[[], AuthCookieSnapshotState]
+    read_scope: Callable[[str], dict[str, object]]
 
     __all__: ClassVar[list[str]] = [
         "_export_auth_cdp_cookies",
@@ -49,10 +58,18 @@ class AuthCookieSnapshot:
         "_auth_cookie_snapshot_runtime_state",
     ]
 
-    def _export_auth_cdp_cookies(self, cdp_endpoint: str) -> list[dict[str, object]]:
-        from src.cdp_cookie_transport import export_cdp_cookies
+    def _export_auth_cdp_cookies(
+        self, cdp_endpoint: str, *, detail_target_url: str = ""
+    ) -> list[dict[str, object]]:
+        from src.cdp_cookie_transport import DEFAULT_COOKIE_ORIGINS, export_cdp_cookies
+        from src.collection.adapters.taobao_auth_target import canonical_auth_target
 
-        return export_cdp_cookies(cdp_endpoint)
+        if not detail_target_url:
+            return export_cdp_cookies(cdp_endpoint)
+        target = canonical_auth_target("detail", detail_target_url)
+        return export_cdp_cookies(
+            cdp_endpoint, origins=(*DEFAULT_COOKIE_ORIGINS, target)
+        )
 
     def _summarize_auth_cookies(
         self, cookies: list[dict[str, object]]
@@ -74,11 +91,15 @@ class AuthCookieSnapshot:
         sample_urls: list[str],
         *,
         cdp_endpoint: str = "",
+        detail_target_url: str = "",
     ) -> dict[str, object]:
         from src.auth_cookie_health import probe_cookie_snapshot_health
 
         return probe_cookie_snapshot_health(
-            cookies, sample_urls, cdp_endpoint=cdp_endpoint
+            cookies,
+            sample_urls,
+            cdp_endpoint=cdp_endpoint,
+            detail_target_url=detail_target_url,
         )
 
     def _refresh_auth_cookie_snapshot(
@@ -91,7 +112,19 @@ class AuthCookieSnapshot:
         if not snapshot_path:
             return {"refreshed": False, "reason": "cookie_snapshot_path_not_configured"}
 
+        detail_target = ""
+        detail_state: dict[str, object] = {}
+        if str(payload.get("scope") or "").strip().lower() == "detail":
+            try:
+                with self.runtime().lock:
+                    detail_state = self.read_scope("detail")
+                    detail_target = bound_detail_snapshot_target(payload, detail_state)
+            except (ValueError, TypeError):
+                return {"refreshed": False, "reason": "cookie_snapshot_scope_mismatch"}
         request_cdp_endpoint = payload.get("cdp_endpoint")
+        if detail_target and not request_cdp_endpoint:
+            request = cast("dict[str, object]", detail_state["last_request"])
+            request_cdp_endpoint = request.get("cdp_endpoint")
         if not request_cdp_endpoint and isinstance(
             self.runtime().recovery.snapshot().last_request, dict
         ):
@@ -112,16 +145,30 @@ class AuthCookieSnapshot:
         if not self.permitted(cdp_endpoint):
             return {"refreshed": False, "reason": "cdp_endpoint_not_permitted"}
 
-        cookies = self.export(cdp_endpoint)
+        cookies = (
+            self.export(cdp_endpoint, detail_target_url=detail_target)
+            if detail_target
+            else self.export(cdp_endpoint)
+        )
         summary = self.summarize(cookies)
-        sample_urls = self.sample_urls(payload)
+        sample_urls = [detail_target] if detail_target else self.sample_urls(payload)
+        probe_options: dict[str, str] = {"cdp_endpoint": cdp_endpoint}
+        if detail_target:
+            probe_options["detail_target_url"] = detail_target
         health = self.health(
             cookies,
             sample_urls,
-            cdp_endpoint=cdp_endpoint,
+            **probe_options,
         )
         cookie_count = int(cast("str | int", summary.get("count") or 0))
-        if not health.get("healthy"):
+        health_verified = (
+            health.get("scope") == "detail"
+            and health.get("scope_target_url") == detail_target
+            and health.get("scope_healthy") is True
+            if detail_target
+            else bool(health.get("healthy"))
+        )
+        if not health_verified:
             return {
                 "refreshed": False,
                 "reason": "cookie_snapshot_candidate_unhealthy",
@@ -131,7 +178,22 @@ class AuthCookieSnapshot:
                 "health": health,
             }
 
-        self.write(cookies, snapshot_path)
+        if detail_target:
+            try:
+                with self.runtime().lock:
+                    bound_payload = {**payload, "cdp_endpoint": cdp_endpoint}
+                    if (
+                        bound_detail_snapshot_target(
+                            bound_payload, self.read_scope("detail")
+                        )
+                        != detail_target
+                    ):
+                        raise ValueError("detail target changed during health probing")
+                    self.write(cookies, snapshot_path)
+            except (ValueError, TypeError):
+                return {"refreshed": False, "reason": "cookie_snapshot_scope_mismatch"}
+        else:
+            self.write(cookies, snapshot_path)
         return {
             "refreshed": True,
             "path": snapshot_path,

@@ -187,7 +187,7 @@ def test_verify_success_rejects_success_signal_while_challenge_still_present() -
 
     assert solver._verify_success() is False
 
-def test_verify_success_accepts_disappeared_challenge_without_explicit_success_class() -> None:
+def test_verify_success_rejects_disappeared_challenge_without_positive_evidence() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._send_cdp = lambda _method, _params=None: {
         "result": {
@@ -202,7 +202,7 @@ def test_verify_success_accepts_disappeared_challenge_without_explicit_success_c
         }
     }
 
-    assert solver._verify_success() is True
+    assert solver._verify_success() is False
 
 def test_solver_returns_false_when_official_challenge_explicitly_rejects_drag(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)

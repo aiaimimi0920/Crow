@@ -21,7 +21,7 @@ def test_user_agent_override_keeps_windows_ua_and_client_hints_coherent() -> Non
 
     assert payload["userAgent"] == PC1_USER_AGENT
     assert payload["platform"] == "Win32"
-    assert payload["acceptLanguage"] == "zh-CN,zh;q=0.9"
+    assert payload["acceptLanguage"] == "zh-CN,zh"
     metadata = payload["userAgentMetadata"]
     assert metadata["platform"] == "Windows"
     assert metadata["platformVersion"] == "19.0.0"
@@ -107,16 +107,18 @@ def test_attached_page_is_hardened_before_runtime_resumes(tmp_path: Path) -> Non
     )
 
     assert [message["method"] for message in sent] == [
+        "Target.setAutoAttach",
         "Emulation.setUserAgentOverride",
         "Emulation.setTimezoneOverride",
         "Emulation.setLocaleOverride",
+        "Page.enable",
         "Page.addScriptToEvaluateOnNewDocument",
         "Runtime.runIfWaitingForDebugger",
         "Runtime.evaluate",
     ]
     assert all(message["sessionId"] == "session-1" for message in sent)
-    assert sent[1]["params"] == {"timezoneId": "Asia/Shanghai"}
-    assert sent[2]["params"] == {"locale": "zh-CN"}
+    assert sent[2]["params"] == {"timezoneId": "Asia/Shanghai"}
+    assert sent[3]["params"] == {"locale": "zh-CN"}
 
 
 def test_non_page_target_is_only_resumed(tmp_path: Path) -> None:

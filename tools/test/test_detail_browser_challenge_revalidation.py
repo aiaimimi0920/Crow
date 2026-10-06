@@ -48,7 +48,13 @@ def test_old_challenge_is_revalidated_without_touching_operator_page(
             events.append("close_fresh_page")
 
     page = Page()
-    context = SimpleNamespace(pages=[ExistingPage()], new_page=lambda: page)
+    context = SimpleNamespace(
+        pages=[ExistingPage()],
+        new_page=lambda: page,
+        new_cdp_session=lambda target: SimpleNamespace(
+            detach=lambda: events.append("session_detach")
+        ),
+    )
     browser = SimpleNamespace(contexts=[context])
 
     class Playwright:
@@ -70,14 +76,17 @@ def test_old_challenge_is_revalidated_without_touching_operator_page(
     monkeypatch.setattr(smoke, "_wait_for_detail_ready", lambda p: html)
     if fresh_challenge:
         with pytest.raises(smoke.DetailChallengeError, match="browser detail request"):
-            smoke.fetch_detail_with_browser({"url": URL}, cdp_endpoint="http://fixture")
+            smoke._fetch_detail_with_browser_attached(
+                {"url": URL}, cdp_endpoint="http://fixture"
+            )
     else:
         assert (
-            smoke.fetch_detail_with_browser(
+            smoke._fetch_detail_with_browser_attached(
                 {"url": URL}, cdp_endpoint="http://fixture"
             )[3]
             == "browser_navigation"
         )
     assert events[0] == "fresh_request"
+    assert events.count("session_detach") == 1
     assert ("close_fresh_page" in events) == (not fresh_challenge or old_url == URL)
     assert events[-1] == "detach"

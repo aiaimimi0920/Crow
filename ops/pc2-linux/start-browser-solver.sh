@@ -2,6 +2,9 @@
 set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/process-supervisor.sh"
 crow_validate_env
+graphics_backend="$(crow_env CROW_BROWSER_GRAPHICS_BACKEND "auto")"
+# Reject invalid explicit graphics configuration before touching startup markers.
+python tools/pc2_browser_graphics.py --backend "$graphics_backend" --check
 
 requested_display="${DISPLAY:-:99}"
 display_mode="$(crow_env CROW_BROWSER_DISPLAY_MODE "auto")"
@@ -192,6 +195,8 @@ if [[ -r /proc/sys/kernel/unprivileged_userns_clone ]] \
   exit 1
 fi
 
+# Keep native worker requests on the same language list as the CDP override;
+# nested-worker script loads can bypass their parent's CDP network override.
 # Keep launch-time UA, CDP UA-CH metadata, and the HTTP-cookie workers on one
 # identity when an explicit Windows user agent is configured.
 browser_identity_args=()
@@ -199,20 +204,12 @@ if [[ -n "$browser_user_agent" ]]; then
   browser_identity_args+=(--user-agent="$browser_user_agent")
 fi
 
-browser_graphics_args=(
-  --ignore-gpu-blocklist
-  --enable-webgl
-)
-if [[ "$use_host_display" == "0" ]]; then
-  # Xvfb has no DRI device, so keep its software-WebGL compatibility fallback.
-  browser_graphics_args+=(
-    --enable-unsafe-swiftshader
-    --use-gl=angle
-    --use-angle=swiftshader
-  )
-else
-  browser_graphics_args+=(--ozone-platform=x11)
-fi
+# auto preserves the existing Xvfb fallback; egl uses the mapped render device.
+# Capture the command status before mapfile so validation errors cannot be lost.
+graphics_output="$(python tools/pc2_browser_graphics.py \
+  --backend "$graphics_backend" --host-display "$use_host_display")"
+mapfile -t browser_graphics_args <<< "$graphics_output"
+echo "Browser graphics backend: $graphics_backend"
 
 "$browser_executable" \
   --disable-dev-shm-usage \
@@ -224,6 +221,7 @@ fi
   --disable-session-crashed-bubble \
   --no-default-browser-check \
   --no-first-run \
+  --accept-lang=zh-CN,zh \
   "${browser_identity_args[@]}" \
   --remote-allow-origins='*' \
   --remote-debugging-address=0.0.0.0 \

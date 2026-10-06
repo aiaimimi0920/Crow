@@ -33,18 +33,25 @@ class CaptchaCDPMixin:
         identity_first = self._target_requires_identity_before_navigation(target_url)
         opened_url = "about:blank" if identity_first else target_url
         last_error = None
+        opened_target = None
         for timeout in (5, 8, 12):
             timeout = self._bounded_io_timeout(timeout)
             try:
-                response = requests.put(
-                    f"{self.cdp_endpoint}/json/new?{quote(opened_url, safe='/:%-._~')}",
-                    timeout=timeout,
-                )
-                payload = response.json()
+                if opened_target is None:
+                    response = requests.put(
+                        f"{self.cdp_endpoint}/json/new?{quote(opened_url, safe='/:%-._~')}",
+                        timeout=timeout,
+                    )
+                    payload = response.json()
+                else:
+                    payload = opened_target
                 if isinstance(payload, dict):
                     self._remember_target_tab(payload)
                     target_id = str(payload.get("id") or "").strip()
                     if target_id:
+                        # A slow navigation must not create another renderer
+                        # for each preparation retry of this owned target.
+                        opened_target = payload
                         self._opened_target_ids.add(target_id)
                     if identity_first and not self._prepare_opened_target_before_navigation(
                         payload,
@@ -71,11 +78,7 @@ class CaptchaCDPMixin:
             "1", "true", "yes", "on"
         }
         try:
-            if self.ws:
-                try:
-                    self.ws.close()
-                except Exception:
-                    pass
+            self._close_solver_ws()
             target_ws = self._rewrite_ws_url(target_ws)
             if target_ws:
                 self.target_ws_url = target_ws
@@ -162,16 +165,15 @@ class CaptchaCDPMixin:
                     f"timezone={preflight_value.get('timezone')}"
                 )
 
+            if self.last_failure_reason == "cdp_unavailable":
+                self.last_failure_reason = None
             return True
         except Exception as e:
-            if self.ws:
-                try:
-                    self.ws.close()
-                except Exception:
-                    pass
-            self.ws = None
-            if self._is_manual_challenge_url(self.current_target_url):
-                self.last_failure_reason = "manual_required"
+            self._close_solver_ws()
+            # A challenge URL does not prove that the site requires a human.
+            # Transport/bootstrap failures stay on the bounded retry path.
+            if not self._stop_if_cancelled():
+                self.last_failure_reason = "cdp_unavailable"
             logger.warning("[SOLVER] WS Connection failed: %s", e)
             return False
 

@@ -9,6 +9,7 @@ import requests
 from src.llm_analysis_policy import require_non_gpt_analysis_model
 from src.llm_model_selector import LLMBackendUnavailableError
 from src.llm_qualification_cases import CASES, INSTRUCTION, VERSION, exact_match
+from src.llm_qualification_diagnostics import report_request_failure
 from src.llm_qualification_runtime import (
     QualificationCancelled,
     check_cancelled,
@@ -129,6 +130,7 @@ class QualifiedModelPool:
                                 max_bytes=65536 if probe else 2097152)
         except (requests.RequestException, LLMBackendUnavailableError, ValueError) as exc:
             check_cancelled(self.cancel_event)
+            report_request_failure(model, probe=probe, error=exc)
             if probe:
                 self._backoff_qualification(exc)
             elif isinstance(exc, ModelHttpError) and exc.status_code in {401, 403, 429}:

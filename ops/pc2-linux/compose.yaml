@@ -89,6 +89,7 @@ services:
       DISPLAY: :99
       FAPAI_BROWSER_DISPLAY_MODE: ${FAPAI_BROWSER_DISPLAY_MODE:-auto}
       FAPAI_BROWSER_HOST_DISPLAY: ${FAPAI_BROWSER_HOST_DISPLAY:-:0}
+      FAPAI_BROWSER_GRAPHICS_BACKEND: ${FAPAI_BROWSER_GRAPHICS_BACKEND:-auto}
       FAPAI_CDP_ENDPOINT: http://127.0.0.1:9223
       FAPAI_CDP_PUBLIC_PORT: "9224"
       FAPAI_CDP_ALLOWED_CLIENT_CIDRS: "${FAPAI_CDP_ALLOWED_CLIENT_CIDRS:-127.0.0.0/8,::1/128,172.16.0.0/12,192.168.15.20/32,192.168.15.200/32}"
@@ -146,9 +147,13 @@ services:
       - ALL
     group_add:
       - ${FAPAI_HOST_DATA_GID:-1000}
+      # Resolve device groups on the host; defaults preserve existing access.
+      - ${FAPAI_HOST_VIDEO_GID:-1000}
+      - ${FAPAI_HOST_RENDER_GID:-1000}
     pids_limit: 512
     mem_limit: 2g
-    cpus: 1.5
+    # 共享浏览器和 Xvfb 软件渲染需要突发余量，仍保留可配置的 CPU 上限。
+    cpus: ${FAPAI_BROWSER_CPUS:-3.0}
     healthcheck:
       test: ["CMD", "python", "tools/pc2_linux_healthcheck.py", "--mode", "browser"]
       interval: 30s

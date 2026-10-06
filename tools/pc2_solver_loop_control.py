@@ -21,13 +21,18 @@ from tools.pc2_solver_execution import (
     rebuild_missing_challenge_target,
     resolve_stale_challenge_probe_target_after_resume,
 )
-from tools.pc2_solver_fallback import _retry_pending_collection_resume
+from tools.pc2_solver_fallback import (
+    _retry_node_solver_blocked_report,
+    _retry_pending_collection_resume,
+)
+from tools.pc2_solver_retry_state import _reset_fallback_state
 from tools.pc2_solver_scope import close_challenge_pages_for_scope, notify_force_reset
 from tools.pc2_solver_scope_policy import (
     _solver_scope_statuses,
     node_owns_last_request,
     solver_request_target_url,
 )
+from tools.pc2_solver_state_store import _load_fallback_state
 from tools.pc2_solver_transport import (
     log_event,
     nas_auth_recovery_client_enabled,
@@ -41,6 +46,27 @@ class ControlResult(TypedDict):
     last_probe_target: dict[str, object] | None
     last_auth_confirmed_at: float
     reset_probe_counter: bool
+
+
+def retry_blocked_report(
+    api_base_url: str,
+    solver_status: dict[str, object],
+    state: dict[str, object],
+    expected_node_id: str | None,
+) -> None:
+    report = _retry_node_solver_blocked_report(
+        api_base_url, solver_status, state, expected_node_id=expected_node_id
+    )
+    if report.get("attempted"):
+        log_event(
+            {
+                "kind": "node_solver_blocked_report",
+                "confirmed": report.get("confirmed"),
+                "attempt": state.get("node_solver_blocked_report_attempts", 0),
+                "result_status": (report.get("result") or {}).get("status"),
+                "error": (report.get("result") or {}).get("error"),
+            }
+        )
 
 
 def process_pending_control_actions(
@@ -159,6 +185,17 @@ def process_pending_control_actions(
     }
 
 
+def _fallback_matches_scope_challenge(
+    fallback: dict[str, object], scope: object, challenge_id: object
+) -> bool:
+    return bool(
+        scope in {"seed", "detail"}
+        and fallback.get("scope") == scope
+        and fallback.get("challenge_id")
+        and fallback.get("challenge_id") == challenge_id
+    )
+
+
 def reset_forced_solver_scopes(
     api_base_url: str,
     cdp_endpoint: str,
@@ -178,12 +215,37 @@ def reset_forced_solver_scopes(
             expected_node_id,
         ):
             continue
+        fallback = _load_fallback_state()
+        if (
+            _fallback_matches_scope_challenge(
+                fallback, scope, scoped_status.get("challenge_id")
+            )
+            and fallback.get("solver_cooldown_until")
+            and fallback.get("solver_cooldown_reason") == "repeated_solver_failures"
+        ):
+            # An expired deadline must reach the resume acknowledgement path first.
+            log_event(
+                {
+                    "kind": "scoped_challenge_force_reset_deferred",
+                    "scope": scope,
+                    "challenge_id": scoped_status.get("challenge_id"),
+                    "cooldown_until": fallback.get("solver_cooldown_until"),
+                    "reason": "solver_cooldown_or_resume_pending",
+                }
+            )
+            continue
         cleanup = close_challenge_pages_for_scope(cdp_endpoint, scope)
         reset_result = notify_force_reset(
             api_base_url,
             scope,
             scoped_status.get("challenge_id"),
         )
+        if reset_result.get("force_reset") is True:
+            fallback = _load_fallback_state()
+            if _fallback_matches_scope_challenge(
+                fallback, scope, scoped_status.get("challenge_id")
+            ):
+                _reset_fallback_state(preserve_budget_from=fallback)
         log_event(
             {
                 "kind": "scoped_challenge_force_reset",

@@ -49,11 +49,28 @@ SELECTOR_GROUPS = {
     "NC_WIDGET": ".nc_scale, #nc_1_n1t, #nc_2_n1t, .nc-container, .nc_wrapper",
     "NC_ERROR": '.errloading, [id*="_refresh1"], [id*="refresh1"]',
     "PREFLIGHT_SLIDER": '#nc_1_n1z, #nc_2_n1z, [id^="nc_"][id$="_n1z"], #nc_1_n1t, #nc_2_n1t, [id^="nc_"][id$="_n1t"], .btn_slide, .nc_iconfont.btn_slide, .nc-slider-btn, .slider-btn',
-    "VERIFY_SLIDER": "#nc_1_n1t, .icon-slide-arrow, #nc_1_n1z",
+    "VERIFY_SLIDER": '#nc_1_n1z, #nc_2_n1z, [id^="nc_"][id$="_n1z"], #nc_1_n1t, #nc_2_n1t, [id^="nc_"][id$="_n1t"], .btn_slide, .nc-slider-btn, .slider-btn, .icon-slide-arrow',
     "VERIFY_CHALLENGE": ".nc-container, #nocaptcha, .nc_wrapper, .nc_scale",
 }
 
 _FRAME_VISITOR = """
+function verificationElementVisible(node) {
+    if (!node) return false;
+    var view = node.ownerDocument && node.ownerDocument.defaultView;
+    var style = view && view.getComputedStyle ? view.getComputedStyle(node) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden' ||
+        style.visibility === 'collapse' || parseFloat(style.opacity) === 0)) return false;
+    var rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 &&
+        (node.offsetParent !== null || !!(style && style.position === 'fixed'));
+}
+function hasVisibleMatch(doc, selector) {
+    var nodes = doc.querySelectorAll(selector);
+    for (var n = 0; n < nodes.length; n++) {
+        if (verificationElementVisible(nodes[n])) return true;
+    }
+    return false;
+}
 function visitAccessibleDocuments(visitor, visibleOnly) {
     var result = visitor(document, 0, 0, 'main');
     if (result) return result;
@@ -61,7 +78,7 @@ function visitAccessibleDocuments(visitor, visibleOnly) {
     for (var i = 0; i < frames.length; i++) {
         try {
             var frame = frames[i];
-            if (visibleOnly && frame.offsetParent === null) continue;
+            if (visibleOnly && !verificationElementVisible(frame)) continue;
             var doc = frame.contentDocument;
             if (!doc) continue;
             var rect = frame.getBoundingClientRect();

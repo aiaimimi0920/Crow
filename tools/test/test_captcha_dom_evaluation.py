@@ -13,7 +13,8 @@ NODE_FIXTURE = r"""
 const fs = require('fs'), vm = require('vm');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 function element(spec) {
-    return {...spec, offsetParent: spec.hidden ? null : {},
+    return {...spec, offsetParent: spec.hidden || spec.fixed ? null : {},
+        ownerDocument: {defaultView: {getComputedStyle: () => ({display: spec.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1', position: spec.fixed ? 'fixed' : 'static'})}},
         getBoundingClientRect: () => ({left: 5, top: 8, width: 100, height: 20, ...spec.rect})};
 }
 function doc(spec) {
@@ -29,7 +30,8 @@ function doc(spec) {
     const matches = (node, query) => query.split(',').some(s => (node.selectors || []).includes(s.trim()));
     return {
         body: {innerText: spec.text || '', className: spec.className || ''},
-        title: spec.title || '', location: {href: spec.url || ''}, readyState: 'complete',
+        title: spec.title || '', location: {href: spec.url || ''}, readyState: spec.readyState || 'complete',
+        documentElement: {outerHTML: spec.html || ''},
         querySelector: query => nodes.find(node => matches(node, query)) || null,
         querySelectorAll: query => query === 'div, span, p, button, a' ? nodes : nodes.filter(node => matches(node, query)),
         getElementsByTagName: tag => tag === 'iframe' ? frames : [],
@@ -45,8 +47,9 @@ class DocumentSolver(CaptchaSliderMixin, CaptchaPreflightMixin, CaptchaNCRetryMi
     SLIDER_SELECTORS = SLIDER_SELECTORS
     TRACK_SELECTORS = TRACK_SELECTORS
 
-    def __init__(self, document):
+    def __init__(self, document, target_url=None):
         self.document = document
+        self.target_url = target_url
 
     def _local_mock_verification_mode(self):
         return ""
@@ -140,10 +143,12 @@ def test_hidden_frame_does_not_override_valid_auction_payload():
         {
             "url": "https://sf-item.taobao.com/sf_item/123.htm",
             "text": "auction evidence " * 12,
+            "html": '<html><body><div id="J_StartPrice">123</div></body></html>',
             "frames": [
                 {"hidden": True, "document": {"nodes": [slider()], "text": "验证失败"}}
             ],
-        }
+        },
+        target_url="https://sf-item.taobao.com/sf_item/123.htm",
     )
     summary = solver._page_challenge_summary()
     assert summary["authenticatedPage"] is True
@@ -155,8 +160,10 @@ def test_visible_frame_challenge_blocks_successful_main_payload():
         {
             "url": "https://sf-item.taobao.com/sf_item/123.htm",
             "text": "auction evidence " * 12,
+            "html": '<html><body><div id="J_StartPrice">123</div></body></html>',
             "frames": [{"document": {"nodes": [slider()]}}],
-        }
+        },
+        target_url="https://sf-item.taobao.com/sf_item/123.htm",
     )
     summary = solver._page_challenge_summary()
     assert summary["hasSlider"] and summary["challengePresent"]
@@ -182,14 +189,16 @@ def test_retry_targets_merge_visible_frames_and_apply_offsets():
     assert summary["retryText"]["x"] == 55
 
 
-def test_widget_rect_and_verification_remain_main_document_only():
+def test_widget_rect_remains_main_only_but_verification_rejects_visible_frame():
     solver = DocumentSolver(
         {
             "text": "success",
+            "url": "https://sf-item.taobao.com/sf_item/123.htm",
             "frames": [
                 {"document": {"nodes": [slider(), {"selectors": [".nc_scale"]}]}}
             ],
-        }
+        },
+        target_url="https://sf-item.taobao.com/sf_item/123.htm",
     )
     assert solver._nc_widget_rect() is None
-    assert solver._verify_success() is True
+    assert solver._verify_success() is False

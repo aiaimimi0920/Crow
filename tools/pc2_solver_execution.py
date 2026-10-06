@@ -12,6 +12,7 @@ from tools.pc2_solver_config import (
     SOLVER_EXECUTION_TIMEOUT_SECONDS,
     SOLVER_TERMINATE_GRACE_SECONDS,
 )
+from tools.pc2_solver_diagnostics import solver_attempt_diagnostics
 from tools.pc2_solver_manual_handoff import ManualChallengeRequired
 from tools.pc2_solver_scope_policy import (
     _challenge_scope_for_url,
@@ -129,13 +130,14 @@ def _run_solver_process_entry(
 ) -> None:
     result: dict[str, object]
     try:
-        success = run_solver_local(
-            cdp_endpoint,
-            target_url,
-            max_attempts=max_attempts,
-            probe_target=probe_target,
-            drag_profile_offset=drag_profile_offset,
-        )
+        with solver_attempt_diagnostics():
+            success = run_solver_local(
+                cdp_endpoint,
+                target_url,
+                max_attempts=max_attempts,
+                probe_target=probe_target,
+                drag_profile_offset=drag_profile_offset,
+            )
         result = {"success": bool(success)}
     except ManualChallengeRequired:
         result = {"success": False, "failure_reason": "manual_required"}

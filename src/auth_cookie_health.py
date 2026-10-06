@@ -1,6 +1,7 @@
 """Cookie snapshot health aggregation independent of tool facades."""
 
 from src.cdp_cookie_transport import resolve_cdp_user_agent
+from src.collection.adapters.taobao_detail_auth import probe_detail_page
 from src.collection.adapters.taobao_health import classify_taobao_health
 from src.collection.adapters.taobao_list_probe import (
     build_session_from_playwright_cookies,
@@ -13,9 +14,38 @@ def probe_cookie_snapshot_health(
     sample_urls: list[str],
     *,
     cdp_endpoint: str = "",
+    detail_target_url: str = "",
 ) -> dict[str, object]:
     session = build_session_from_playwright_cookies(cookies)
     user_agent = resolve_cdp_user_agent(cdp_endpoint)
+    if detail_target_url:
+        try:
+            detail = probe_detail_page(
+                detail_target_url,
+                cookies=cookies,
+                session=session,
+                timeout=15,
+                user_agent=user_agent,
+            )
+        except Exception as error:  # noqa: BLE001 - fail closed without exposing response tokens
+            detail = {
+                "healthy": False,
+                "status": "probe_error",
+                "error": type(error).__name__,
+            }
+        verified = detail.get("healthy") is True
+        # Legacy clients interpret healthy=True as list/global proof. Never upgrade it
+        # from a detail-only probe, even when the bound detail is authenticated.
+        return {
+            "healthy": False,
+            "healthy_samples": 0,
+            "sample_count": 1,
+            "scope": "detail",
+            "scope_healthy": verified,
+            "scope_healthy_samples": int(verified),
+            "scope_target_url": detail_target_url,
+            "sample_results": [detail],
+        }
     sample_results: list[dict[str, object]] = []
     healthy_samples = 0
     for url in sample_urls:

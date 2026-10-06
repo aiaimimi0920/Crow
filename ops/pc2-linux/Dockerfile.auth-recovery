@@ -7,6 +7,7 @@ COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py
 COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py
 COPY tools/pc2_solver_*.py /app/tools/
 COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
+COPY tools/pc2_browser_graphics.py /app/tools/pc2_browser_graphics.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py
 COPY src/captcha_solver.py /app/src/captcha_solver.py
 COPY src/project_environment.py /app/src/project_environment.py

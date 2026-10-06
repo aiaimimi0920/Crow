@@ -27,7 +27,7 @@ def test_captcha_slider_runtime_messages_use_structured_logging() -> None:
     assert "logger = logging.getLogger(__name__)" in source
     assert 'logger.info("[SOLVER] Slider not found; retrying attempt=%s/%s"' in source
     assert 'logger.warning("[SOLVER] Could not detect track width; using fallback 340px")' in source
-    assert 'logger.warning("[SOLVER] CDP mouse input is unavailable; manual verification required.")' in source
+    assert 'logger.warning("[SOLVER] CDP mouse input is unavailable; returning to bounded retry.")' in source
     assert "print(" not in source
 
 

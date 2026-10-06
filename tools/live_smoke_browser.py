@@ -416,8 +416,15 @@ def fetch_list_page(
         return html, final_url, None, "browser_page"
 
 def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tuple[str, str, int, str]:
+    from tools.detail_browser_capture import capture_detail_with_deadline
+
+    return capture_detail_with_deadline(seed, cdp_endpoint=cdp_endpoint)
+
+
+def _fetch_detail_with_browser_attached(seed: dict[str, Any], *, cdp_endpoint: str) -> tuple[str, str, int, str]:
     from playwright.sync_api import sync_playwright
     from src.collection.adapters.taobao_auth_target import canonical_auth_target
+    from tools.browser_cdp_session import held_cdp_session
 
     detail_url = seed.get("url")
     if not detail_url:
@@ -463,13 +470,15 @@ def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tup
             page = context.new_page()
             preserve_challenge_page = False
             try:
-                configure_browser_identity_before_navigation(
-                    context,
-                    page,
-                    cdp_endpoint=cdp_endpoint,
-                )
-                response = page.goto(detail_url, wait_until="domcontentloaded", timeout=90000)
-                html = _wait_for_detail_ready(page)
+                with held_cdp_session(context, page) as session:
+                    configure_browser_identity_before_navigation(
+                        context,
+                        page,
+                        cdp_endpoint=cdp_endpoint,
+                        cdp_session=session,
+                    )
+                    response = page.goto(detail_url, wait_until="domcontentloaded", timeout=90000)
+                    html = _wait_for_detail_ready(page)
                 final_url = page.url
                 if response and response.status >= 400:
                     raise RuntimeError(f"browser detail request returned HTTP {response.status}")
@@ -521,6 +530,7 @@ def fetch_detail_html(
     return html, response.url, len(response.content), "http_cookie"
 
 __all__ = (
+    '_fetch_detail_with_browser_attached',
     '_reuse_existing_taobao_login_page',
     '_reuse_existing_taobao_challenge_page',
     '_is_taobao_challenge_target_url',

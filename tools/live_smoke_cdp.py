@@ -210,13 +210,19 @@ def configure_browser_identity_before_navigation(
     page: Any,
     *,
     cdp_endpoint: str,
+    cdp_session: Any | None = None,
 ) -> dict[str, Any]:
-    """Install and verify the solver identity before the first remote request."""
-    from tools.cdp_browser_identity import browser_identity_init_script, build_user_agent_override
+    """Configure a temporary session, or a caller-owned navigation session."""
+    from tools.browser_cdp_session import detach_cdp_session
+    from tools.cdp_browser_identity import (
+        browser_identity_init_script,
+        build_user_agent_override,
+    )
 
     user_agent, full_version = _browser_identity_values(cdp_endpoint)
     source = browser_identity_init_script()
-    session = context.new_cdp_session(page)
+    owns_session = cdp_session is None
+    session = context.new_cdp_session(page) if owns_session else cdp_session
     try:
         session.send(
             "Emulation.setUserAgentOverride",
@@ -248,16 +254,8 @@ def configure_browser_identity_before_navigation(
             })"""
         )
     finally:
-        detach = getattr(session, "detach", None)
-        if callable(detach):
-            try:
-                detach()
-            except Exception:
-                # The browser-wide auto-attach controller can reclaim this
-                # temporary session first. Identity commands are already
-                # applied; cleanup must not turn that success into a failed
-                # navigation.
-                pass
+        if owns_session:
+            detach_cdp_session(session)
     if not isinstance(identity, dict):
         raise RuntimeError("browser identity preflight returned an invalid result")
     if (

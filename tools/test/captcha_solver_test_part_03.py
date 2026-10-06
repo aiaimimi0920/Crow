@@ -143,7 +143,7 @@ def test_nc_error_widget_contract_recognizes_english_refresh_failure() -> None:
     assert solver._page_challenge_summary()["explicitFailure"] is True
     assert "please refresh page and try again" in expressions[0]
     assert ".errloading" in expressions[0]
-    assert "var hasSlider = !!(slider && slider.offsetParent !== null)" in expressions[0]
+    assert "var hasSlider = hasVisibleMatch(doc," in expressions[0]
 
     expressions.clear()
     solver._nc_retry_targets()
@@ -308,7 +308,7 @@ def test_connect_tab_falls_back_when_cached_websocket_cdp_bootstrap_times_out(mo
     ]
     assert solver.target_ws_url == "ws://host.docker.internal:9223/devtools/page/target-1"
 
-def test_punish_target_connection_failure_marks_manual_required(monkeypatch) -> None:
+def test_punish_target_connection_failure_marks_cdp_unavailable(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
     solver._remember_target_tab(
         {
@@ -324,7 +324,7 @@ def test_punish_target_connection_failure_marks_manual_required(monkeypatch) -> 
     )
 
     assert solver._connect_to_target(solver.target_ws_url, "验证码拦截") is False
-    assert solver.last_failure_reason == "manual_required"
+    assert solver.last_failure_reason == "cdp_unavailable"
 
 def test_target_websocket_connection_has_a_bounded_bootstrap_timeout(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)

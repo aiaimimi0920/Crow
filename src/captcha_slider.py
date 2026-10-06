@@ -4,6 +4,7 @@ import logging
 import json
 import random
 from .captcha_dom import eval_in_all_frames
+from .captcha_verification import ready_target_matches
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class CaptchaSliderMixin:
         self._last_mock_terminal_state = None
         js_check = """
         (function() {
-            var successKeywords = ['验证通过', '通过验证', '验证成功', '验证已通过', 'success'];
+            var successKeywords = ['验证通过', '通过验证', '验证成功', '验证已通过'];
             var errorKeywords = ['失败', '错误', '再试', 'error', 'fail'];
 
             function scanDoc(doc) {
@@ -162,7 +163,7 @@ class CaptchaSliderMixin:
                 var hasError = false;
 
                 for (var i = 0; i < successKeywords.length; i++) {
-                    if (text.toLowerCase().indexOf(successKeywords[i].toLowerCase()) !== -1) {
+                    if (text.trim() === successKeywords[i]) {
                         hasSuccess = true;
                         break;
                     }
@@ -178,16 +179,15 @@ class CaptchaSliderMixin:
                 // Check for NC success class
                 var container = doc.querySelector('.nc-container');
                 if (container && container.className) {
-                    if (container.className.indexOf('nc-success') !== -1) {
+                    if (verificationElementVisible(container) && (' ' + container.className + ' ').indexOf(' nc-success ') !== -1) {
                         hasSuccess = true;
                     }
                 }
 
                 // Check if slider is still visible
-                var slider = doc.querySelector(__VERIFY_SLIDER_SELECTOR__);
-                var sliderVisible = !!(slider && slider.offsetParent !== null);
-                var challenge = doc.querySelector(__VERIFY_CHALLENGE_SELECTOR__);
-                var challengeVisible = !!(challenge && challenge.offsetParent !== null);
+                var sliderVisible = hasVisibleMatch(doc, __VERIFY_SLIDER_SELECTOR__);
+                var challengeVisible = hasVisibleMatch(doc, __VERIFY_CHALLENGE_SELECTOR__);
+                hasError = hasError || hasVisibleMatch(doc, __NC_ERROR_SELECTOR__);
 
                 return {
                     hasSuccess: hasSuccess,
@@ -197,7 +197,16 @@ class CaptchaSliderMixin:
                 };
             }
 
-            var result = scanDoc(document);
+            var result = null;
+            visitAccessibleDocuments(function(doc) {
+                var scanned = scanDoc(doc);
+                if (result === null) { result = scanned; return null; }
+                // Only main-document success is evidence; visible frames can veto it.
+                result.hasError = result.hasError || scanned.hasError;
+                result.sliderVisible = result.sliderVisible || scanned.sliderVisible;
+                result.challengeVisible = result.challengeVisible || scanned.challengeVisible;
+                return null;
+            }, true);
             var mockState = window.__mockSliderState || null;
             var mockStatusNode = document.getElementById('mock-slider-status');
             var mockTrack = document.getElementById('mock-slider-track');
@@ -214,6 +223,8 @@ class CaptchaSliderMixin:
                 challengeGone: !result.challengeVisible,
                 hasError: result.hasError,
                 noError: !result.hasError,
+                href: document.location ? String(document.location.href) : '',
+                readyState: document.readyState || '',
                 mockStateSuccess: !!(mockState && mockState.success),
                 mockStateFailure: !!(mockState && mockState.failure),
                 mockResolution: mockState && mockState.resolution ? String(mockState.resolution) : '',
@@ -245,13 +256,7 @@ class CaptchaSliderMixin:
                     f"mockMode={result.get('mockVerifyMode') or local_mock_mode}",
                 ])
             logger.info("[SOLVER] %s", ", ".join(log_parts))
-            success = bool(result.get("success"))
-            if "success" not in result:
-                success = bool(result.get("successDetected"))
-            slider_gone = bool(result.get("sliderGone", True))
-            challenge_gone = bool(result.get("challengeGone", True))
             no_error = bool(result.get("noError", not result.get("hasError")))
-            challenge_disappeared = result.get("sliderGone") is True and result.get("challengeGone") is True
             if local_mock_mode:
                 mock_state_success = bool(result.get("mockStateSuccess"))
                 mock_state_failure = bool(result.get("mockStateFailure"))
@@ -273,7 +278,12 @@ class CaptchaSliderMixin:
                 if local_mock_mode == "teardown_only":
                     return bool(mock_state_success and not mock_challenge_visible)
                 return bool(mock_state_success and mock_has_success_text)
-            return bool(no_error and slider_gone and challenge_gone and (success or challenge_disappeared))
+            return bool(
+                result.get("noError") is True and result.get("hasError") is False
+                and result.get("sliderGone") is True and result.get("challengeGone") is True
+                and result.get("success") is True
+                and ready_target_matches(result, getattr(self, "target_url", None))
+            )
 
         return False
 
@@ -367,14 +377,20 @@ class CaptchaSliderMixin:
             params["clickCount"] = click_count or 1
         elif event_type == "mouseMoved" and buttons:
             params["button"] = "left"
+        if event_type == "mousePressed":
+            # The input may reach Chromium even if its acknowledgement is lost.
+            self._cdp_mouse_down = True
+            self._cdp_mouse_position = (x, y)
         result = self._send_cdp("Input.dispatchMouseEvent", params)
         if result is not None:
             self._cdp_mouse_position = (x, y)
             if event_type in {"mousePressed", "mouseReleased"}:
                 self._cdp_mouse_down = event_type == "mousePressed"
             return True
-        logger.warning("[SOLVER] CDP mouse input is unavailable; manual verification required.")
-        self.last_failure_reason = "manual_required"
+        logger.warning("[SOLVER] CDP mouse input is unavailable; returning to bounded retry.")
+        self._release_cdp_mouse()
+        if not self._stop_if_cancelled():
+            self.last_failure_reason = "cdp_unavailable"
         return False
 
     def _do_drag(self, start_x, start_y, distance):

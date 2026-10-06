@@ -7,7 +7,7 @@ from typing import Protocol
 from .auth_cookie_paths import AuthCookiePaths, EnvironmentReader
 from .auth_cookie_snapshot_state import AuthCookieSnapshotState
 from .runtime_state import RuntimeState
-from .server_auth_cookie import AuthCookieSnapshot, CookieHealthProbe
+from .server_auth_cookie import AuthCookieSnapshot, CookieExporter, CookieHealthProbe
 from .solver_captcha_reports import PayloadFlag, ReportMarker, SolverCaptchaReports
 from .solver_pause_cleanup import PauseSetter
 
@@ -41,7 +41,7 @@ class AuthCookieHost(Protocol):
     _resolve_auth_cookie_snapshot_path: Callable[[dict[str, object]], str]
     _normalize_solver_cdp_endpoint: Callable[[object], str]
     _cdp_endpoint_permitted: Callable[[str], bool]
-    _export_auth_cdp_cookies: Callable[[str], list[dict[str, object]]]
+    _export_auth_cdp_cookies: CookieExporter
     _summarize_auth_cookies: Callable[[list[dict[str, object]]], Mapping[str, object]]
     _auth_cookie_snapshot_sample_urls: Callable[[dict[str, object]], list[str]]
     _probe_auth_cookie_snapshot_health: CookieHealthProbe
@@ -85,7 +85,9 @@ def bind_auth_cookie(
             endpoint
         ),
         permitted=lambda endpoint: host._cdp_endpoint_permitted(endpoint),
-        export=lambda endpoint: host._export_auth_cdp_cookies(endpoint),
+        export=lambda endpoint, **kwargs: host._export_auth_cdp_cookies(
+            endpoint, **kwargs
+        ),
         summarize=lambda cookies: host._summarize_auth_cookies(cookies),
         sample_urls=lambda payload: host._auth_cookie_snapshot_sample_urls(payload),
         health=lambda cookies, sample_urls, **kwargs: (
@@ -93,5 +95,6 @@ def bind_auth_cookie(
         ),
         write=lambda cookies, path: host._write_auth_cookie_snapshot(cookies, path),
         state=lambda: host._auth_cookie_snapshot_runtime_state(),
+        read_scope=lambda scope: host._read_solver_scope_state(scope),
     )
     return reports, paths, snapshot

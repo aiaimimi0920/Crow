@@ -20,7 +20,8 @@ from src.project_environment import getenv as project_getenv
 
 
 DEFAULT_CDP_ENDPOINT = "http://127.0.0.1:9223"
-DEFAULT_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9"
+# CDP expects language codes; Chromium adds HTTP quality weights itself.
+DEFAULT_ACCEPT_LANGUAGE = "zh-CN,zh"
 DEFAULT_PLATFORM_VERSION = "19.0.0"
 DEFAULT_READY_PATH = Path("/tmp/fapaifang-browser-identity.ready")
 
@@ -117,15 +118,18 @@ def browser_identity_init_script() -> str:
       });
     } catch (_) {}
   };
-  const prototype = globalThis.Navigator && Navigator.prototype;
+  const isWorker = typeof WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlobalScope;
+  const prototype = isWorker
+    ? globalThis.WorkerNavigator && WorkerNavigator.prototype
+    : globalThis.Navigator && Navigator.prototype;
   if (prototype) {
-    define(prototype, 'webdriver', false);
+    if (!isWorker) define(prototype, 'webdriver', false);
     define(prototype, 'platform', 'Win32');
     define(prototype, 'language', 'zh-CN');
     define(prototype, 'languages', ['zh-CN', 'zh']);
     define(prototype, 'hardwareConcurrency', 12);
     define(prototype, 'deviceMemory', 8);
-    define(prototype, 'maxTouchPoints', 10);
+    if (!isWorker) define(prototype, 'maxTouchPoints', 10);
   }
   const patchWebGL = (prototype) => {
     const original = prototype && prototype.getParameter;
@@ -148,6 +152,7 @@ def browser_identity_init_script() -> str:
   };
   patchWebGL(globalThis.WebGLRenderingContext && WebGLRenderingContext.prototype);
   patchWebGL(globalThis.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
+  if (isWorker) return;
   globalThis.chrome = globalThis.chrome || {runtime: {}};
   try {
     const originalQuery = globalThis.navigator && navigator.permissions && navigator.permissions.query;
@@ -161,6 +166,15 @@ def browser_identity_init_script() -> str:
   } catch (_) {}
 })();
 """.strip()
+
+
+class BrowserIdentityCommandError(RuntimeError):
+    def __init__(self, method: str, error: dict[str, Any]) -> None:
+        self.method = method
+        code = error.get("code")
+        self.cdp_error_code = code if type(code) is int else None
+        self.cdp_error_message = error.get("message")
+        super().__init__(f"browser identity command failed: {method}: {error!r}")
 
 
 class BrowserIdentityController:
@@ -212,14 +226,16 @@ class BrowserIdentityController:
     ) -> dict[str, Any]:
         command_id = self._send(method, params, session_id=session_id)
         deadline = time.monotonic() + max(float(timeout_seconds), 0.1)
-        while time.monotonic() < deadline:
+        while True:
+            # Nested target setup can consume this waiter's deadline while
+            # caching its response. Consume that response before timing out.
             cached = self.command_responses.pop(command_id, None)
             if cached is not None:
                 if cached.get("error"):
-                    raise RuntimeError(
-                        f"browser identity command failed: {method}: {cached['error']!r}"
-                    )
+                    raise BrowserIdentityCommandError(method, cached["error"])
                 return cached
+            if time.monotonic() >= deadline:
+                break
             if self.ws is None:
                 raise RuntimeError(f"browser identity websocket closed while waiting for {method}")
             try:
@@ -228,9 +244,7 @@ class BrowserIdentityController:
                 continue
             if message.get("id") == command_id:
                 if message.get("error"):
-                    raise RuntimeError(
-                        f"browser identity command failed: {method}: {message['error']!r}"
-                    )
+                    raise BrowserIdentityCommandError(method, message["error"])
                 return message
             response_id = message.get("id")
             if isinstance(response_id, int):
@@ -239,10 +253,37 @@ class BrowserIdentityController:
             self._handle_message(message)
         raise TimeoutError(f"browser identity command timed out: {method}")
 
+    def _auto_attach_children(self, session_id: str) -> None:
+        # Browser-level auto-attach alone does not include dedicated workers
+        # or out-of-process frames. Repeat on each owner, including workers
+        # that can themselves create nested workers.
+        self._send_and_wait(
+            "Target.setAutoAttach",
+            {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
+            session_id=session_id,
+        )
+
     def _apply_to_session(self, session_id: str, target_type: str) -> None:
-        if target_type == "page":
-            source = browser_identity_init_script()
+        if target_type == "worker":
             try:
+                self._auto_attach_children(session_id)
+                self._send_and_wait("Runtime.enable", session_id=session_id)
+                response = self._send_and_wait(
+                    "Runtime.evaluate",
+                    {"expression": browser_identity_init_script(), "returnByValue": True},
+                    session_id=session_id,
+                )
+                if response.get("result", {}).get("exceptionDetails"):
+                    raise RuntimeError("worker identity initialization failed")
+            finally:
+                self._send_and_wait("Runtime.runIfWaitingForDebugger", session_id=session_id)
+            self.applied_targets += 1
+            return
+        if target_type in {"page", "iframe"}:
+            source = browser_identity_init_script()
+            locale_in_use = False
+            try:
+                self._auto_attach_children(session_id)
                 self._send_and_wait(
                     "Emulation.setUserAgentOverride",
                     build_user_agent_override(self.user_agent, self.full_version),
@@ -253,11 +294,24 @@ class BrowserIdentityController:
                     {"timezoneId": "Asia/Shanghai"},
                     session_id=session_id,
                 )
-                self._send_and_wait(
-                    "Emulation.setLocaleOverride",
-                    {"locale": "zh-CN"},
-                    session_id=session_id,
-                )
+                try:
+                    self._send_and_wait(
+                        "Emulation.setLocaleOverride",
+                        {"locale": "zh-CN"},
+                        session_id=session_id,
+                    )
+                except BrowserIdentityCommandError as error:
+                    if (
+                        error.method != "Emulation.setLocaleOverride"
+                        or error.cdp_error_code != -32000
+                        or error.cdp_error_message != "Another locale override is already in effect"
+                    ):
+                        raise
+                    locale_in_use = True
+                # Chromium only runs new-document scripts while this session's
+                # Page domain is enabled. Keep it enabled in the persistent
+                # owner so worker detachment cannot drop document identity.
+                self._send_and_wait("Page.enable", session_id=session_id)
                 self._send_and_wait(
                     "Page.addScriptToEvaluateOnNewDocument",
                     {"source": source},
@@ -265,6 +319,18 @@ class BrowserIdentityController:
                 )
             finally:
                 self._send_and_wait("Runtime.runIfWaitingForDebugger", session_id=session_id)
+            if locale_in_use:
+                # Another CDP session can own this override. Accept it only
+                # after resuming the target and verifying the required locale.
+                response = self._send_and_wait(
+                    "Runtime.evaluate",
+                    {"expression": "Intl.DateTimeFormat().resolvedOptions().locale", "returnByValue": True},
+                    session_id=session_id,
+                )
+                locale = response.get("result", {}).get("result", {}).get("value")
+                if locale != "zh-CN":
+                    raise RuntimeError("browser identity existing locale does not match zh-CN")
+                print(json.dumps({"event": "browser_identity_locale_reused", "locale": "zh-CN"}), flush=True)
             # Existing tabs may already have a document, while newly created
             # targets receive the init script before their first page script.
             try:
@@ -295,7 +361,22 @@ class BrowserIdentityController:
         session_id = str(params.get("sessionId") or "").strip()
         target_info = params.get("targetInfo") if isinstance(params.get("targetInfo"), dict) else {}
         if session_id:
-            self._apply_to_session(session_id, str(target_info.get("type") or ""))
+            target_type = str(target_info.get("type") or "")
+            if params.get("waitingForDebugger") is False and target_type not in {"page", "iframe"}:
+                if target_type == "worker":
+                    # Reconnect also attaches workers whose JavaScript is already
+                    # running. Waiting for another injection can tear down the
+                    # controller while a busy worker cannot process evaluate.
+                    self._auto_attach_children(session_id)
+                    print(
+                        json.dumps(
+                            {"event": "browser_identity_running_worker_skipped", "identity_verified": False},
+                            separators=(",", ":"),
+                        ),
+                        flush=True,
+                    )
+                return
+            self._apply_to_session(session_id, target_type)
 
     def _write_ready(self) -> None:
         self.ready_path.parent.mkdir(parents=True, exist_ok=True)
@@ -396,6 +477,8 @@ class BrowserIdentityController:
                             {
                                 "event": "browser_identity_reconnect",
                                 "error_type": type(error).__name__,
+                                "method": getattr(error, "method", None),
+                                "cdp_error_code": getattr(error, "cdp_error_code", None),
                             },
                             separators=(",", ":"),
                         ),

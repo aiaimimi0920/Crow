@@ -118,7 +118,7 @@ def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypat
     )
 
     with pytest.raises(RuntimeError, match="anti-bot challenge"):
-        live_batch_smoke.fetch_detail_with_browser(
+        live_batch_smoke._fetch_detail_with_browser_attached(
             {"id": "3003", "url": "https://sf-item.taobao.com/sf_item/3003.htm"},
             cdp_endpoint="http://127.0.0.1:9223",
         )
@@ -131,8 +131,8 @@ def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypat
         "identity:Page.addScriptToEvaluateOnNewDocument",
         "identity:Runtime.evaluate",
         "identity:verify",
-        "identity:detach",
         "navigation:goto",
+        "identity:detach",
     ]
 
 
@@ -181,7 +181,7 @@ def test_fetch_detail_with_browser_preserves_existing_login_without_opening_anot
     monkeypatch.setattr(live_batch_smoke, "detach_attached_cdp_browser", lambda *_args, **_kwargs: None)
 
     with pytest.raises(live_batch_smoke.DetailChallengeError, match="anti-bot challenge"):
-        live_batch_smoke.fetch_detail_with_browser(
+        live_batch_smoke._fetch_detail_with_browser_attached(
             {"id": "3004", "url": "https://sf-item.taobao.com/sf_item/3004.htm"},
             cdp_endpoint="http://127.0.0.1:9223",
         )

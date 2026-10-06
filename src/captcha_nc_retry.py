@@ -9,9 +9,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 from src.project_environment import getenv as project_getenv
 
+from .captcha_budget import SolveStopped
+from .captcha_dom import eval_in_all_frames
 from .collection.adapters.taobao_auth_target import canonical_auth_target
 from .collection.adapters.taobao_solver_target import _split_web_target_url
-from .captcha_dom import eval_in_all_frames
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,19 @@ class CaptchaNCRetryMixin:
         target_y = start_y
 
         def dispatch_mouse_event(params):
+            if params["type"] == "mousePressed":
+                self._cdp_mouse_down = True
+                self._cdp_mouse_position = (params["x"], params["y"])
             result = self._send_cdp("Input.dispatchMouseEvent", params)
             if result is not None:
+                self._cdp_mouse_position = (params["x"], params["y"])
+                if params["type"] == "mouseReleased":
+                    self._cdp_mouse_down = False
                 return True
-            logger.warning("[SOLVER] CDP mouse input is unavailable; manual verification required.")
-            self.last_failure_reason = "manual_required"
+            logger.warning("[SOLVER] CDP mouse input is unavailable; returning to bounded retry.")
+            self._release_cdp_mouse()
+            if not self._stop_if_cancelled():
+                self.last_failure_reason = "cdp_unavailable"
             return False
 
         steps = max(24, min(48, int(abs(distance) / 8)))
@@ -218,6 +227,9 @@ class CaptchaNCRetryMixin:
                     stable_slider_samples = 1
                 if stable_slider_samples >= 3:
                     return {"slider": slider, "summary": summary}
+            else:
+                stable_slider_signature = None
+                stable_slider_samples = 0
             self._wait_interruptibly(0.35)
         return {"authenticated": False}
 
@@ -231,7 +243,18 @@ class CaptchaNCRetryMixin:
                 self._enable_process_dpi_awareness()
                 pyautogui.FAILSAFE = False
                 pyautogui.PAUSE = 0
-                self._focus_os_window()
+                try:
+                    focused = self._focus_os_window()
+                except SolveStopped:
+                    raise
+                except Exception as error:  # noqa: BLE001 -- focus failure blocks input
+                    self.last_failure_reason = "window_focus_failed"
+                    logger.warning("[SOLVER] OS retry window focus failed: %s", error)
+                    return False
+                if not focused:
+                    self.last_failure_reason = "window_focus_failed"
+                    logger.warning("[SOLVER] OS window focus failed; skipping retry click.")
+                    return False
                 mapped = self._map_css_to_screen(
                     css_x,
                     css_y,

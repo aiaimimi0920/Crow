@@ -32,8 +32,38 @@ def _auth_complete_retry_delay(attempts: int | None) -> float:
     )
 
 
-def _reset_fallback_state() -> dict[str, object]:
+def _browser_backpressure(state: dict[str, object]) -> dict[str, object]:
+    budget = {
+        key: state.get(key)
+        for key in (
+            "window_started_at",
+            "slider_next_attempt_at",
+            "solver_cooldown_until",
+            "solver_cooldown_reason",
+        )
+    }
+    budget["consecutive_failures"] = max(
+        int(cast("str | int", state.get("consecutive_failures") or 0)),
+        int(cast("str | int", state.get("slider_attempts") or 0)),
+    )
+    return budget
+
+
+def _reset_fallback_state(
+    *, preserve_budget_from: dict[str, object] | None = None
+) -> dict[str, object]:
+    """Full reset by default; automatic expiry can retain backpressure and lineage."""
     state: dict[str, object] = _default_fallback_state()
+    if (
+        preserve_budget_from is not None
+        and preserve_budget_from.get("scope") in {"seed", "detail"}
+        and str(preserve_budget_from.get("challenge_id") or "").strip()
+    ):
+        state.update(
+            _browser_backpressure(preserve_budget_from),
+            challenge_id=preserve_budget_from["challenge_id"],
+            scope=preserve_budget_from["scope"],
+        )
     _save_fallback_state(state)
     return state
 
@@ -44,17 +74,24 @@ def _sync_challenge_state(
     challenge_id = str(challenge_id or "").strip()
     if not challenge_id:
         return state, False
+    normalized_scope = str(scope or "").strip() or None
     current_id = str(state.get("challenge_id") or "").strip()
     if current_id == challenge_id:
-        normalized_scope = str(scope or "").strip() or None
         if normalized_scope and state.get("scope") != normalized_scope:
             state["scope"] = normalized_scope
             _save_fallback_state(state)
         return state, False
     if current_id:
+        # Generation-local receipts expire; shared-browser backpressure does not.
+        previous = state
         state = _default_fallback_state()
+        if previous.get("scope") in {"seed", "detail"} and normalized_scope in {
+            "seed",
+            "detail",
+        }:
+            state.update(_browser_backpressure(previous))
     state["challenge_id"] = challenge_id
-    state["scope"] = str(scope or "").strip() or None
+    state["scope"] = normalized_scope
     _save_fallback_state(state)
     return state, bool(current_id)
 
@@ -68,14 +105,13 @@ def _solver_cooldown_active(state: object, now: float | None = None) -> bool:
     return cooldown_until > current_time
 
 
-def _node_solver_cooldown_can_resume(
+def _node_solver_cooldown_matches(
     state: dict[str, object], status: dict[str, object]
 ) -> bool:
-    """An automatic blocked report must not turn its cooldown into a manual latch."""
+    """Match automatic backpressure without treating server state as a report ACK."""
     return bool(
         status.get("node_solver_blocked")
         and status.get("last_failure_reason") == "repeated_solver_failures"
-        and state.get("node_solver_blocked_reported")
         and state.get("solver_cooldown_reason") == "repeated_solver_failures"
         and state.get("solver_cooldown_until")
         and state.get("challenge_id")
@@ -86,16 +122,24 @@ def _node_solver_cooldown_can_resume(
     )
 
 
+def _node_solver_cooldown_can_resume(
+    state: dict[str, object], status: dict[str, object]
+) -> bool:
+    """An automatic blocked report must not turn its cooldown into a manual latch."""
+    return bool(
+        state.get("node_solver_blocked_reported")
+        and _node_solver_cooldown_matches(state, status)
+    )
+
+
 def _begin_solver_cooldown_if_needed(
     state: dict[str, object], now: float | None = None
 ) -> bool:
     if not isinstance(state, dict) or state.get("solver_cooldown_until"):
         return False
-    failures = int(
-        cast(
-            "str | int",
-            state.get("slider_attempts", state.get("consecutive_failures", 0)) or 0,
-        )
+    failures = max(
+        int(cast("str | int", state.get("slider_attempts") or 0)),
+        int(cast("str | int", state.get("consecutive_failures") or 0)),
     )
     threshold = max(1, SOLVER_COOLDOWN_FAIL_THRESHOLD)
     cooldown_seconds = max(0.0, SOLVER_COOLDOWN_SECONDS)
@@ -131,8 +175,15 @@ def _record_slider_attempt_failure(
 ) -> dict[str, object]:
     current_time = time.time() if now is None else float(now)
     attempts = int(cast("str | int", state.get("slider_attempts", 0) or 0)) + 1
+    failures = (
+        max(
+            attempts - 1,
+            int(cast("str | int", state.get("consecutive_failures") or 0)),
+        )
+        + 1
+    )
     state["slider_attempts"] = attempts
-    state["consecutive_failures"] = attempts
+    state["consecutive_failures"] = failures
     state["slider_attempt_started_at"] = None
     state["slider_last_progress_at"] = current_time
     if not state.get("window_started_at"):

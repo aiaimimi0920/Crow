@@ -353,25 +353,32 @@ class CaptchaOSWindowsMixin:
             return None
         try:
             result = subprocess.run(
-                ["xdotool", "getwindowgeometry", "--shell", str(self._linux_window_id)],
+                ["xwininfo", "-id", str(self._linux_window_id), "-stats"],
                 check=False,
                 capture_output=True,
                 text=True,
                 timeout=3,
+                env={**os.environ, "LC_ALL": "C"},
             )
-        except (FileNotFoundError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError):
             return None
         if result.returncode != 0:
             return None
+        # xdotool can add the reparented frame offset to an already translated
+        # origin. Only root-relative coordinates describe the physical viewport.
+        fields = {
+            "Absolute upper-left X": "x", "Absolute upper-left Y": "y",
+            "Width": "width", "Height": "height",
+        }
         values = {}
         for line in result.stdout.splitlines():
-            key, separator, value = line.partition("=")
-            if separator and key in {"X", "Y", "WIDTH", "HEIGHT"}:
-                try:
-                    values[key.lower()] = float(value)
-                except ValueError:
+            key, separator, value = line.strip().partition(":")
+            if separator and key in fields:
+                field = fields[key]
+                if field in values or not re.fullmatch(r"[+-]?\d+", value.strip()):
                     return None
-        if values.get("width", 0) < 200 or values.get("height", 0) < 200:
+                values[field] = float(value)
+        if set(values) != set(fields.values()) or min(values["width"], values["height"]) < 200:
             return None
         return values
 

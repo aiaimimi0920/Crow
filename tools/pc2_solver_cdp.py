@@ -271,7 +271,11 @@ def check_cdp_browser_for_authenticated_target(
             ):
                 route_tabs.append(tab)
         scoped_tabs = exact_tabs + route_tabs
-        if _challenge_scope_for_url(target_url) == "seed" and not scoped_tabs:
+        # Auction completion requires this target, not another tab's session.
+        if (
+            _challenge_scope_for_url(target_url) in {"seed", "detail"}
+            and not scoped_tabs
+        ):
             return None
         target_scoped = bool(scoped_tabs)
         candidates = scoped_tabs or page_tabs

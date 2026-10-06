@@ -28,13 +28,13 @@ from tools.pc2_solver_execution import (
 from tools.pc2_solver_fallback import (
     _manual_fallback_latch_active,
     _mark_collection_resume_pending,
-    _retry_node_solver_blocked_report,
     _retry_pending_collection_resume,
 )
 from tools.pc2_solver_loop_control import (
     process_pending_control_actions,
     recover_stale_pause,
     reset_forced_solver_scopes,
+    retry_blocked_report,
 )
 from tools.pc2_solver_loop_failure import record_failed_attempt
 from tools.pc2_solver_loop_probe import prepare_solver_browser, probe_requested_targets
@@ -47,6 +47,7 @@ from tools.pc2_solver_retry_state import (
     SOLVER_COOLDOWN_SECONDS,
     _begin_solver_cooldown_if_needed,
     _node_solver_cooldown_can_resume,
+    _node_solver_cooldown_matches,
     _record_slider_attempt_started,
     _reset_fallback_state,
     _slider_retry_due,
@@ -60,6 +61,7 @@ from tools.pc2_solver_scope import (
 )
 from tools.pc2_solver_scope_policy import (
     manual_challenge_registration_needed,
+    node_owns_last_request,
     node_solver_execution_block_reason,
     select_solver_scope_status,
     solver_request_target_urls,
@@ -139,10 +141,24 @@ def local_solver_loop(
             paused = bool(solver_status.get("paused"))
             running = bool(solver_status.get("running"))
             manual_required = bool(solver_status.get("manual_required"))
+            manual_wait = solver_status_requires_manual_only(
+                solver_status
+            ) and not manual_challenge_registration_needed(solver_status)
             if (
-                solver_status_requires_manual_only(solver_status)
-                and not manual_challenge_registration_needed(solver_status)
-                and not _node_solver_cooldown_can_resume(fallback_state, solver_status)
+                manual_wait
+                and _node_solver_cooldown_matches(fallback_state, solver_status)
+                and not running
+                and node_owns_last_request(
+                    solver_status, cdp_endpoint, expected_node_id
+                )
+            ):
+                # The NAS may have applied the report before its response was lost.
+                # Retry only this control ACK before the manual gate, never execution.
+                retry_blocked_report(
+                    api_base_url, solver_status, fallback_state, expected_node_id
+                )
+            if manual_wait and not _node_solver_cooldown_can_resume(
+                fallback_state, solver_status
             ):
                 if fallback_state.get("terminal_manual_pending"):
                     fallback_state["terminal_manual_pending"] = False
@@ -197,26 +213,9 @@ def local_solver_loop(
                         ),
                     }
                 )
-            blocked_report = _retry_node_solver_blocked_report(
-                api_base_url,
-                solver_status,
-                fallback_state,
-                expected_node_id=expected_node_id,
+            retry_blocked_report(
+                api_base_url, solver_status, fallback_state, expected_node_id
             )
-            if blocked_report.get("attempted"):
-                log_event(
-                    {
-                        "kind": "node_solver_blocked_report",
-                        "confirmed": blocked_report.get("confirmed"),
-                        "attempt": fallback_state.get(
-                            "node_solver_blocked_report_attempts", 0
-                        ),
-                        "result_status": (blocked_report.get("result") or {}).get(
-                            "status"
-                        ),
-                        "error": (blocked_report.get("result") or {}).get("error"),
-                    }
-                )
             if _solver_cooldown_active(fallback_state):
                 _save_fallback_state(fallback_state)
                 log_event(
