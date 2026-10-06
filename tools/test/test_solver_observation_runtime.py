@@ -131,3 +131,27 @@ def test_old_container_tail_read_on_replacement(fake_host, monkeypatch):
     assert reads[:3] == ["container-a", "container-a", "container-b"]
     events = monitor.load_rows(args.output / "events.jsonl")
     assert any(e["kind"] == "observer_restart_boundary" for e in events)
+
+
+def test_partial_multi_container_read_does_not_poison_dedup(fake_host, monkeypatch):
+    args, calls, clock, identity, original = fake_host
+    start = clock[0]
+    args.hours = 4 / 3600
+    failed = [False]
+    line = monitor.utc(start + 0.2) + ' {"kind":"local_solver_start"}'
+
+    def docker(*parts, **options):
+        if parts[0] == "exec":
+            identity.update(id="container-b", started_at=monitor.utc(start + 0.5))
+        if parts[0] == "logs" and parts[-1] == "container-a" and clock[0] > start:
+            calls.append(parts)
+            return SimpleNamespace(stdout=line, stderr="")
+        if parts[0] == "logs" and parts[-1] == "container-b" and not failed[0]:
+            failed[0] = True
+            raise OSError("temporary read failure")
+        return original(*parts, **options)
+
+    monkeypatch.setattr(monitor, "docker", docker)
+    monitor.observe(args)
+    rows = monitor.load_rows(args.output / "events.jsonl")
+    assert sum(r["kind"] == "local_solver_start" for r in rows) == 1

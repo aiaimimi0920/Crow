@@ -201,7 +201,6 @@ def observe(args):
                             and row["id"] not in seen
                             and run["start_epoch"] <= row["epoch"] <= run["end_epoch"]
                         ):
-                            seen.add(row["id"])
                             projected.append(row)
                 if current_started != previous_started:
                     from tools.solver_observation_evidence import fingerprint, timestamp
@@ -214,11 +213,13 @@ def observe(args):
                         "id": fingerprint(container_id + current_started),
                     }
                     if boundary["id"] not in seen:
-                        seen.add(boundary["id"])
                         projected.append(boundary)
                 read_ok = True
                 for row in sorted(projected, key=lambda e: (e["epoch"], e["at"])):
+                    if row["id"] in seen:
+                        continue
                     append(root / "events.jsonl", row)
+                    seen.add(row["id"])
                     events.append(row)
                 events.sort(key=lambda e: (e["epoch"], e["at"]))
                 if time.time() >= next_sample or upper >= run["end_epoch"]:
