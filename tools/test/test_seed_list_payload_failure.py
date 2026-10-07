@@ -7,6 +7,7 @@ import pytest
 from src.collection.adapters import taobao_list_probe
 from tools import (
     browserless_seed_probe,
+    cdp_background_page,
     live_batch_smoke,
     live_smoke_browser,
     seed_collector,
@@ -32,6 +33,9 @@ def _browser(monkeypatch, html, final_url=LIST_URL, error=None):
         taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
     )
     monkeypatch.setattr(taobao_login_health, "read_cdp_json", lambda *a, **k: target)
+    monkeypatch.setattr(
+        cdp_background_page, "open_background_page", lambda *a: dict(target)
+    )
     monkeypatch.setattr(taobao_login_health, "activate_cdp_target", lambda *a: None)
 
     def evaluate(*args):
