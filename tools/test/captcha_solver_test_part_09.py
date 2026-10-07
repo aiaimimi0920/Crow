@@ -2,6 +2,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 from src import captcha_solver
 from src.captcha_pointer_backend import Win32PointerBackend
 from tools.test.captcha_solver_test_context import set_solver_platform
@@ -108,7 +110,9 @@ def test_map_css_to_screen_allows_zero_distance_for_clicks() -> None:
     assert mapped["y"] == 80.0
     assert mapped["distance"] == 0.0
 
-def test_click_css_point_falls_back_to_cdp_when_os_mapping_is_unavailable(monkeypatch) -> None:
+@pytest.mark.parametrize("platform, expected", [("nt", True), ("posix", False)])
+def test_click_css_point_mapping_fallback_is_platform_specific(monkeypatch, platform, expected) -> None:
+    set_solver_platform(monkeypatch, platform)
     class FakePyAutoGUI:
         FAILSAFE = True
         PAUSE = 0
@@ -121,8 +125,8 @@ def test_click_css_point_falls_back_to_cdp_when_os_mapping_is_unavailable(monkey
     solver._map_css_to_screen = lambda *_args, **_kwargs: None
     solver._dispatch_mouse = lambda event, *_args, **_kwargs: dispatched.append(event) or True
 
-    assert solver._click_css_point(100, 50) is True
-    assert dispatched == ["mousePressed", "mouseReleased"]
+    assert solver._click_css_point(100, 50) is expected
+    assert dispatched == (["mousePressed", "mouseReleased"] if expected else [])
 
 def test_bounded_os_cursor_move_uses_fixed_zero_duration_steps(monkeypatch) -> None:
     moves: list[tuple[float, float, float]] = []

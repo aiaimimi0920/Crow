@@ -131,7 +131,8 @@ def test_os_drag_release_plan_releases_at_target(monkeypatch) -> None:
     assert settle_xs[-1] == release_x
     assert all(left >= right for left, right in zip(settle_xs, settle_xs[1:], strict=False))
 
-def test_os_drag_profile_switches_variants_by_index() -> None:
+def test_os_drag_profile_switches_variants_by_index(monkeypatch) -> None:
+    set_solver_platform(monkeypatch, "nt")
     solver = captcha_solver.CaptchaSolver(port=9223)
 
     first = solver._os_drag_profile(0)

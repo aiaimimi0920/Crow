@@ -3,9 +3,11 @@ import random
 import time
 
 from src import captcha_solver
+from tools.test.captcha_solver_test_context import set_solver_platform
 
 
 def test_legacy_exact_release_profile_settles_back_to_exact_target(monkeypatch) -> None:
+    set_solver_platform(monkeypatch, "nt")
     solver = captcha_solver.CaptchaSolver(port=9223)
     profile = solver._os_drag_profiles()[1]
 

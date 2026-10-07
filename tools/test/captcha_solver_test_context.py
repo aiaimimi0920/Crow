@@ -7,13 +7,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import captcha_os_input, captcha_os_mapping, captcha_os_windows
+from src import (
+    captcha_nc_retry,
+    captcha_os_input,
+    captcha_os_mapping,
+    captcha_os_windows,
+)
 from src.captcha_budget import SolveBudget
 
 
 def set_solver_platform(monkeypatch, name):
     platform_os = SimpleNamespace(**{**vars(os), "name": name})
-    for module in (captcha_os_input, captcha_os_mapping, captcha_os_windows):
+    for module in (captcha_nc_retry, captcha_os_input, captcha_os_mapping, captcha_os_windows):
         monkeypatch.setattr(module, "os", platform_os)
 
 
