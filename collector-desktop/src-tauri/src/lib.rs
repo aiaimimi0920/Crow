@@ -5,6 +5,10 @@ mod helper_process;
 mod runtime_config;
 mod settings_bridge;
 
+#[cfg(test)]
+#[path = "../build_frontend.rs"]
+mod build_frontend;
+
 #[tauri::command]
 fn default_api_base() -> Result<String, String> {
     let configured = environment_aliases::api_source(
