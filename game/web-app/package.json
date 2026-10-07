@@ -22,7 +22,7 @@
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.1.18",
-    "vite": "^8.0.13"
+    "vite": "^8.3.2"
   },
   "overrides": {
     "@tailwindcss/cli": {
