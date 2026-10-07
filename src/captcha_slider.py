@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import random
+
 from .captcha_dom import eval_in_all_frames
 from .captcha_verification import ready_target_matches
 
@@ -10,6 +11,25 @@ logger = logging.getLogger(__name__)
 
 
 class CaptchaSliderMixin:
+    def _remaining_drag_distance(self, slider_info, track_rect, track_width):
+        remaining = None
+        if isinstance(track_rect, dict):
+            track_right = float(track_rect.get("left") or 0) + float(track_rect.get("width") or 0)
+            slider_right = float(slider_info.get("x") or 0) + float(slider_info.get("width") or 0)
+            candidate = track_right - slider_right
+            if 0 < candidate <= track_width + slider_info["width"]:
+                remaining = candidate
+            track_offset_width = float(track_rect.get("offsetWidth") or track_width)
+            handle_offset_width = float(track_rect.get("handleOffsetWidth") or slider_info["width"])
+            current_handle_left = track_rect.get("handleOffsetLeft")
+            if current_handle_left is not None:
+                offset_remaining = track_offset_width - handle_offset_width - float(current_handle_left)
+                if 0 <= offset_remaining <= track_width + slider_info["width"]:
+                    remaining = offset_remaining
+        if remaining is None:
+            remaining = track_width - slider_info["width"] + 2
+        return max(1, min(remaining, 1000))
+
     def _find_slider_once(self):
         """Run one slider lookup pass and return slider info dict or None."""
         selectors_js = json.dumps(self.SLIDER_SELECTORS)

@@ -42,6 +42,14 @@ _PATTERNS = (
         ),
     ),
     (
+        "pointer_hit",
+        rf"\[SOLVER\] OS pointer hit verified delta=(?P<delta>{_NUMBER})px corrections=(?P<corrections>\d{{1,2}})",
+    ),
+    (
+        "drag_timing",
+        rf"\[SOLVER\] OS drag timing movement=(?P<movement_seconds>{_NUMBER})s hold=(?P<hold_seconds>{_NUMBER})s",
+    ),
+    (
         "verification",
         (
             rf"\[SOLVER\] (?:\[SOLVER\] )?Verification: success=(?P<success>{_BOOL}), sliderGone=(?P<slider_gone>{_BOOL}), "
@@ -63,7 +71,8 @@ _ENUMS = {
         "win32_client",
         "dpr_fallback",
     },
-    "profile": {"fast_exact_v3", "legacy_exact_release", "dense_exact_release"},
+    "profile": {"fast_exact_v3", "legacy_exact_release", "dense_exact_release",
+                "slow_exact_v4", "slow_settle_v4", "slow_dense_v4"},
     "input": {"uinput", "win32", "pyautogui"},
 }
 _BOOLEANS = {

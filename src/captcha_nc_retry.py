@@ -11,6 +11,7 @@ from src.project_environment import getenv as project_getenv
 
 from .captcha_budget import SolveStopped
 from .captcha_dom import eval_in_all_frames
+from .captcha_os_target import OSPointerTarget
 from .collection.adapters.taobao_auth_target import canonical_auth_target
 from .collection.adapters.taobao_solver_target import _split_web_target_url
 
@@ -91,7 +92,8 @@ class CaptchaNCRetryMixin:
             if (!el || el.offsetParent === null) return null;
             var r = el.getBoundingClientRect();
             if (r.width < 8 || r.height < 8) return null;
-            return {x: r.left, y: r.top, width: r.width, height: r.height};
+            return {x: r.left, y: r.top, width: r.width, height: r.height,
+                selector: __NC_WIDGET_SELECTOR__, context: 'main'};
         })()
         """
         ret = self._send_cdp("Runtime.evaluate", {"expression": eval_in_all_frames(js_script), "returnByValue": True})
@@ -102,7 +104,7 @@ class CaptchaNCRetryMixin:
     def _nc_retry_targets(self):
         js_script = """
         (function() {
-            function visibleRect(el, frameOffsetX, frameOffsetY) {
+            function visibleRect(el, frameOffsetX, frameOffsetY, selector, context) {
                 if (!el || el.offsetParent === null) return null;
                 var rect = el.getBoundingClientRect();
                 if (rect.width < 8 || rect.height < 8) return null;
@@ -110,25 +112,27 @@ class CaptchaNCRetryMixin:
                     x: rect.left + frameOffsetX,
                     y: rect.top + frameOffsetY,
                     width: rect.width,
-                    height: rect.height
+                    height: rect.height,
+                    selector: selector || (el.id ? '#' + CSS.escape(el.id) : null),
+                    context: context
                 };
             }
 
-            function scan(doc, frameOffsetX, frameOffsetY) {
+            function scan(doc, frameOffsetX, frameOffsetY, context) {
                 var result = {
                     widget: null,
                     retryText: null,
                     slider: null
                 };
                 var widget = doc.querySelector(__NC_WIDGET_SELECTOR__);
-                result.widget = visibleRect(widget, frameOffsetX, frameOffsetY);
+                result.widget = visibleRect(widget, frameOffsetX, frameOffsetY, __NC_WIDGET_SELECTOR__, context);
                 var slider = doc.querySelector(__NC_HANDLE_SELECTOR__);
-                result.slider = visibleRect(slider, frameOffsetX, frameOffsetY);
+                result.slider = visibleRect(slider, frameOffsetX, frameOffsetY, __NC_HANDLE_SELECTOR__, context);
                 var errorWidget = doc.querySelector(__NC_ERROR_SELECTOR__);
-                result.retryText = visibleRect(errorWidget, frameOffsetX, frameOffsetY);
+                result.retryText = visibleRect(errorWidget, frameOffsetX, frameOffsetY, __NC_ERROR_SELECTOR__, context);
 
                 var allNodes = doc.querySelectorAll('div, span, p, button, a');
-                for (var i = 0; i < allNodes.length; i++) {
+                for (var i = 0; !result.retryText && i < allNodes.length; i++) {
                     var node = allNodes[i];
                     if (!node || node.offsetParent === null) continue;
                     var text = (node.innerText || node.textContent || '').trim();
@@ -140,7 +144,7 @@ class CaptchaNCRetryMixin:
                         text.toLowerCase().indexOf("oops... something's wrong") !== -1 ||
                         text.toLowerCase().indexOf('please refresh page and try again') !== -1
                     ) {
-                        result.retryText = visibleRect(node, frameOffsetX, frameOffsetY);
+                        result.retryText = visibleRect(node, frameOffsetX, frameOffsetY, null, context);
                         if (result.retryText) break;
                     }
                 }
@@ -148,9 +152,9 @@ class CaptchaNCRetryMixin:
             }
 
             var summary = null;
-            visitAccessibleDocuments(function(doc, x, y) {
-                    if (summary === null) { summary = scan(doc, x, y); return null; }
-                    var frameSummary = scan(doc, x, y);
+            visitAccessibleDocuments(function(doc, x, y, context) {
+                    if (summary === null) { summary = scan(doc, x, y, context); return null; }
+                    var frameSummary = scan(doc, x, y, context);
                     if (!summary.widget && frameSummary.widget) summary.widget = frameSummary.widget;
                     if (!summary.retryText && frameSummary.retryText) summary.retryText = frameSummary.retryText;
                     if (!summary.slider && frameSummary.slider) summary.slider = frameSummary.slider;
@@ -255,26 +259,40 @@ class CaptchaNCRetryMixin:
                     self.last_failure_reason = "window_focus_failed"
                     logger.warning("[SOLVER] OS window focus failed; skipping retry click.")
                     return False
-                mapped = self._map_css_to_screen(
-                    css_x,
-                    css_y,
-                    0,
-                    slider_info=slider_info,
-                    allow_zero_distance=True,
-                )
-                if mapped:
-                    logger.info("[SOLVER] OS click at (%.0f,%.0f) source=%s", mapped["x"], mapped["y"], mapped.get("source"))
-                    self._move_os_cursor_bounded(
-                        pyautogui,
-                        mapped["x"],
-                        mapped["y"],
-                        random.uniform(0.12, 0.25),
+                probe = OSPointerTarget(self, slider_info, css_x, css_y)
+                pressed = False
+                try:
+                    if probe.enabled:
+                        if not probe.open():
+                            return False
+                        css_x, css_y = probe.point
+                        slider_info = {**slider_info, **probe.rect}
+                    mapped = self._map_css_to_screen(
+                        css_x, css_y, 0, slider_info=slider_info, allow_zero_distance=True
                     )
-                    self._wait_interruptibly(random.uniform(0.08, 0.18))
-                    self._set_os_left_button(pyautogui, down=True)
-                    self._wait_interruptibly(random.uniform(0.04, 0.1))
-                    self._set_os_left_button(pyautogui, down=False)
-                    return True
+                    if mapped:
+                        logger.info("[SOLVER] OS click at (%.0f,%.0f) source=%s", mapped["x"], mapped["y"], mapped.get("source"))
+                        self._move_os_cursor_bounded(
+                            pyautogui, mapped["x"], mapped["y"],
+                            random.uniform(*( (0.12, 0.25) if os.name == "nt" else (0.2, 0.4) )),
+                        )
+                        self._wait_interruptibly(random.uniform(0.08, 0.18))
+                        if probe.enabled and probe.verify(pyautogui, mapped) is None:
+                            return False
+                        pressed = True
+                        self._set_os_left_button(pyautogui, down=True)
+                        self._wait_interruptibly(random.uniform(0.04, 0.1))
+                        self._set_os_left_button(pyautogui, down=False)
+                        pressed = False
+                        return True
+                    if os.name != "nt":
+                        return False
+                finally:
+                    try:
+                        if pressed:
+                            self._set_os_left_button(pyautogui, down=False)
+                    finally:
+                        probe.close()
                 logger.info("[SOLVER] OS click mapping unavailable; falling back to CDP click.")
         pressed = self._dispatch_mouse("mousePressed", css_x, css_y, buttons=1, click_count=1)
         released = self._dispatch_mouse("mouseReleased", css_x, css_y, buttons=0, click_count=1)

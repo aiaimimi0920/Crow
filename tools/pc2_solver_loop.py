@@ -30,6 +30,7 @@ from tools.pc2_solver_fallback import (
     _mark_collection_resume_pending,
     _retry_pending_collection_resume,
 )
+from tools.pc2_solver_idle_pointer import IdlePointer
 from tools.pc2_solver_loop_control import (
     process_pending_control_actions,
     recover_stale_pause,
@@ -96,6 +97,7 @@ def local_solver_loop(
     last_probe_target = None
     last_auth_confirmed_at = 0.0
     probe_counter = 0
+    idle_pointer = IdlePointer(cdp_endpoint)
     while True:
         write_solver_heartbeat("polling")
         try:
@@ -359,6 +361,11 @@ def local_solver_loop(
                 if cdp_trigger:
                     last_probe_target = probe_target
             if not cdp_trigger:
+                idle_event = idle_pointer.tick(
+                    solver_status, partial(read_solver_status, api_base_url)
+                )
+                if idle_event:
+                    log_event(idle_event)
                 time.sleep(poll_seconds)
                 continue
             # CDP probing can take several seconds. Re-read the control plane at

@@ -4,11 +4,17 @@ import logging
 import math
 import os
 import random
+import time
+
 from src.project_environment import getenv as project_getenv
 
 from .captcha_budget import SolveStopped
+from .captcha_os_target import OSPointerTarget
 from .captcha_pointer_backend import (
-    OSPointerBackend, PyAutoGUIPointerBackend, UInputPointerBackend, Win32PointerBackend,
+    OSPointerBackend,
+    PyAutoGUIPointerBackend,
+    UInputPointerBackend,
+    Win32PointerBackend,
 )
 from .captcha_x11_pointer import recover_xwayland_left_button
 
@@ -20,7 +26,7 @@ class CaptchaOSInputMixin:
         # Keep the historically successful fast profile first. NC has a short
         # interaction window, so preserve movement timing while holding the
         # final endpoint for a random 1.5-2.5 seconds before release.
-        return (
+        profiles = (
             {
                 "name": "fast_exact_v3",
                 "pre_pause": (0.05, 0.15),
@@ -82,6 +88,20 @@ class CaptchaOSInputMixin:
                 "start_duration": (0.25, 0.5),
             },
         )
+        if os.name != "nt":
+            # Physical Linux desktop: visible, bounded motion rather than the
+            # sub-second Windows profile. Endpoint hold remains a separate phase.
+            for index, profile in enumerate(profiles):
+                profile.update(
+                    name=("slow_exact_v4", "slow_settle_v4", "slow_dense_v4")[index],
+                    total_time=(2.6 + index * 0.4, 3.6 + index * 0.4),
+                    steps=(72 + index * 8, 88 + index * 8),
+                    pre_pause=(0.3, 0.6), press_hold=(0.18, 0.3),
+                    approach_duration=(0.35, 0.6), start_duration=(0.25, 0.4),
+                    tremor_x=0.7, pixel_tremor=True, normalize_duration=True,
+                    overshoot=(0.0, 1.2), settle_steps=(3, 5),
+                )
+        return profiles
 
     def _os_drag_profile(self, variant_index=0):
         profiles = self._os_drag_profiles()
@@ -110,7 +130,23 @@ class CaptchaOSInputMixin:
             previous = eased
             step_dwell = (total / steps) * random.uniform(0.75, 1.25)
             dwells.append(max(0.006, min(step_dwell, 0.06)))
+        if profile.get("normalize_duration"):
+            duration_scale = total / sum(dwells)
+            dwells = [value * duration_scale for value in dwells]
         return fracs, dwells
+
+    def _os_drag_y_track(self, count, profile):
+        if not profile.get("pixel_tremor"):
+            return []
+        offsets, drift, target, remaining = [], 0.0, 0.0, 0
+        for _ in range(count):
+            if remaining <= 0:
+                target = random.choice((-1, 1)) * random.uniform(1.25, 2.4)
+                remaining = random.randint(4, 8)
+            drift += (target - drift) * 0.5
+            offsets.append(drift)
+            remaining -= 1
+        return offsets
 
     def _os_drag_release_plan(self, sx, phys_distance, profile):
         release_mode = str(profile.get("release_mode") or "overshoot_release").strip().lower()
@@ -294,6 +330,15 @@ class CaptchaOSInputMixin:
         return True
 
     def _do_drag_os(self, start_x, start_y, distance, slider_info=None, profile_variant_index=0):
+        probe = OSPointerTarget(self, slider_info, start_x, start_y)
+        try:
+            return self._do_drag_os_target(
+                start_x, start_y, distance, slider_info, profile_variant_index, probe
+            )
+        finally:
+            probe.close()
+
+    def _do_drag_os_target(self, start_x, start_y, distance, slider_info, profile_variant_index, probe):
         """OS-level mouse drag. CDP Input events are rejected by Aliyun NC (error:TJiA4d/Vx6urd)."""
         self.last_failure_reason = None
         pyautogui = None
@@ -328,6 +373,14 @@ class CaptchaOSInputMixin:
             logger.warning("[SOLVER] OS window focus failed; skipping OS mouse drag.")
             return None
         self._wait_interruptibly(0.45)
+        if probe.enabled:
+            if not probe.open():
+                return None
+            start_x, start_y = probe.point
+            slider_info = {**slider_info, **probe.rect}
+            track_width = self._get_track_width()
+            slider_info["track_width"] = track_width
+            distance = self._remaining_drag_distance(slider_info, self._get_track_rect(), track_width)
         mapped = None
         mapping_attempts = 3 if isinstance(slider_info, dict) else 1
         for mapping_attempt in range(1, mapping_attempts + 1):
@@ -404,8 +457,15 @@ class CaptchaOSInputMixin:
                     logger.warning("[SOLVER] OS cursor did not reach the verified slider point.")
                     return None
             self._wait_interruptibly(random.uniform(*profile["press_hold"]))
-            self._set_os_left_button(pyautogui, down=True)
+            if probe.enabled:
+                corrected = probe.verify(pyautogui, mapped)
+                if corrected is None:
+                    return None
+                sx, sy = corrected
+                phys_distance = distance * probe.scale
             mouse_is_down = True
+            self._set_os_left_button(pyautogui, down=True)
+            pressed_at = time.monotonic()
             self._wait_interruptibly(random.uniform(*profile["press_hold"]))
             for warmup_x, warmup_y in self._os_drag_warmup_points(sx, sy, profile):
                 if self._stop_if_cancelled():
@@ -414,9 +474,10 @@ class CaptchaOSInputMixin:
                 self._set_os_cursor_position(pyautogui, warmup_x, warmup_y)
                 self._wait_interruptibly(random.uniform(0.04, 0.09))
             fracs, dwells = self._os_drag_track(phys_distance, profile)
+            y_offsets = self._os_drag_y_track(len(fracs), profile)
             prev_x = sx
             target_x = sx + phys_distance
-            for eased, dwell in zip(fracs, dwells, strict=True):
+            for index, (eased, dwell) in enumerate(zip(fracs, dwells, strict=True)):
                 if self._stop_if_cancelled():
                     self.last_failure_reason = self.last_failure_reason or "cancelled"
                     return None
@@ -431,8 +492,8 @@ class CaptchaOSInputMixin:
                     minimum_x = min(prev_x + 0.01, target_x)
                     x = max(minimum_x, min(x, target_x))
                 # Y 轴：主体使用 tremor 抖动，末尾 20% 加大 Y 漂移模拟"快到终点时手抖"
-                y = sy + random.gauss(0, profile["tremor_y"])
-                if eased > 0.8 and random.random() < 0.25:
+                y = sy + (y_offsets[index] if y_offsets else random.gauss(0, profile["tremor_y"]))
+                if not y_offsets and eased > 0.8 and random.random() < 0.25:
                     y += random.uniform(-1.5, 1.5)
                 self._set_os_cursor_position(pyautogui, x, y)
                 prev_x = x
@@ -449,12 +510,18 @@ class CaptchaOSInputMixin:
             self._move_os_cursor_timed(
                 pyautogui,
                 release_x,
-                sy + random.gauss(0, 0.8),
+                sy if y_offsets else sy + random.gauss(0, 0.8),
                 random.uniform(0.05, 0.15),
             )
+            arrived_at = time.monotonic()
             self._wait_interruptibly(random.uniform(*profile["hold_before_release"]))
+            held_seconds = time.monotonic() - arrived_at
             self._set_os_left_button(pyautogui, down=False)
             mouse_is_down = False
+            logger.info(
+                "[SOLVER] OS drag timing movement=%.3fs hold=%.3fs",
+                arrived_at - pressed_at, held_seconds,
+            )
             if not self._ensure_os_left_button_released(mapped):
                 return None
             self._wait_interruptibly(random.uniform(0.4, 0.7))

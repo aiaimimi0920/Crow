@@ -66,6 +66,14 @@ from tools import pc2_solver_execution as execution
             "[SOLVER] Challenge diagnostic: code=error:secret title=secret class=secret path=secret retryable=False",
             {"phase": "challenge_failure", "code": "other", "retryable": False},
         ),
+        (
+            "[SOLVER] OS pointer hit verified delta=1.0px corrections=1",
+            {"phase": "pointer_hit", "delta": 1.0, "corrections": 1.0},
+        ),
+        (
+            "[SOLVER] OS drag timing movement=3.722s hold=1.798s",
+            {"phase": "drag_timing", "movement_seconds": 3.722, "hold_seconds": 1.798},
+        ),
         ("[SOLVER] Drag complete. Verifying...", {"phase": "drag_complete"}),
         ("[SOLVER] Verified: Captcha solved", {"phase": "verified"}),
     ],
@@ -209,3 +217,14 @@ def test_diagnostics_are_bounded_per_phase_and_restored_on_error(monkeypatch):
         raise ValueError("offline failure")
     assert len(events) == 65 and events[-1]["phase"] == "verified"
     assert (logger.level, logger.filters) == state
+
+
+@pytest.mark.parametrize(
+    "profile", ["slow_exact_v4", "slow_settle_v4", "slow_dense_v4"]
+)
+def test_linux_motion_profiles_remain_observable(profile):
+    message = (
+        "[SOLVER] OS mouse drag from (120,330) +258px source=x11_window_geometry "
+        f"located=True clipped=False profile={profile} input=pyautogui"
+    )
+    assert diagnostics.diagnostic_event(message)["profile"] == profile

@@ -248,27 +248,7 @@ class CaptchaOrchestrationMixin:
                         # track after a rejected attempt. Calculate the remaining
                         # distance from the live rectangles instead of assuming the
                         # handle is always at the left edge.
-                        remaining = None
-                        if isinstance(track_rect, dict):
-                            track_right = float(track_rect.get("left") or 0) + float(track_rect.get("width") or 0)
-                            slider_right = float(slider_info.get("x") or 0) + float(slider_info.get("width") or 0)
-                            candidate = track_right - slider_right
-                            if 0 < candidate <= track_width + slider_info["width"]:
-                                remaining = candidate
-                            track_offset_width = float(track_rect.get("offsetWidth") or track_width)
-                            handle_offset_width = float(track_rect.get("handleOffsetWidth") or slider_info["width"])
-                            current_handle_left = track_rect.get("handleOffsetLeft")
-                            if current_handle_left is not None:
-                                target_handle_left = track_offset_width - handle_offset_width
-                                offset_remaining = target_handle_left - float(current_handle_left)
-                                if 0 <= offset_remaining <= track_width + slider_info["width"]:
-                                    # NC uses offsetWidth/offsetLeft internally;
-                                    # those include the exact 2px border correction
-                                    # that getBoundingClientRect() hides.
-                                    remaining = offset_remaining
-                        if remaining is None:
-                            remaining = track_width - slider_info["width"] + 2
-                        distance = max(1, min(remaining, 1000))
+                        distance = self._remaining_drag_distance(slider_info, track_rect, track_width)
                     logger.info(
                         "[SOLVER] Drag distance: %.0fpx (track: %.0fpx, slider: %.0fpx)",
                         distance,
