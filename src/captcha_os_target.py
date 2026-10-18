@@ -86,8 +86,9 @@ class OSPointerTarget:
         )
         return (result or {}).get("result", {}).get("value")
 
-    def _fail(self, reason):
+    def _fail(self, reason, check="target"):
         self.solver.last_failure_reason = "screen_mapping_" + reason
+        logger.info("[SOLVER] OS pointer probe failed reason=%s check=%s", reason, check)
 
     @staticmethod
     def _valid(snapshot):
@@ -146,10 +147,10 @@ class OSPointerTarget:
         for correction in range(3):
             self.solver._wait_interruptibly(0.04)
             if not self.solver._linux_window_has_focus(self.solver._linux_window_id):
-                return self._fail("target_unavailable")
+                return self._fail("target_unavailable", "native_focus")
             snapshot = self._evaluate(f"window[{json.dumps(self.key)}]?.read()")
             if not self._valid(snapshot) or float(snapshot["scale"]) != self.scale:
-                return self._fail("target_unavailable")
+                return self._fail("target_unavailable", "snapshot")
             if any(
                 abs(float(snapshot["rect"][k]) - float(self.rect[k])) > 1.5
                 for k in ("x", "y", "width", "height")
@@ -157,7 +158,7 @@ class OSPointerTarget:
                 return self._fail("target_changed")
             event = snapshot.get("event")
             if not isinstance(event, dict) or event.get("buttons") != 0:
-                return self._fail("pointer_unobserved")
+                return self._fail("pointer_unobserved", "event_buttons")
             try:
                 dx, dy = (
                     self.point[0] - float(event["x"]),
@@ -169,9 +170,9 @@ class OSPointerTarget:
                     not all(math.isfinite(v) for v in (dx, dy))
                     or serial <= previous_serial
                 ):
-                    return self._fail("pointer_unobserved")
+                    return self._fail("pointer_unobserved", "event_serial")
                 if not 0 <= age <= 1500:
-                    return self._fail("pointer_unobserved")
+                    return self._fail("pointer_unobserved", "event_age")
             except (KeyError, TypeError, ValueError):
                 return self._fail("pointer_unobserved")
             delta = math.hypot(dx, dy)
@@ -182,7 +183,7 @@ class OSPointerTarget:
                 if not self.solver._linux_window_has_focus(
                     self.solver._linux_window_id
                 ):
-                    return self._fail("target_unavailable")
+                    return self._fail("target_unavailable", "native_focus")
                 logger.info(
                     "[SOLVER] OS pointer hit verified delta=%.1fpx corrections=%d",
                     delta,

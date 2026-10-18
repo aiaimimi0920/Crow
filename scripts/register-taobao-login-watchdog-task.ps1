@@ -57,6 +57,7 @@ $scriptArgs = @(
     "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$watchdogScript`"",
+    "-Automatic",
     "-DataRoot", "`"$taskDataRoot`"",
     "-Port", $Port,
     "-WaitSeconds", $WaitSeconds,

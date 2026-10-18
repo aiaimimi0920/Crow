@@ -16,6 +16,7 @@ interface AuthSession {
   target_id: string;
   recovery_id: string;
   request_id: string;
+  browser?: "dedicated" | "edge";
   peer_url?: string;
   peer_challenge_id?: string;
 }
@@ -44,6 +45,7 @@ function statusText(message: string): void {
 
 function controls() {
   $<HTMLButtonElement>("authChallengeReload").disabled = busy || phase === "pending_pc2";
+  $<HTMLButtonElement>("authChallengeEdge").disabled = busy || phase === "pending_pc2";
   $<HTMLButtonElement>("authChallengeResume").disabled = busy;
 }
 
@@ -73,6 +75,7 @@ export function openAuthChallenge(scope: AuthScope = "seed"): void {
           target_url: String(candidate.target_url || ""), challenge_id: String(candidate.challenge_id || ""),
           target_id: String(candidate.target_id || ""), request_id: String(candidate.request_id || ""),
           peer_url: String(candidate.peer_url || ""), peer_challenge_id: String(candidate.peer_challenge_id || ""),
+          browser: candidate.browser === "edge" ? "edge" : "dedicated",
         };
         phase = "pending_pc2";
         waitStartedAt = typeof saved.waitStartedAt === "number" && Number.isFinite(saved.waitStartedAt)
@@ -183,8 +186,13 @@ async function run(action: "open" | "complete" | "status"): Promise<void> {
   }
 }
 
-export function reloadAuthChallenge() {
-  if (phase === "failed" && session) {
+export function reloadAuthChallenge(browser: "dedicated" | "edge" = "dedicated") {
+  if (busy || phase === "pending_pc2") return;
+  if (session && session.browser !== browser) {
+    session.browser = browser;
+    phase = "failed";
+  }
+  if ((phase === "failed" || browser === "edge") && session) {
     session.request_id = crypto.randomUUID().replaceAll("-", "");
     session.target_url = authScopeTarget(state.lastOverview, session.scope, state.selectedItemId);
     session.challenge_id = String(authScopeState(state.lastOverview, session.scope)?.challenge_id || "");

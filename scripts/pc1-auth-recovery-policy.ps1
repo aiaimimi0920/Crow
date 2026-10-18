@@ -148,7 +148,8 @@ function Show-Pc1RecoveryPrompt {
 
 function Show-Pc1RecoverySeedPrompt {
     param($State, [string]$StatePath, [string]$Endpoint, $SolverStatus,
-          [string]$FallbackUrl, [int]$Port, [string]$ProfileDir)
+          [string]$FallbackUrl, [int]$Port, [string]$ProfileDir,
+          [switch]$DeferPresentation)
 
     $request = $SolverStatus.scopes.seed.last_request
     $seedUrl = ''
@@ -158,6 +159,18 @@ function Show-Pc1RecoverySeedPrompt {
         if ($seedUrl) { break }
     }
     if (-not $seedUrl) { throw 'No valid seed authentication target is available.' }
+    $State['status'] = 'waiting_for_seed_auth'
+    $State['seed_target_url'] = $seedUrl
+    # A main prompt for this same list target already consumes the seed prompt.
+    if ($State.prompted_at -and (Get-Pc1RecoverySeedUrl -Value $State.target_url) -eq $seedUrl) {
+        $State['seed_prompted_at'] = $State.prompted_at
+        $State['seed_target_id'] = $State.target_id
+    }
+    if ($DeferPresentation) {
+        # Do not create/activate another tab immediately after the main presentation.
+        Write-State -Path $StatePath -State $State
+        return
+    }
     $tabs = @(Get-CdpTabs -Endpoint $Endpoint)
     $tab = Get-Pc1RecoveryTab -Tabs $tabs -PreferredId $State.seed_target_id -TargetUrl $seedUrl
     if ($null -eq $tab) {

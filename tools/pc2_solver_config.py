@@ -13,6 +13,16 @@ DEFAULT_POLL_SECONDS = int(project_getenv("CROW_LOCAL_SOLVER_POLL_SECONDS", "5")
 DEFAULT_MAX_ATTEMPTS = 1
 DEFAULT_DRAG_PROFILE_VARIANTS = 3
 
+
+def resolve_loop_options(api_base_url, cdp_endpoint, poll_seconds, max_attempts):
+    """Resolve omitted options without replacing explicit zero or empty values."""
+    return (
+        DEFAULT_API_BASE_URL if api_base_url is None else api_base_url,
+        DEFAULT_CDP_ENDPOINT if cdp_endpoint is None else cdp_endpoint,
+        DEFAULT_POLL_SECONDS if poll_seconds is None else poll_seconds,
+        DEFAULT_MAX_ATTEMPTS if max_attempts is None else max_attempts,
+    )
+
 AUTH_COMPLETE_REQUEST_ATTEMPTS = int(
     project_getenv("CROW_AUTH_COMPLETE_REQUEST_ATTEMPTS", "3")
 )

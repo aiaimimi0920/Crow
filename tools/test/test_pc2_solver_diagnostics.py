@@ -11,6 +11,14 @@ from tools import pc2_solver_execution as execution
     ("message", "expected"),
     [
         (
+            "[SOLVER] OS pointer probe failed reason=pointer_unobserved check=event_age",
+            {"phase": "pointer_failure", "reason": "pointer_unobserved", "check": "event_age"},
+        ),
+        (
+            "[SOLVER] OS pointer probe failed reason=secret check=secret",
+            {"phase": "pointer_failure", "reason": "unknown", "check": "unknown"},
+        ),
+        (
             "[SOLVER] Slider found at (120, 330) selector=secret context=token",
             {"phase": "slider_geometry", "css_x": 120.0, "css_y": 330.0},
         ),

@@ -155,12 +155,16 @@ class RepositoryObserverRegionsMixin:
             completed_jobs = int(counts.get("completed_jobs", 0) or 0)
             completed = total_jobs > 0 and total_progress > 0 and blocked == 0 and pending == 0 and exhausted == total_progress and completed_jobs == total_jobs
             if completed:
-                return True, "收集完成"
+                return True, "本轮完成"
+            if int(counts.get("active_progress", 0) or 0):
+                return False, "采集中"
             if blocked:
                 return False, "存在失败/阻塞"
-            if total_progress == 0 or pending == 0:
-                return False, "待采集"
-            return False, "采集中"
+            if int(counts.get("retrying_progress", 0) or 0):
+                return False, "等待重试"
+            if int(counts.get("started_progress", 0) or 0) or exhausted:
+                return False, "待继续"
+            return False, "待采集"
 
         total_items = int(counts.get("total_items", 0) or 0)
         failed = int(counts.get("failed", 0) or 0)
@@ -170,12 +174,16 @@ class RepositoryObserverRegionsMixin:
         links_completed, links_label = link_status
         completed = links_completed and completed_items == total_items and failed == 0 and blocked == 0 and pending == 0
         if completed:
-            return True, "收集完成"
+            return True, "本轮完成"
+        if int(counts.get("active_items", 0) or 0):
+            return False, "采集中"
         if failed or blocked or links_label == "存在失败/阻塞":
             return False, "存在失败/阻塞"
         if total_items == 0:
-            return False, links_label
-        return False, "采集中"
+            return False, "等待链接" if not links_completed else "待采集"
+        if pending == 0 and not links_completed:
+            return False, "等待链接"
+        return False, "待继续" if completed_items else "待采集"
 
     def collection_observer_regions(self, *, stage: str = "links") -> dict[str, Any]:
         normalized_stage = (stage or "links").strip().lower()
@@ -204,12 +212,20 @@ class RepositoryObserverRegionsMixin:
             taobao_override_codes, taobao_replace_admin_provinces = _load_taobao_region_override_filter()
             link_counts_by_code = region_link_counts(session)
             item_status_counts_by_code: dict[str, dict[str, int]] = {}
+            active_items_by_code: dict[str, int] = {}
             if normalized_stage != "links":
-                for location_code, status, count_value in session.execute(
+                active_status = "in_progress" if normalized_stage == "details" else "analysis_in_progress"
+                for location_code, status, count_value, active_count in session.execute(
                     select(
                         CollectionSeedScanJob.location_code,
                         CollectionSeedItem.status,
                         func.count(func.distinct(CollectionSeedItem.item_id)),
+                        func.count(func.distinct(case((
+                            (CollectionSeedItem.status == active_status)
+                            & (CollectionSeedItem.detail_lease_until > _utc_now())
+                            & CollectionSeedItem.detail_leased_by.is_not(None),
+                            CollectionSeedItem.item_id,
+                        ), else_=None))),
                     )
                     .join(CollectionSeedOccurrence, CollectionSeedOccurrence.item_id == CollectionSeedItem.item_id)
                     .join(CollectionSeedScanJob, CollectionSeedOccurrence.job_key == CollectionSeedScanJob.job_key)
@@ -220,6 +236,7 @@ class RepositoryObserverRegionsMixin:
                     if not code:
                         continue
                     item_status_counts_by_code.setdefault(code, {})[str(status)] = int(count_value or 0)
+                    active_items_by_code[code] = active_items_by_code.get(code, 0) + int(active_count or 0)
             regions: list[dict[str, Any]] = []
             for location_code, province, city, district in region_rows:
                 code = str(location_code or "").strip()
@@ -261,6 +278,7 @@ class RepositoryObserverRegionsMixin:
                         "failed": failed,
                         "blocked": blocked,
                         "by_status": status_counts,
+                        "active_items": active_items_by_code.get(code, 0),
                     }
                 completed, status_label = self._region_stage_status(normalized_stage, counts, link_status=link_status)
                 regions.append(

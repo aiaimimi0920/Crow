@@ -37,7 +37,7 @@ def test_empty_region_is_complete_only_after_link_scan(repository, stage):
     after = repository.collection_observer_regions(stage=stage)["regions"][0]
     assert after["counts"]["total_items"] == 0
     assert after["completed"] is True
-    assert after["status_label"] == "收集完成"
+    assert after["status_label"] == "本轮完成"
 
 
 @pytest.mark.parametrize("stage", ["details", "analysis"])
@@ -49,7 +49,7 @@ def test_processed_items_do_not_complete_an_unfinished_region(repository, stage,
     region = repository.collection_observer_regions(stage=stage)["regions"][0]
     assert region["counts"]["completed_items"] == 1
     assert region["completed"] is False
-    expected = "存在失败/阻塞" if scan_status == "blocked" else "采集中"
+    expected = "存在失败/阻塞" if scan_status == "blocked" else "等待链接"
     assert region["status_label"] == expected
 
 

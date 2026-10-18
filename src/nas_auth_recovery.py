@@ -1,24 +1,21 @@
 from __future__ import annotations
 
-import copy
 import contextlib
+import copy
 import json
 import os
 import threading
 import time
 import uuid
-from .nas_auth_recovery_stage import StageRecoveryMixin
 from pathlib import Path
 from typing import Any
 
+from .auth_recovery_codes import (
+    ACTIVE_STATUSES as ACTIVE_STATUSES,  # noqa: PLC0414 -- public re-export
+)
+from .auth_recovery_codes import TIMEOUT_REASONS
+from .nas_auth_recovery_stage import StageRecoveryMixin
 
-from .auth_recovery_codes import ACTIVE_STATUSES as ACTIVE_STATUSES, TIMEOUT_REASONS
-
-FAILED_RECOVERY_FAST_RETRY_SIGNALS = {
-    "seed_challenge_stalled",
-    "detail_challenge_stalled",
-    "node_solver_retries_exhausted",
-}
 SUCCESSFUL_RECOVERY_NEW_PROGRESS_RETRY_SIGNALS = {"detail_challenge_stalled"}
 SCOPED_CHALLENGE_STALL_SIGNALS = {
     "seed_challenge_stalled": "seed",
@@ -39,6 +36,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         pc2_timeout_seconds: float = 600,
         verify_timeout_seconds: float = 600,
         cooldown_seconds: float = 1800,
+        automatic_auth_allowed=None,
     ) -> None:
         self.state_path = Path(state_path)
         self.enabled = bool(enabled)
@@ -47,6 +45,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         self.pc2_timeout_seconds = max(float(pc2_timeout_seconds), 1.0)
         self.verify_timeout_seconds = max(float(verify_timeout_seconds), 1.0)
         self.cooldown_seconds = max(float(cooldown_seconds), 0.0)
+        self._automatic_auth_allowed = automatic_auth_allowed
         self._lock = threading.RLock()
         self._state = self._load_state()
 
@@ -68,7 +67,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         state = self._default_state()
         try:
             loaded = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             return state
         if not isinstance(loaded, dict):
             return state
@@ -155,9 +154,21 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
             "snapshot": safe_snapshot,
         }
 
+    def _automatic_allowed_locked(self, now: float) -> bool:
+        try:
+            allowed = self._automatic_auth_allowed is None or self._automatic_auth_allowed() is True
+        except Exception:  # noqa: BLE001 -- failed liveness checks must deny automatic prompts
+            allowed = False
+        active = self._state.get("active")
+        if not allowed and isinstance(active, dict) and not active.get("manual_request_id"):
+            self._finish_locked(status="failed", reason="collectors_unavailable", now=now)
+            self._persist_locked()
+        return allowed
+
     def snapshot(self, *, now: float | None = None) -> dict[str, Any]:
         current = time.time() if now is None else float(now)
         with self._locked_state():
+            allowed = self._automatic_allowed_locked(current)
             state = copy.deepcopy(self._state)
         last_progress = state.get("last_progress_at_epoch")
         stalled_for = (
@@ -167,8 +178,9 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         )
         return {
             "enabled": self.enabled,
+            "automatic_auth_allowed": allowed,
             "stage_auth_protocol": 2,
-            "pc2_stage_auth_ready": current - float(state.get("pc2_stage_auth_seen_at") or 0) < 120,
+            "pc2_stage_auth_ready": 0 <= current - float(state.get("pc2_stage_auth_seen_at") or 0) < 120,
             "stall_seconds": self.stall_seconds,
             "stalled_for_seconds": stalled_for,
             "last_captured_count": state.get("last_captured_count"),
@@ -247,6 +259,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         normalized_count = None if captured_count is None else max(int(captured_count), 0)
         with self._locked_state():
             previous = self._state.get("last_captured_count")
+            automatic_allowed = self._automatic_allowed_locked(current)
             self._state["last_sample_at_epoch"] = current
             self._state["pending_detail_count"] = pending
 
@@ -301,21 +314,6 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
                 normalized_signal and (scoped_stall or stalled_for >= signal_stall_seconds)
             )
             last_result = self._state.get("last_result")
-            failed_signal_retry_ready = False
-            if (
-                signal_triggered
-                and normalized_signal in FAILED_RECOVERY_FAST_RETRY_SIGNALS
-                and isinstance(last_result, dict)
-                and last_result.get("status") == "failed"
-            ):
-                try:
-                    failed_at = float(last_result.get("finished_at_epoch") or 0)
-                except (TypeError, ValueError):
-                    failed_at = 0.0
-                failed_signal_retry_ready = bool(
-                    failed_at > 0
-                    and current >= failed_at + signal_stall_seconds
-                )
             successful_signal_retry_ready = False
             if (
                 signal_triggered
@@ -331,13 +329,13 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
                 successful_signal_retry_ready = normalized_count > completed_count
             may_trigger = bool(
                 self.enabled
+                and automatic_allowed
                 and normalized_count is not None
                 and (pending > 0 or (scoped_stall and stalled_scope == "seed"))
                 and not operator_paused
                 and not isinstance(active, dict)
                 and (
                     current >= cooldown_until
-                    or failed_signal_retry_ready
                     or successful_signal_retry_ready
                 )
                 and last_progress is not None
@@ -378,6 +376,8 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         if str(node_id or "").strip().lower() != normalized_role:
             return {"ok": False, "error": "node_id does not match role"}
         with self._locked_state():
+            self._automatic_allowed_locked(current)
+            self._expire_active_locked(current)
             active = self._state.get("active")
             if not isinstance(active, dict):
                 return {"ok": False, "error": "no active recovery"}

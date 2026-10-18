@@ -70,6 +70,7 @@ from src.detail_artifacts import (
 )
 from src.storage import create_repository_from_env
 from src.nas_auth_recovery import NasAuthRecoveryCoordinator
+from src.collection_auth_demand import collection_workers_available
 from tools.analysis_stage_planner import (
     load_action_effectiveness_snapshot,
     load_manual_review_receipt_snapshot,
@@ -178,6 +179,9 @@ NAS_AUTH_RECOVERY = NasAuthRecoveryCoordinator(
     pc2_timeout_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_PC2_TIMEOUT_SECONDS", "600")),
     verify_timeout_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_VERIFY_TIMEOUT_SECONDS", "600")),
     cooldown_seconds=float(project_getenv("CROW_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")),
+    automatic_auth_allowed=lambda: (
+        collection_workers_available() and RUNTIME.control.snapshot().reason != "operator"
+    ),
 )
 
 

@@ -18,7 +18,7 @@ def test_scoped_snapshot_is_verified_without_browser_restart(tmp_path, monkeypat
         manager._state['active']['snapshot']['sha256'] = digest
         manager._persist_locked()
     token = tmp_path / 'token'
-    token.write_text('fixture')
+    token.write_text('fixture-recovery-token', encoding='utf-8')
     imports = []
     def import_snapshot(*args, **kwargs):
         imports.append(True)
@@ -31,6 +31,7 @@ def test_scoped_snapshot_is_verified_without_browser_restart(tmp_path, monkeypat
     calls, cleared = [], []
     def post(url, payload, **kwargs):
         calls.append(url.rsplit('/', 1)[-1])
+        if url.endswith('/heartbeat'): return {'ok': True}
         if url.endswith('/claim'): return manager.claim('pc2', payload['recovery_id'], 'pc2', now=7)
         if url.endswith('/pc2_restarting'):
             return {'ok': False} if probe == 'phase_rejected' else manager.pc2_restarting(payload['recovery_id'], now=8)
@@ -42,11 +43,11 @@ def test_scoped_snapshot_is_verified_without_browser_restart(tmp_path, monkeypat
     if probe == 'phase_rejected':
         with pytest.raises(OSError, match='verification phase'):
             execute()
-        assert calls == ['claim', 'pc2_restarting']
+        assert calls == ['heartbeat', 'claim', 'pc2_restarting']
         assert not cleared
         return
     result = execute()
-    assert calls == ['claim', 'pc2_restarting', 'result']
+    assert calls == ['heartbeat', 'claim', 'pc2_restarting', 'result']
     assert len(imports) == 1
     assert result['action'] == ('recovery_confirmed' if probe == 'valid' else 'recovery_failed')
     assert cleared == (['seed'] if probe == 'valid' else [])

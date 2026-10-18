@@ -67,12 +67,12 @@ class CaptchaPreflightMixin:
                 var supportedAuctionPage = (listRoute || detailRoute) && !challengeRedirect;
                 var hardBlock = combined.indexOf('baxia') !== -1 || combined.indexOf('punish') !== -1 || combined.indexOf('denyfromx5') !== -1 || challengeRedirect;
                 var errorMatch = combined.match(/error\\s*:\\s*[a-z0-9/_-]{1,64}/i);
-                var errorWidget = doc.querySelector(__NC_ERROR_SELECTOR__);
+                var visibleErrorWidget = hasVisibleMatch(doc, __NC_ERROR_SELECTOR__);
                 var explicitFailure = combined.indexOf('验证失败') !== -1 ||
                     combined.indexOf('点击框体重试') !== -1 ||
                     combined.indexOf("oops... something's wrong") !== -1 ||
                     combined.indexOf('please refresh page and try again') !== -1 ||
-                    hasVisibleMatch(doc, __NC_ERROR_SELECTOR__) ||
+                    visibleErrorWidget ||
                     !!errorMatch;
                 var challengeMarker = combined.indexOf('验证码拦截') !== -1 || combined.indexOf('请按住滑块') !== -1 || combined.indexOf('安全验证') !== -1;
                 var loginUrl = urlHost === 'login.taobao.com' || urlHost === 'login.tmall.com' || urlPath.indexOf('third-party-cookie') !== -1 || urlPath.indexOf('/passport/') !== -1 || urlPath.indexOf('/login') !== -1;
@@ -82,7 +82,7 @@ class CaptchaPreflightMixin:
                 return {
                     hardBlock: hardBlock,
                     explicitFailure: explicitFailure,
-                    retryableFailure: !!(explicitFailure && !loginRequired && errorWidget && errorWidget.offsetParent !== null),
+                    retryableFailure: !!(explicitFailure && !loginRequired && visibleErrorWidget),
                     hasSlider: hasSlider,
                     hasChallengeWidget: hasChallengeWidget,
                     auctionItemCount: auctionItemCount,

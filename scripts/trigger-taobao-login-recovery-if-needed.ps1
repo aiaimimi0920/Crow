@@ -124,6 +124,19 @@ try {
 $snapshot | Add-Member -NotePropertyName manual_auth_required -NotePropertyValue $manualAuthRequired
 $snapshot | Add-Member -NotePropertyName manual_solver_status -NotePropertyValue $manualSolverSnapshot -Force
 
+function Test-CurrentCollectionDemand {
+    try {
+        $current = Invoke-RestMethod -Uri "$apiBaseResolvedForManualCheck/status" -TimeoutSec 5
+        return $current.auth_recovery.automatic_auth_allowed -eq $true
+    } catch { return $false }
+}
+
+if ($null -eq $apiStatusForManualCheck -or
+    $apiStatusForManualCheck.auth_recovery.automatic_auth_allowed -ne $true) {
+    Write-JsonLine ([ordered]@{ status = "collectors_unavailable"; should_trigger = $false })
+    exit 0
+}
+
 if ($snapshot.collection_paused -eq $true -and -not $manualAuthRequired) {
     Clear-ManualAuthObservation -Path $StatePath
     $closedBrowserCount = Stop-DedicatedRecoveryBrowser
@@ -261,6 +274,7 @@ if ($manualAuthRequired) {
         exit 0
     }
 
+    if (-not (Test-CurrentCollectionDemand)) { exit 0 }
     Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
     $now = Get-Date
     Write-RecoveryState -Path $StatePath -LastTriggeredAt $now -Snapshot $snapshot
@@ -356,6 +370,7 @@ if ($DryRun) {
     exit 0
 }
 
+if (-not (Test-CurrentCollectionDemand)) { exit 0 }
 Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
 $now = Get-Date
 Write-RecoveryState -Path $StatePath -LastTriggeredAt $now -Snapshot $snapshot

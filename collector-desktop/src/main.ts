@@ -186,7 +186,8 @@ $("editButton").addEventListener("click", () => runDetailAction(async () => {
   }
 }));
 $("manualUpdateButton").addEventListener("click", () => runDetailAction(submitManualUpdate));
-$("authChallengeReload").addEventListener("click", reloadAuthChallenge);
+$("authChallengeReload").addEventListener("click", () => reloadAuthChallenge());
+$("authChallengeEdge").addEventListener("click", () => reloadAuthChallenge("edge"));
 $("authChallengeResume").addEventListener("click", resumeAfterAuthChallenge);
 $("refreshRegions").addEventListener("click", () => loadRegions({ silent: false }));
 $("resetRegionLinks").addEventListener("click", resetSelectedRegionLinks);

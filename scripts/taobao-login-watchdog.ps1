@@ -14,11 +14,15 @@ param(
     [switch]$SkipBrowserStart,
     [switch]$UseSystemProxy,
     [switch]$TriggerCaptchaSolver,
-    [switch]$NoSnapshotExport
+    [switch]$NoSnapshotExport,
+    [switch]$Automatic
 )
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot 'project-environment.ps1')
+. (Join-Path $PSScriptRoot 'collection-api-origin.ps1')
+. (Join-Path $PSScriptRoot 'automatic-auth-demand.ps1')
+if ($Automatic -and -not (Test-CrowAutomaticAuthDemand)) { exit 0 }
 
 
 
@@ -121,6 +125,7 @@ foreach ($required in @($startScript, $healthScript, $exportScript)) {
 
 Write-Output "FapaiFangTaobaoLoginWatchdog: checking Taobao/SF login health."
 if (-not $SkipBrowserStart) {
+    if ($Automatic -and -not (Test-CrowAutomaticAuthDemand)) { exit 0 }
     $startArgs = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", $startScript,
@@ -139,6 +144,7 @@ $initial = Invoke-HealthCheck -Wait 0
 Write-Output "FapaiFangTaobaoLoginWatchdog: status=$($initial.Status), healthy=$($initial.Healthy), contains_sensitive=$($initial.ContainsSensitive)"
 
 if ($initial.Status -eq "cdp_unreachable" -and -not $SkipBrowserStart) {
+    if ($Automatic -and -not (Test-CrowAutomaticAuthDemand)) { exit 0 }
     Write-Output "FapaiFangTaobaoLoginWatchdog: CDP websocket is unreachable; force-restarting the dedicated browser."
     $restartArgs = @(
         "-NoProfile", "-ExecutionPolicy", "Bypass",

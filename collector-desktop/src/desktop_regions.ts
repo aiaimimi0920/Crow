@@ -5,6 +5,8 @@ import { escapeHtml as esc } from "./desktop_dom.ts";
 import { errorMessage, object } from "./desktop_value.ts";
 import { collectionRegions, type CollectionRecord, type CollectionRegion, type RefreshOptions, type RegionCity, type RegionProvince } from "./desktop_collection_contract.ts";
 import { regionProgress } from "./desktop_region_progress.ts";
+import { aggregateRegionStatus, displayRegion } from "./desktop_region_status.ts";
+export { aggregateRegionStatus } from "./desktop_region_status.ts";
 
 export function itemRegion(item: CollectionRecord): string {
   const payload = object(item.source_payload);
@@ -32,6 +34,7 @@ export function regionStatusClass(region: CollectionRegion): string {
   if (region && region.completed) {
     return "ok";
   }
+  if (label === "采集中") return "live";
   if (label.includes("失败") || label.includes("阻塞")) {
     return "bad";
   }
@@ -68,27 +71,6 @@ export function buildRegionTree(regions: CollectionRegion[]): RegionProvince[] {
     regions: province.regions,
     cities: Array.from(province.cityMap.values()),
   }));
-}
-
-export function aggregateRegionStatus(regions: CollectionRegion[]) {
-  const scopedRegions = regions || [];
-  if (!scopedRegions.length) {
-    return { completed: false, status_label: "待采集", className: "warn" };
-  }
-  if (scopedRegions.every((region) => region.completed)) {
-    return { completed: true, status_label: "收集完成", className: "ok" };
-  }
-  const hasProblem = scopedRegions.some((region) => {
-    const label = String(region.status_label || "");
-    return label.includes("失败") || label.includes("阻塞");
-  });
-  if (hasProblem) {
-    return { completed: false, status_label: "存在失败/阻塞", className: "bad" };
-  }
-  if (scopedRegions.every((region) => region.status_label === "待采集")) {
-    return { completed: false, status_label: "待采集", className: "warn" };
-  }
-  return { completed: false, status_label: "采集中", className: "warn" };
 }
 
 export function regionStatusBadge(status: { className?: string; status_label: string }): string {
@@ -131,7 +113,7 @@ export function selectedCityNode(province: RegionProvince | null): RegionCity | 
 
 export function renderProvinceTabs(regionTree: RegionProvince[]): void {
   const allActive = state.selectedProvince ? "" : "active";
-  const allStatus = aggregateRegionStatus(state.regions || []);
+  const allStatus = aggregateRegionStatus(regionTree.flatMap((province) => province.regions));
   const chips = [
     `<button class="region-tab province-tab ${allActive}" data-province="">全部省份${regionStatusBadge(allStatus)}</button>`,
     ...regionTree.map((province) => {
@@ -208,7 +190,7 @@ export function renderDistrictTabs(city: RegionCity | null): void {
       const progress = regionProgress(region);
       return `<button class="region-tab district-tab ${active} ${completed}" data-location-code="${esc(region.location_code)}">
         <span>${fmt(region.displayDistrict || region.label || region.location_code)}</span>
-        <span class="region-status ${badgeClass}" title="${esc(progress.hint)}">${fmt(region.status_label || "采集中")}${esc(progress.label)}</span>
+        <span class="region-status ${badgeClass}" title="${esc(progress.hint)}">${fmt(region.status_label || "待采集")}${esc(progress.label)}</span>
       </button>`;
     }),
   ];
@@ -225,7 +207,12 @@ export function renderDistrictTabs(city: RegionCity | null): void {
 }
 
 export function renderRegionSelectors() {
-  const regionTree = buildRegionTree(state.regions || []);
+  const status = object(state.lastOverview?.status);
+  const scopes = object(status.collection_scopes);
+  const scope = object(scopes[state.stage === "links" ? "seed" : "detail"]);
+  const paused = status.operator_paused === true || (state.stage !== "analysis" && scope.paused === true);
+  const regions = (state.regions || []).map((region) => displayRegion(region, paused));
+  const regionTree = buildRegionTree(regions);
   validateRegionSelection(regionTree);
   const province = selectedProvinceNode(regionTree);
   const city = selectedCityNode(province);

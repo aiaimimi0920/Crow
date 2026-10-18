@@ -116,7 +116,9 @@ function Backup-ExistingInstall {
             "crow-desktop.runtime.json",
             "scripts",
             "tools",
-            "src"
+            "src",
+            "browser-extension",
+            "edge-native"
         )) {
         $sourcePath = Join-Path $DestinationRoot $relativePath
         if (-not (Test-Path -LiteralPath $sourcePath)) {
@@ -334,6 +336,17 @@ Backup-ExistingInstall -DestinationRoot $deployRoot
 Copy-Item -LiteralPath $buildExecutable -Destination $destinationExecutable -Force
 
 foreach ($relativePath in @(
+        "scripts\register-edge-auth-host.ps1",
+        "tools\edge_auth_contract.py",
+        "tools\edge_auth_store.py",
+        "tools\edge_auth_host.py",
+        "tools\edge_auth_desktop.py",
+        "browser-extension\crow-auth\manifest.json",
+        "browser-extension\crow-auth\auth.html",
+        "browser-extension\crow-auth\auth.css",
+        "browser-extension\crow-auth\auth.js",
+        "browser-extension\crow-auth\contract.mjs",
+        "browser-extension\crow-auth\native.mjs",
         "scripts\open-remote-auth-browser.ps1",
         "scripts\start-pc1-manual-auth-session.ps1",
         "scripts\start-pc1-auth-bridge.ps1",
@@ -410,6 +423,8 @@ foreach ($relativePath in @(
     -CookieSnapshotPath $resolvedCookieSnapshotPath -AuthLocalCdpPort $AuthLocalCdpPort `
     -AuthBrowserProfileDir $AuthBrowserProfileDir -AuthBrowserPath $AuthBrowserPath `
     -SettingsApiBase $SettingsApiBase -SettingsCaFile $SettingsCaFile -OperatorTokenFile $OperatorTokenFile
+
+& (Join-Path $deployRoot 'scripts/register-edge-auth-host.ps1') -InstallRoot $deployRoot
 
 Write-LauncherScript `
     -LauncherPath $launcherPath `

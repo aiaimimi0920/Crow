@@ -14,11 +14,8 @@ from tools.pc2_solver_cdp import (
     match_solver_request_target_url,
 )
 from tools.pc2_solver_config import (
-    DEFAULT_API_BASE_URL,
-    DEFAULT_CDP_ENDPOINT,
     DEFAULT_DRAG_PROFILE_VARIANTS,
-    DEFAULT_MAX_ATTEMPTS,
-    DEFAULT_POLL_SECONDS,
+    resolve_loop_options,
 )
 from tools.pc2_solver_execution import (
     close_stale_challenge_probe_target,
@@ -43,6 +40,7 @@ from tools.pc2_solver_manual_handoff import (
     attempt_or_manual_handoff,
     retry_terminal_manual_report,
 )
+from tools.pc2_solver_manual_window import hold_manual_window
 from tools.pc2_solver_retry_state import (
     SOLVER_COOLDOWN_FAIL_THRESHOLD,
     SOLVER_COOLDOWN_SECONDS,
@@ -83,14 +81,11 @@ def local_solver_loop(
     max_attempts: int | None = None,
     expected_node_id: str | None = None,
 ) -> None:
-    if api_base_url is None:
-        api_base_url = DEFAULT_API_BASE_URL
-    if cdp_endpoint is None:
-        cdp_endpoint = DEFAULT_CDP_ENDPOINT
-    if poll_seconds is None:
-        poll_seconds = DEFAULT_POLL_SECONDS
-    if max_attempts is None:
-        max_attempts = DEFAULT_MAX_ATTEMPTS
+    api_base_url, cdp_endpoint, poll_seconds, max_attempts = resolve_loop_options(
+        api_base_url, cdp_endpoint, poll_seconds, max_attempts
+    )
+    while hold_manual_window(poll_seconds):
+        pass
     prepare_solver_browser(
         api_base_url, cdp_endpoint, poll_seconds, max_attempts, expected_node_id
     )
@@ -99,6 +94,8 @@ def local_solver_loop(
     probe_counter = 0
     idle_pointer = IdlePointer(cdp_endpoint)
     while True:
+        if hold_manual_window(poll_seconds):
+            continue
         write_solver_heartbeat("polling")
         try:
             pending_control = process_pending_control_actions(

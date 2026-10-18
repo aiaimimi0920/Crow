@@ -39,6 +39,15 @@ UNKNOWN_RECOVERY_CODE = "recovery_unknown"
 
 MESSAGES = MappingProxyType(
     {
+        "edge_ready": "已请求打开 Edge 认证扩展。请在常用配置中连接任务、手动认证并提交，再点击已完成挑战；未安装扩展时请先完成首次安装。",
+        "edge_unavailable": "未找到 Edge，未改用其他浏览器。请安装 Edge 或选择专用认证浏览器。",
+        "edge_task_missing": "尚未收到 Edge 提交，请在 Crow 认证扩展中连接任务并提交。",
+        "edge_task_expired": "Edge 认证任务已超过 10 分钟，请重新打开 Edge 认证后提交。",
+        "edge_task_changed": "Edge 认证任务已变化，请重新连接当前任务，旧会话未被使用。",
+        "edge_invalid_request": "Edge 认证消息格式无效，未使用会话。",
+        "edge_cookie_scope": "Edge 提交包含非授权站点会话，已拒绝。",
+        "edge_partition_unsupported": "当前协议不支持这份会话的分区 Cookie，请使用专用认证浏览器。",
+        "edge_peer_required": "请先选择详情商品，再提交 Edge 认证。",
         "shared_receiving": "同一份 Cookie 正在依次同步给链接采集和详情采集，无需再次人工认证。",
         "shared_retry": "认证 Cookie 已保存，交接连接暂时不可用，正在自动重试，无需再次认证。",
         "shared_queued": "已保存本次认证 Cookie，等待当前交接结束后自动同步两个阶段，无需重复点击。",

@@ -10,6 +10,8 @@ from sqlalchemy.sql.elements import ColumnElement
 from src.collection.seed_scan_policy import SeedScanPolicy
 
 from .models import CollectionSeedScanJob, CollectionSeedScanProgress
+from .repository_context import _utc_now
+from .seed_scan_priority import closure_groups, closure_order
 
 CANDIDATE_BATCH_SIZE = 128
 
@@ -31,6 +33,7 @@ def seed_scan_candidates(
     parallel_sorts: bool,
     blocked_job_keys: set[str],
     breadth_first: bool = False,
+    now=None,
 ) -> Iterator[tuple[SeedPageCandidate, SeedJobCandidate]]:
     job, progress = CollectionSeedScanJob, CollectionSeedScanProgress
     categories = session.scalars(select(job.category).distinct()).all()
@@ -75,20 +78,24 @@ def seed_scan_candidates(
             progress.next_page,
             progress.progress_key,
         )
+    groups = None
     if parallel_sorts and breadth_first:
-        # Cover shallow pages across regions before repeatedly scanning a deep
-        # historical tail. Existing per-region order remains the default.
-        order = (progress.next_page, *order)
+        groups = closure_groups()
+        order = (*closure_order(groups, now or _utc_now()), progress.next_page, *order)
     query = (
         # Only the eventually locked page/job need their complete payloads.
         select(progress.progress_key, progress.job_key, job.metadata_json, *order)
         .join(job, progress.job_key == job.job_key)
         .where(progress.status.in_(("pending", "in_progress")))
+        .where(job.status != "archived")
         .order_by(*order)
         .limit(CANDIDATE_BATCH_SIZE)
     )
+    if groups is not None:
+        query = query.join(groups, groups.c.job_key == job.job_key)
     cursor = None
     while True:
+        revision = session.info.get("seed_candidate_revision", 0)
         window = query
         if cursor is not None:
             window = window.where(tuple_(*order) > tuple_(*cursor))
@@ -105,5 +112,12 @@ def seed_scan_candidates(
             if not policy.owns_job(owner.job_key, owner.metadata_json):
                 continue
             yield page, owner
+        if groups is not None and revision != session.info.get(
+            "seed_candidate_revision", 0
+        ):
+            # Exhaustion normalization changes a group's rank. Re-seek instead
+            # of losing its unread rows behind the previous keyset cursor.
+            cursor = None
+            continue
         if len(rows) < CANDIDATE_BATCH_SIZE:
             return

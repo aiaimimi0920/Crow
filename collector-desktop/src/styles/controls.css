@@ -122,6 +122,24 @@ a:hover {
   background: var(--bad-soft);
 }
 
+.region-status.warn {
+  color: var(--info-text);
+  background: var(--info-soft);
+}
+
+.region-status.live {
+  color: var(--warn);
+  background: var(--primary-soft);
+}
+
+.region-status.live::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .error {
   color: var(--bad-text);
 }

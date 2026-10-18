@@ -6,11 +6,17 @@ import json
 import os
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote
 
 from tools.internal_api_http import fetch_json, post_json
+from tools.pc2_auth_import_receipt import (
+    browser_instance,
+    import_receipt,
+    reusable_import,
+)
 from tools.pc2_detail_auth_probe import probe_detail_access
 from tools.pc2_seed_auth_probe import probe_seed_access
 
@@ -59,7 +65,7 @@ def load_cookie_snapshot(
     cookies = []
     for item in payload:
         if not isinstance(item, dict):
-            raise ValueError("cookie snapshot entries must be objects")
+            raise ValueError("cookie snapshot entries must be objects")  # noqa: TRY004 -- snapshot validation contract
         name = str(item.get("name") or "").strip()
         value = item.get("value")
         domain = str(item.get("domain") or "").strip().lower()
@@ -235,6 +241,7 @@ def import_cookie_snapshot_to_cdp(
             )
         return {
             **metadata,
+            "browser_instance": browser_instance(version),
             "imported_count": len(params),
             "verified_count": verified_count,
             "session_cookie_count": len(expected_session_keys),
@@ -260,7 +267,7 @@ def _write_marker(marker_path: str | Path, payload: dict[str, Any]) -> None:
 def _read_marker(marker_path: str | Path) -> dict[str, Any]:
     try:
         payload = json.loads(Path(marker_path).read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, ValueError):
         return {}
     return dict(payload) if isinstance(payload, dict) else {}
 
@@ -325,7 +332,7 @@ def process_nas_auth_recovery_once(
         status = "pc2_claimed"
 
     imported = None
-    if status == "pc2_claimed":
+    if status in {"pc2_claimed", "restarting"}:
         ensure_cookie_snapshot(
             api_base_url,
             recovery_id,
@@ -334,19 +341,24 @@ def process_nas_auth_recovery_once(
             headers=headers,
             fetcher=fetcher,
         )
-        imported = import_cookie_snapshot_to_cdp(
-            snapshot_path,
+        imported = reusable_import(
+            _read_marker(marker_path),
+            recovery_id,
+            expected_sha256,
             cdp_endpoint,
-            expected_sha256=expected_sha256,
+            lambda: fetch_json(f"{cdp_endpoint.rstrip('/')}/json/version", timeout=5),
         )
-        marker = {
-            "schema_version": 1,
-            "recovery_id": recovery_id,
-            "snapshot_sha256": imported["sha256"],
-            "cookie_count": imported["cookie_count"],
-            "imported_at_epoch": time.time(),
-        }
-        _write_marker(marker_path, marker)
+        if imported is None:
+            imported = import_cookie_snapshot_to_cdp(
+                snapshot_path,
+                cdp_endpoint,
+                expected_sha256=expected_sha256,
+            )
+            _write_marker(
+                marker_path,
+                import_receipt(imported, recovery_id, cdp_endpoint, time.time()),
+            )
+    if status == "pc2_claimed":
         acknowledged = poster(
             _recovery_url(api_base_url, "/pc2_restarting"),
             {"recovery_id": recovery_id, "node_id": "pc2"},
@@ -355,44 +367,9 @@ def process_nas_auth_recovery_once(
         )
         if not isinstance(acknowledged, dict) or acknowledged.get("ok") is not True:
             raise OSError("NAS did not acknowledge the PC2 verification phase")
-        # Keep the legacy wire phase, but verify in the existing browser.
-        # Restarting after a verified CDP import discards session state and
-        # interrupts the solver and every collection worker sharing that browser.
+        # Retry ACK and verification without overwriting this browser's rotated cookies.
         status = "restarting"
 
-    if status == "restarting" and imported is None:
-        ensure_cookie_snapshot(
-            api_base_url,
-            recovery_id,
-            snapshot_path,
-            expected_sha256=expected_sha256,
-            headers=headers,
-            fetcher=fetcher,
-        )
-        marker = _read_marker(marker_path)
-        if str(marker.get("recovery_id") or "") != recovery_id:
-            imported = import_cookie_snapshot_to_cdp(
-                snapshot_path,
-                cdp_endpoint,
-                expected_sha256=expected_sha256,
-            )
-            _write_marker(
-                marker_path,
-                {
-                    "schema_version": 1,
-                    "recovery_id": recovery_id,
-                    "snapshot_sha256": imported["sha256"],
-                    "cookie_count": imported["cookie_count"],
-                    "imported_at_epoch": time.time(),
-                    "marker_recovered": True,
-                },
-            )
-        else:
-            imported = import_cookie_snapshot_to_cdp(
-                snapshot_path,
-                cdp_endpoint,
-                expected_sha256=expected_sha256,
-            )
     if status == "restarting":
         stage_receipt = {}
         if active.get("scope"):
@@ -405,7 +382,7 @@ def process_nas_auth_recovery_once(
                     if authenticated
                     else "stage_probe_failed"
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 -- probe failures must fail closed
                 authenticated = False
                 reason = "stage_probe_unavailable"
             stage_receipt = {

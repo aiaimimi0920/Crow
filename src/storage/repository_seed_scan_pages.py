@@ -56,6 +56,7 @@ class RepositorySeedScanPagesMixin:
                 parallel_sorts=parallel_sorts,
                 blocked_job_keys=blocked_job_keys,
                 breadth_first=breadth_first,
+                now=now,
             )
             for row, job in ordered:
                 if row.job_key in blocked_job_keys:
@@ -107,6 +108,7 @@ class RepositorySeedScanPagesMixin:
                     row.completed_at = row.completed_at or now
                     session.add(row)
                     self._refresh_seed_scan_job_status(session, row.job_key, now)
+                    session.info["seed_candidate_revision"] = session.info.get("seed_candidate_revision", 0) + 1
                     continue
 
                 if not parallel_sorts:

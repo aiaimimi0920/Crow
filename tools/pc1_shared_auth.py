@@ -59,7 +59,8 @@ def _capture(output, request_id, endpoint, scope, url, target_id):
 
 
 def shared_challenge(client, *, output, request_id, endpoint="", scope="", url="",
-                     target_id="", challenge_id="", peer_url="", peer_challenge_id="", status=False):
+                     target_id="", challenge_id="", peer_url="", peer_challenge_id="", status=False,
+                     capture_snapshot=None):
     from tools.pc1_desktop_auth import target_identity
     path = _job_path(output, request_id)
     with completion_lock(output):
@@ -82,7 +83,11 @@ def shared_challenge(client, *, output, request_id, endpoint="", scope="", url="
                 raise RecoveryError("stage_api_upgrade_required")
             if not capabilities.get("pc2_stage_auth_ready"):
                 raise RecoveryError("pc2_stage_upgrade_required")
-            snapshot = _capture(output, request_id, endpoint, scope, url, target_id)
+            if capture_snapshot is None:
+                snapshot = _capture(output, request_id, endpoint, scope, url, target_id)
+            else:
+                count, digest = publish_snapshot(output, "auth-recovery-" + request_id, capture_snapshot())
+                snapshot = {"sha256": digest, "cookie_count": count}
             job = {"request_id": request_id, "api": client.url, "created": time.time(),
                    "snapshot": snapshot, "stages": [
                        {"scope": stage, "target_url": target, "challenge_id": challenge,

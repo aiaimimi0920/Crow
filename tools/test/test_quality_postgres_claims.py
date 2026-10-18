@@ -39,7 +39,7 @@ def repository():
     repo.engine.dispose()
 
 
-@pytest.mark.parametrize("kind", ["search", "page", "page_parallel", "detail", "analysis"])
+@pytest.mark.parametrize("kind", ["search", "page", "page_parallel", "page_closure", "detail", "analysis"])
 def test_two_workers_never_claim_the_same_active_work(repository, kind):
     if kind == "search":
         assert repository.bootstrap_search_task({"location_code": "440115", "category": "50025969", "st_param": "2"})
@@ -51,7 +51,10 @@ def test_two_workers_never_claim_the_same_active_work(repository, kind):
             sort_specs=[{"sort_key": "default", "sort_name": "Default", "st_param": "0"}],
         )
         table = "fapai_seed_scan_job"
-        claim = lambda worker: repository.claim_seed_scan_page(worker, parallel_sorts=kind == "page_parallel")
+        claim = lambda worker: repository.claim_seed_scan_page(
+            worker, parallel_sorts=kind in {"page_parallel", "page_closure"},
+            breadth_first=kind == "page_closure",
+        )
     else:
         with repository.session_factory.begin() as session:
             payload = {"id": "1001"}

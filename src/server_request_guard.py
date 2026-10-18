@@ -395,7 +395,7 @@ def _public_auth_recovery_snapshot(snapshot: object) -> dict[str, object]:
     # public projection so health checks can verify the recovery subsystem
     # without requiring a token, while all identifiers and targets stay private.
     public = {
-        name: data[name] for name in ("enabled", "status", "phase") if name in data
+        name: data[name] for name in ("enabled", "status", "phase", "automatic_auth_allowed") if name in data
     }
     for key in ("active", "last_result"):
         section = data.get(key)

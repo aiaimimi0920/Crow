@@ -156,6 +156,17 @@ function Get-CdpTabs {
     }
 }
 
+function Test-CurrentAutomaticRecovery {
+    param([string]$RecoveryId)
+    try {
+        $fresh = Invoke-RecoveryRequest
+        return ($fresh.auth_recovery.automatic_auth_allowed -eq $true -and
+            $fresh.auth_recovery.active.recovery_id -eq $RecoveryId -and
+            $fresh.auth_recovery.active.status -in @('requested', 'pc1_claimed') -and
+            -not $fresh.auth_recovery.active.manual_request_id)
+    } catch { return $false }
+}
+
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).ProviderPath
 $pythonResolver = Join-Path $PSScriptRoot "resolve-pc1-auth-python.ps1"
 if (-not (Test-Path -LiteralPath $pythonResolver -PathType Leaf)) {
@@ -194,6 +205,10 @@ if (-not $BrowserPath) {
 $statePath = Join-Path $DataRoot "runtime\pc1-nas-auth-recovery-state.json"
 $state = Read-State -Path $statePath
 $response = Invoke-RecoveryRequest
+if ($response.auth_recovery.automatic_auth_allowed -ne $true) {
+    # Missing, stale, or unknown worker evidence never opens or focuses a page.
+    exit 0
+}
 $active = $response.auth_recovery.active
 if ($null -eq $active) {
     exit 0
@@ -244,6 +259,7 @@ $preferredId = if ($sameRecovery) { [string]$state.target_id } else { "" }
 $authTab = Get-Pc1RecoveryTab -Tabs $tabs -PreferredId $preferredId -TargetUrl $recoveryUrl
 
 if ($null -eq $authTab -and -not $withinWindow) {
+    if (-not (Test-CurrentAutomaticRecovery -RecoveryId $recoveryId)) { exit 0 }
     $browserArgs = @(
         "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
         "-File", $startBrowserScript,
@@ -285,11 +301,14 @@ $newState = [ordered]@{
     seed_target_id = if ($sameRecovery) { [string]$state.seed_target_id } else { "" }
     seed_prompted_at = if ($sameRecovery) { [string]$state.seed_prompted_at } else { "" }
 }
+$presentedThisPoll = $false
 if ($null -ne $authTab -and (Test-Pc1RecoveryPromptDue -SameRecovery $sameRecovery `
         -PromptedAt $newState.prompted_at)) {
+    if (-not (Test-CurrentAutomaticRecovery -RecoveryId $recoveryId)) { exit 0 }
     # Persist the attempt before presentation; desktop failures must not cause repeat focus.
     $newState["prompted_at"] = [DateTimeOffset]::UtcNow.ToString("o")
     Write-State -Path $statePath -State $newState
+    $presentedThisPoll = $true
     $newState["presentation"] = Show-Pc1RecoveryPrompt -Endpoint $cdpEndpoint -TargetId $authTab.id -Port $Port -ProfileDir $ProfileDir
 }
 Write-State -Path $statePath -State $newState
@@ -318,9 +337,11 @@ if ($probeExit -ne 0) {
         try { $probeResult = [string]$line | ConvertFrom-Json } catch { continue }
         if ($probeResult.blocking_scope -eq 'seed') {
             try {
+                if (-not (Test-CurrentAutomaticRecovery -RecoveryId $recoveryId)) { exit 0 }
                 $apiStatus = Invoke-RecoveryRequest -Action public_status
                 Show-Pc1RecoverySeedPrompt -State $newState -StatePath $statePath -Endpoint $cdpEndpoint `
-                    -SolverStatus $apiStatus.captcha_solver -FallbackUrl $StartUrl -Port $Port -ProfileDir $ProfileDir
+                    -SolverStatus $apiStatus.captcha_solver -FallbackUrl $StartUrl -Port $Port -ProfileDir $ProfileDir `
+                    -DeferPresentation:$presentedThisPoll
             }
             catch { Write-Warning 'The required list authentication page is not available yet; recovery remains pending.' }
             break

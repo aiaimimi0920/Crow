@@ -173,3 +173,32 @@ def test_visible_target_can_be_clicked_while_omnibox_owns_document_focus(monkeyp
     assert probe.open()
     assert probe.verify(None, {"x": 236, "y": 197}) == (236, 197)
     assert solver.last_failure_reason is None
+
+
+@pytest.mark.parametrize("check", ["native_focus", "snapshot", "event_buttons", "event_serial", "event_age"])
+def test_failed_probe_emits_exact_safe_diagnostic(monkeypatch, check):
+    from tools import pc2_solver_diagnostics as diagnostics
+
+    sample = snapshot(pointer_event())
+    if check == "snapshot":
+        sample["visible"] = False
+    elif check == "event_buttons":
+        sample["event"]["buttons"] = 1
+    elif check == "event_serial":
+        sample["event"]["serial"] = 0
+    elif check == "event_age":
+        sample["event"]["age"] = 2000
+    probe, solver, _calls, moves = make_probe(monkeypatch, [snapshot(), sample])
+    assert probe.open()
+    if check == "native_focus":
+        solver._linux_window_has_focus = lambda _wid: False
+    events = []
+    monkeypatch.setattr(diagnostics, "log_event", events.append)
+    with diagnostics.solver_attempt_diagnostics():
+        assert probe.verify(None, {"x": 236, "y": 197}) is None
+    assert events == [{
+        "kind": "local_solver_diagnostic", "phase": "pointer_failure",
+        "reason": "target_unavailable" if check in {"native_focus", "snapshot"} else "pointer_unobserved",
+        "check": check,
+    }]
+    assert not moves

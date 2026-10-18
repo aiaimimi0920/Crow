@@ -19,6 +19,10 @@ _NUMBER = r"-?\d{1,6}(?:\.\d{1,3})?"
 _BOOL = r"True|False|None"
 _PATTERNS = (
     (
+        "pointer_failure",
+        r"\[SOLVER\] OS pointer probe failed reason=(?P<reason>[a-z_]{1,40}) check=(?P<check>[a-z_]{1,40})",
+    ),
+    (
         "slider_geometry",
         rf"\[SOLVER\] Slider found at \((?P<css_x>{_NUMBER}), (?P<css_y>{_NUMBER})\) selector=.* context=.*",
     ),
@@ -62,6 +66,8 @@ _PATTERNS = (
     ),
 )
 _ENUMS = {
+    "reason": {"target_unavailable", "target_invalid", "target_changed", "pointer_unobserved", "pointer_changed", "pointer_missed"},
+    "check": {"target", "native_focus", "snapshot", "event_buttons", "event_serial", "event_age"},
     "source": {
         "x11_window_geometry",
         "screenshot_handle",

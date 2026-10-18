@@ -53,6 +53,10 @@ class ChallengeCreation:
         persisted = self.read_scope(scope)
         if not state.get("challenge_id") and persisted.get("challenge_id"):
             state.update(persisted)
+        manual_active = bool(
+            state.get("challenge_id")
+            and (state.get("manual_required") or state.get("manual_only"))
+        )
         challenge_id = str(state.get("challenge_id") or "").strip() or self.new_id()
         first_seen = (
             float(cast("str | float", state.get("first_seen_epoch") or 0)) or now
@@ -66,12 +70,16 @@ class ChallengeCreation:
             )
             or now,
             paused=True,
-            pause_reason="captcha_solver",
-            manual_required=False,
-            manual_only=False,
-            last_status="running",
-            last_failure_reason=None,
         )
+        # Reports refresh an existing latch; only explicit retry may release manual mode.
+        if not manual_active:
+            state.update(
+                pause_reason="captcha_solver",
+                manual_required=False,
+                manual_only=False,
+                last_status="running",
+                last_failure_reason=None,
+            )
         error = self.persist_scope(scope, state)
         if error:
             self.logger.error(
@@ -83,7 +91,9 @@ class ChallengeCreation:
             self.logger.error(
                 "[SOLVER] Failed to refresh legacy challenge state: %s", legacy_error
             )
-        self.set_pause(True, "captcha_solver", scope=scope)
+        self.set_pause(
+            True, "manual_required" if manual_active else "captcha_solver", scope=scope
+        )
         self.runtime.recovery.set_challenge(challenge_id, request)
         return challenge_id
 

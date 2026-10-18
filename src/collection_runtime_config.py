@@ -30,6 +30,7 @@ from .collection_control_state import CHALLENGE_SCOPES
 from .collection_index_loader import load_collection_index
 from .detail_artifacts import extract_detail_artifacts, get_detail_archive_path
 from .nas_auth_recovery import NasAuthRecoveryCoordinator
+from .collection_auth_demand import collection_workers_available
 from .project_data_paths import resolve_collection_data_dir
 from .runtime_json import load_json_file
 from .runtime_state import RuntimeState
@@ -163,6 +164,10 @@ def create_collection_host(
         ),
         cooldown_seconds=float(
             project_getenv("CROW_NAS_AUTH_RECOVERY_COOLDOWN_SECONDS", "1800")
+        ),
+        automatic_auth_allowed=lambda: (
+            collection_workers_available()
+            and host.RUNTIME.control.snapshot().reason != "operator"
         ),
     )
     vars(host).update(resources)

@@ -274,7 +274,7 @@ def test_collection_observer_regions_report_stage_specific_completion(tmp_path: 
     nansha_initial = links_initial["regions"][0]
     assert nansha_initial["location_code"] == "440115"
     assert nansha_initial["completed"] is False
-    assert nansha_initial["status_label"] == "采集中"
+    assert nansha_initial["status_label"] == "待采集"
 
     with repo.session_factory.begin() as session:
         for progress in session.scalars(select(FapaiSeedScanProgress)).all():
@@ -290,7 +290,7 @@ def test_collection_observer_regions_report_stage_specific_completion(tmp_path: 
 
     links_done = repo.collection_observer_regions(stage="links")
     assert links_done["regions"][0]["completed"] is True
-    assert links_done["regions"][0]["status_label"] == "收集完成"
+    assert links_done["regions"][0]["status_label"] == "本轮完成"
 
     details_before = repo.collection_observer_regions(stage="details")
     assert details_before["regions"][0]["completed"] is False
@@ -299,7 +299,7 @@ def test_collection_observer_regions_report_stage_specific_completion(tmp_path: 
     repo.mark_seed_raw_detail_captured("1001", detail_html_path=str(tmp_path / "detail.html"))
     details_done = repo.collection_observer_regions(stage="details")
     assert details_done["regions"][0]["completed"] is True
-    assert details_done["regions"][0]["status_label"] == "收集完成"
+    assert details_done["regions"][0]["status_label"] == "本轮完成"
 
     analysis_before = repo.collection_observer_regions(stage="analysis")
     assert analysis_before["regions"][0]["completed"] is False
@@ -308,7 +308,7 @@ def test_collection_observer_regions_report_stage_specific_completion(tmp_path: 
     repo.mark_seed_detail_completed("1001", final_json_path=str(tmp_path / "final.json"))
     analysis_done = repo.collection_observer_regions(stage="analysis")
     assert analysis_done["regions"][0]["completed"] is True
-    assert analysis_done["regions"][0]["status_label"] == "收集完成"
+    assert analysis_done["regions"][0]["status_label"] == "本轮完成"
 
 def test_collection_observer_regions_hides_admin_legacy_rows_for_replaced_taobao_province(
     tmp_path: Path,

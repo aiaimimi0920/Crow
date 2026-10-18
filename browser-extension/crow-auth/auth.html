@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crow 手动认证</title><link rel="stylesheet" href="auth.css"></head>
+<body><main>
+<h1>Crow 手动认证</h1>
+<p id="identity" class="note"></p>
+<button id="check">检查本机连接</button>
+<button id="open">连接 Crow 并打开认证页面</button>
+<button id="submit" disabled>已手动完成，提交给 Crow</button>
+<p id="status" role="status">请先在 Crow 中选择“在常用 Edge 中认证”。</p>
+<p class="note">提交时仅共享目标站点的必要会话。请回 Crow 点击“已完成挑战”，等待 PC2 实际验证。</p>
+</main><script type="module" src="auth.js"></script></body></html>

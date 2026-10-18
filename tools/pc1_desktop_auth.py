@@ -160,6 +160,7 @@ def main(argv=None):
     parser.add_argument("--scope", choices=("seed", "detail"), default="")
     parser.add_argument("--peer-url", default="")
     parser.add_argument("--peer-challenge-id", default="")
+    parser.add_argument("--browser", choices=("dedicated", "edge"), default="dedicated")
     args = parser.parse_args(argv)
     try:
         environment = load_runtime_environment(ROOT)
@@ -167,20 +168,36 @@ def main(argv=None):
         port = int(environment_value("CROW_AUTH_LOCAL_CDP_PORT", environment=environment, root=ROOT) or 9225)
         endpoint = f"http://127.0.0.1:{port}"
         if args.action == "open":
-            result = open_challenge(args.target_url, endpoint, port, data_root, environment=environment)
+            if args.browser == "edge":
+                from tools.edge_auth_desktop import open_edge
+                client = RecoveryClient(args.api_base, data_root, environment=environment)
+                result = open_edge(data_root=data_root, request_id=args.request_id, url=args.target_url,
+                                   scope=args.scope, api=client.url, challenge_id=args.challenge_id)
+            else:
+                result = open_challenge(args.target_url, endpoint, port, data_root, environment=environment)
         else:
             client = RecoveryClient(args.api_base, data_root, environment=environment)
             output = Path(environment_value("CROW_COOKIE_SNAPSHOT", environment=environment, root=ROOT) or data_root / "secrets" / "nodes" / "pc2" / "taobao-cookies.json")
             if args.peer_url or args.recovery_id.startswith("shared-auth-"):
                 from tools.pc1_shared_auth import shared_challenge
+                capture_snapshot = None
+                if args.browser == "edge" and args.action != "status":
+                    from tools.edge_auth_desktop import capture_edge
+                    if args.target_id != "edge:" + args.request_id:
+                        raise RecoveryError("edge_task_changed")
+                    capture_snapshot = lambda: capture_edge(data_root, client, args.request_id,
+                                                           args.scope, args.target_url, args.challenge_id)
                 result = shared_challenge(client, output=output,
                                           request_id=args.recovery_id.removeprefix("shared-auth-") if args.action == "status" else args.request_id,
                                           endpoint=endpoint, scope=args.scope, url=args.target_url, target_id=args.target_id,
                                           challenge_id=args.challenge_id, peer_url=args.peer_url,
-                                          peer_challenge_id=args.peer_challenge_id, status=args.action == "status")
+                                          peer_challenge_id=args.peer_challenge_id, status=args.action == "status",
+                                          capture_snapshot=capture_snapshot)
             elif args.action == "status":
                 result = recovery_phase(client.call()["auth_recovery"], args.recovery_id, scope=args.scope)
             else:
+                if args.browser == "edge":
+                    raise RecoveryError("edge_peer_required")
                 result = complete_challenge(client, endpoint=endpoint, output_path=output, request_id=args.request_id,
                                             challenge_id=args.challenge_id, url=args.target_url, target_id=args.target_id, scope=args.scope)
     except EnvironmentAliasConflict:

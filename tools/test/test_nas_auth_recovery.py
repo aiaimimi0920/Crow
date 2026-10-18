@@ -32,7 +32,9 @@ def test_stall_creates_one_durable_recovery_and_operator_pause_blocks_trigger(tm
     assert same["active"]["recovery_id"] == active["recovery_id"]
 
     restarted = _coordinator(tmp_path)
-    assert restarted.snapshot(now=3000)["active"]["recovery_id"] == active["recovery_id"]
+    assert (
+        restarted.snapshot(now=3000)["active"]["recovery_id"] == active["recovery_id"]
+    )
 
 
 def test_explicit_unhealthy_auth_signal_triggers_before_general_stall(tmp_path):
@@ -66,7 +68,9 @@ def test_explicit_unhealthy_auth_signal_triggers_before_general_stall(tmp_path):
         now=1301,
     )
     assert requested["active"]["status"] == "requested"
-    assert requested["active"]["trigger_reason"] == "cookie_snapshot_candidate_unhealthy"
+    assert (
+        requested["active"]["trigger_reason"] == "cookie_snapshot_candidate_unhealthy"
+    )
 
 
 def test_two_coordinators_reload_under_file_lock_and_keep_one_generation(tmp_path):
@@ -80,7 +84,9 @@ def test_two_coordinators_reload_under_file_lock_and_keep_one_generation(tmp_pat
     assert second_active["recovery_id"] == first_active["recovery_id"]
 
 
-def test_pc1_to_pc2_flow_requires_matching_generation_and_progress_confirmation(tmp_path):
+def test_pc1_to_pc2_flow_requires_matching_generation_and_progress_confirmation(
+    tmp_path,
+):
     coordinator = _coordinator(tmp_path)
     coordinator.sample(50, 10, now=100)
     active = coordinator.sample(50, 10, now=1901)["active"]
@@ -133,7 +139,7 @@ def test_timeout_enters_cooldown_and_does_not_immediately_retrigger(tmp_path):
     assert retriggered["active"]["status"] == "requested"
 
 
-def test_exhausted_solver_signal_retries_failed_recovery_after_signal_stall(tmp_path):
+def test_exhausted_solver_signal_respects_failed_recovery_cooldown(tmp_path):
     coordinator = _coordinator(
         tmp_path,
         pc1_timeout_seconds=10,
@@ -155,18 +161,26 @@ def test_exhausted_solver_signal_retries_failed_recovery_after_signal_stall(tmp_
     )
     assert still_cooling["active"] is None
 
-    retried = coordinator.sample(
+    still_cooling = coordinator.sample(
         7,
         3,
         recovery_signal="node_solver_retries_exhausted",
         recovery_signal_stall_seconds=300,
         now=2122,
     )
+    assert still_cooling["active"] is None
+    retried = coordinator.sample(
+        7,
+        3,
+        recovery_signal="node_solver_retries_exhausted",
+        recovery_signal_stall_seconds=300,
+        now=3622,
+    )
     assert retried["active"]["status"] == "requested"
     assert retried["active"]["trigger_reason"] == "node_solver_retries_exhausted"
 
 
-def test_stalled_detail_signal_retries_failed_recovery_after_signal_stall(tmp_path):
+def test_stalled_detail_signal_respects_failed_recovery_cooldown(tmp_path):
     coordinator = _coordinator(
         tmp_path,
         pc1_timeout_seconds=10,
@@ -186,12 +200,20 @@ def test_stalled_detail_signal_retries_failed_recovery_after_signal_stall(tmp_pa
     )
     assert still_cooling["active"] is None
 
-    retried = coordinator.sample(
+    still_cooling = coordinator.sample(
         7,
         3,
         recovery_signal="detail_challenge_stalled",
         recovery_signal_stall_seconds=300,
         now=2122,
+    )
+    assert still_cooling["active"] is None
+    retried = coordinator.sample(
+        7,
+        3,
+        recovery_signal="detail_challenge_stalled",
+        recovery_signal_stall_seconds=300,
+        now=3622,
     )
     assert retried["active"]["status"] == "requested"
     assert retried["active"]["trigger_reason"] == "detail_challenge_stalled"
@@ -225,7 +247,9 @@ def test_exhausted_solver_signal_does_not_bypass_cooldown_after_success(tmp_path
     assert still_cooling["active"] is None
 
 
-def test_new_stalled_detail_challenge_bypasses_success_cooldown_only_after_progress(tmp_path):
+def test_new_stalled_detail_challenge_bypasses_success_cooldown_only_after_progress(
+    tmp_path,
+):
     coordinator = _coordinator(tmp_path, cooldown_seconds=1800)
     coordinator.sample(7, 3, now=10)
     active = coordinator.sample(7, 3, now=1811)["active"]

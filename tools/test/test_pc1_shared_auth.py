@@ -176,3 +176,26 @@ def test_new_challenge_cannot_consume_old_claim(setup):
     client.manager.request_manual("b" * 32, scope="seed", target_url=URLS["seed"], challenge_id="old")
     assert complete(client, output)["code"] == "shared_queued"
     assert client.manager.snapshot()["active"]["status"] == "requested"
+
+
+def test_external_capture_uses_existing_two_stage_confirmation_without_cdp(setup):
+    client, output, captures = setup
+    imported = []
+    def capture():
+        imported.append(True)
+        return RAW
+    def submit():
+        return shared.shared_challenge(client, output=output, request_id=REQUEST, scope="seed",
+                                       url=URLS["seed"], target_id="edge:" + REQUEST,
+                                       challenge_id="seed", peer_url=URLS["detail"],
+                                       peer_challenge_id="detail", capture_snapshot=capture)
+    assert submit()["phase"] == "pending_pc2"
+    assert submit()["phase"] == "pending_pc2"
+    assert imported == [True] and captures == []
+    client.finish()
+    assert poll(client, output)["phase"] == "pending_pc2"
+    client.finish(False)
+    result = poll(client, output)
+    assert result["phase"] == "failed"
+    assert result["stage_results"]["seed"]["phase"] == "succeeded"
+    assert result["stage_results"]["detail"]["phase"] == "failed"

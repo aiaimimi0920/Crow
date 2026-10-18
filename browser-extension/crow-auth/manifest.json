@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Crow 手动认证",
+  "version": "0.1.1",
+  "description": "由你明确提交指定淘宝页面的认证会话给本机 Crow。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvuNgVp+1LSKv6ozDPgoZrzXYFOjS7MAnJ+I82pemstDRWPAEy1vCrNkO7YanPXBPPQeOav5l2w/uen4gOlBVvuvoWcUxvw/lESxiDXi41UtTXh6NY3nw9/Mk9txTxYFcTv/K1ZsTqcvLFsGnrJz81S0VfGBPKcG9sfKlW8FfNqYCWnoeDi3yikFLr/i+7B87a+elxH1veyRkKz5SRH/0ByduhzO4gmZiAmMasXYcGoyR8gD1tqhLPcMp3hlNH89sDzJ2r6A8HEB0hPNPHq02o/AkPis/bgsoSsNPJVGUI4TW7iQdxi0UZHf/4pO3ccJuEvL0HIPY/UahKEWIWgvpZwIDAQAB",
+  "permissions": ["cookies", "nativeMessaging", "storage"],
+  "host_permissions": [
+    "https://taobao.com/*", "https://sf.taobao.com/*", "https://sf-item.taobao.com/*",
+    "https://susong-item.taobao.com/*", "https://login.taobao.com/*"
+  ],
+  "action": {"default_title": "Crow 手动认证", "default_popup": "auth.html"}
+}

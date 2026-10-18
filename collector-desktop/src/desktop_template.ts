@@ -123,7 +123,8 @@ export function mountTemplate() {
   </div>
   <dialog class="auth-dialog" id="authChallengeDialog" aria-label="人工认证">
     <div class="auth-dialog-toolbar">
-      <button id="authChallengeReload" autofocus>打开挑战页面</button>
+      <button id="authChallengeEdge" autofocus>在常用 Edge 中认证</button>
+      <button id="authChallengeReload">打开专用认证浏览器</button>
       <button id="authChallengeResume" class="primary-button">已完成挑战</button>
     </div>
     <div class="status-line" id="authChallengeStatus" role="status" aria-live="polite"></div>

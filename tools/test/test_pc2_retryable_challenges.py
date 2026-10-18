@@ -21,6 +21,9 @@ from tools.test.captcha_solver_test_context import (
         (True, False, True),
         (False, False, False),
         (True, True, False),
+        ("hidden_first", False, True),
+        ("fixed", False, True),
+        ("transparent", False, False),
     ],
 )
 def test_challenge_dom_distinguishes_retry_widget_from_login(visible, login, expected):
@@ -35,12 +38,19 @@ def test_challenge_dom_distinguishes_retry_widget_from_login(visible, login, exp
     harness = """
 const vm = require('node:vm');
 const options = JSON.parse(process.argv[2]);
+function errorNode(visible, fixed=false, opacity='1') {
+  return {offsetParent: visible && !fixed ? {} : null,
+    ownerDocument: {defaultView: {getComputedStyle: () => ({display:visible?'block':'none',visibility:'visible',opacity,position:fixed?'fixed':'static'})}},
+    getBoundingClientRect: () => ({width:300,height:40})};
+}
+const nodes = options.visible === 'hidden_first' ? [errorNode(false),errorNode(true)] :
+  [errorNode(!!options.visible, options.visible === 'fixed', options.visible === 'transparent' ? '0' : '1')];
 const document = {
   body: {className: '', innerText: 'Verification failed. Please refresh page and try again.'},
   title: 'Captcha', readyState: 'complete',
   location: {href: options.login ? 'https://login.taobao.com/' : 'https://sf.taobao.com/list/1.htm/_____tmd_____/punish'},
-  querySelector: selector => selector.includes('.errloading') ? {offsetParent: options.visible ? {} : null} : null,
-  querySelectorAll: () => [], getElementsByTagName: () => [],
+  querySelector: selector => selector.includes('.errloading') ? nodes[0] : null,
+  querySelectorAll: selector => selector.includes('.errloading') ? nodes : [], getElementsByTagName: () => [],
 };
 console.log(JSON.stringify(vm.runInNewContext(process.argv[1], {document, URL})));
 """

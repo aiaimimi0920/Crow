@@ -57,6 +57,7 @@ $block = [scriptblock]::Create($branch.Extent.Text)
 $script:persisted = $null
 $script:shows = 0
 function Write-State { param($Path, $State); $script:persisted = $State | ConvertTo-Json | ConvertFrom-Json }
+function Test-CurrentAutomaticRecovery { return $true }
 function Show-Pc1RecoveryPrompt {
     if (-not $script:persisted.prompted_at) { throw 'Attempt was not persisted before presentation' }
     $script:shows++

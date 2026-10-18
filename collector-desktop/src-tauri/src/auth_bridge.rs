@@ -29,6 +29,8 @@ pub struct AuthRequest {
     peer_url: String,
     #[serde(default)]
     peer_challenge_id: String,
+    #[serde(default)]
+    browser: String,
 }
 
 struct ActionGuard;
@@ -74,6 +76,9 @@ fn execute(request: AuthRequest) -> Result<Value, String> {
     if !matches!(request.scope.as_str(), "" | "seed" | "detail") {
         return Err("认证阶段无效".into());
     }
+    if !matches!(request.browser.as_str(), "" | "dedicated" | "edge") {
+        return Err("认证浏览器无效".into());
+    }
     if ACTIVE
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
@@ -96,6 +101,7 @@ fn execute(request: AuthRequest) -> Result<Value, String> {
         ("-Scope", request.scope),
         ("-PeerUrl", request.peer_url),
         ("-PeerChallengeId", request.peer_challenge_id),
+        ("-Browser", request.browser),
     ] {
         if value.len() > 8192 || value.chars().any(char::is_control) || value.starts_with('-') {
             return Err("认证参数无效".into());

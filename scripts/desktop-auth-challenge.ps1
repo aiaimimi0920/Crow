@@ -8,7 +8,8 @@ param(
     [string]$RecoveryId = "",
     [ValidateSet("", "seed", "detail")][string]$Scope = "",
     [string]$PeerUrl = "",
-    [string]$PeerChallengeId = ""
+    [string]$PeerChallengeId = "",
+    [ValidateSet("dedicated", "edge")][string]$Browser = "dedicated"
 )
 $ErrorActionPreference = "Stop"
 
@@ -71,7 +72,7 @@ try {
     $env:PYTHONPATH = $root
     $env:PYTHONIOENCODING = "utf-8"
     $env:PYTHONUTF8 = "1"
-    $arguments = @("-m", "tools.pc1_desktop_auth", "--action", $Action, "--api-base", $ApiBase)
+    $arguments = @("-m", "tools.pc1_desktop_auth", "--action", $Action, "--api-base", $ApiBase, "--browser", $Browser)
     foreach ($entry in @(@("--target-url", $TargetUrl), @("--target-id", $TargetId),
                         @("--request-id", $RequestId), @("--challenge-id", $ChallengeId), @("--recovery-id", $RecoveryId), @("--scope", $Scope),
                         @("--peer-url", $PeerUrl), @("--peer-challenge-id", $PeerChallengeId))) {
