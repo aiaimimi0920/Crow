@@ -14,6 +14,7 @@ from tools.pc2_solver_config import (
 )
 from tools.pc2_solver_diagnostics import solver_attempt_diagnostics
 from tools.pc2_solver_manual_handoff import ManualChallengeRequired
+from tools.pc2_solver_reference_tabs import record_failed_drags
 from tools.pc2_solver_scope_policy import (
     _challenge_scope_for_url,
     canonical_manual_challenge_target,
@@ -120,6 +121,16 @@ def run_solver_local(
         return False
 
 
+def _run_diagnosed_solver(*args, **kwargs):
+    with solver_attempt_diagnostics() as diagnostics:
+        success = run_solver_local(*args, **kwargs)
+    if not success:
+        record_failed_drags(args[0], diagnostics.failed_drag_verifications)
+    else:
+        record_failed_drags(args[0], 0)
+    return success
+
+
 def _run_solver_process_entry(
     result_connection: Connection,
     cdp_endpoint: str,
@@ -130,14 +141,13 @@ def _run_solver_process_entry(
 ) -> None:
     result: dict[str, object]
     try:
-        with solver_attempt_diagnostics():
-            success = run_solver_local(
-                cdp_endpoint,
-                target_url,
-                max_attempts=max_attempts,
-                probe_target=probe_target,
-                drag_profile_offset=drag_profile_offset,
-            )
+        success = _run_diagnosed_solver(
+            cdp_endpoint,
+            target_url,
+            max_attempts=max_attempts,
+            probe_target=probe_target,
+            drag_profile_offset=drag_profile_offset,
+        )
         result = {"success": bool(success)}
     except ManualChallengeRequired:
         result = {"success": False, "failure_reason": "manual_required"}
@@ -166,7 +176,7 @@ def run_solver_local_with_deadline(
         else float(timeout_seconds)
     )
     if execution_timeout <= 0:
-        return run_solver_local(
+        return _run_diagnosed_solver(
             cdp_endpoint,
             target_url,
             max_attempts=max_attempts,

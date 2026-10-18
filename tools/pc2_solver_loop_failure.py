@@ -2,6 +2,7 @@
 
 import time
 
+from tools.pc2_reference_browse import maybe_browse_reference_tabs
 from tools.pc2_solver_execution import rotate_failed_challenge_target
 from tools.pc2_solver_fallback import (
     FALLBACK_FAIL_THRESHOLD,
@@ -98,4 +99,6 @@ def record_failed_attempt(
         state["manual_result"] = manual_result
         _save_fallback_state(state)
         log_event({"kind": "pc1_manual_auth_pushed", "result": manual_result})
+    if not should_push and not cooldown_started:
+        maybe_browse_reference_tabs(api_base_url, cdp_endpoint, last_probe_target)
     return last_probe_target

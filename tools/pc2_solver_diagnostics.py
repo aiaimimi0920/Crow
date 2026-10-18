@@ -66,8 +66,22 @@ _PATTERNS = (
     ),
 )
 _ENUMS = {
-    "reason": {"target_unavailable", "target_invalid", "target_changed", "pointer_unobserved", "pointer_changed", "pointer_missed"},
-    "check": {"target", "native_focus", "snapshot", "event_buttons", "event_serial", "event_age"},
+    "reason": {
+        "target_unavailable",
+        "target_invalid",
+        "target_changed",
+        "pointer_unobserved",
+        "pointer_changed",
+        "pointer_missed",
+    },
+    "check": {
+        "target",
+        "native_focus",
+        "snapshot",
+        "event_buttons",
+        "event_serial",
+        "event_age",
+    },
     "source": {
         "x11_window_geometry",
         "screenshot_handle",
@@ -77,8 +91,14 @@ _ENUMS = {
         "win32_client",
         "dpr_fallback",
     },
-    "profile": {"fast_exact_v3", "legacy_exact_release", "dense_exact_release",
-                "slow_exact_v4", "slow_settle_v4", "slow_dense_v4"},
+    "profile": {
+        "fast_exact_v3",
+        "legacy_exact_release",
+        "dense_exact_release",
+        "slow_exact_v4",
+        "slow_settle_v4",
+        "slow_dense_v4",
+    },
     "input": {"uinput", "win32", "pyautogui"},
 }
 _BOOLEANS = {
@@ -127,6 +147,8 @@ class _DiagnosticFilter(logging.Filter):
     def __init__(self) -> None:
         super().__init__()
         self.counts: Counter[str] = Counter()
+        self.pending_drag = False
+        self.failed_drag_verifications = 0
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.levelno != logging.INFO:
@@ -135,6 +157,12 @@ class _DiagnosticFilter(logging.Filter):
             event = diagnostic_event(record.getMessage())
             if event:
                 phase = str(event["phase"])
+                if phase == "drag_complete":
+                    self.pending_drag = True
+                elif phase == "verification" and self.pending_drag:
+                    if event.get("success") is False:
+                        self.failed_drag_verifications += 1
+                    self.pending_drag = False
                 if self.counts[phase] < 64:
                     self.counts[phase] += 1
                     log_event(event)
@@ -145,7 +173,7 @@ class _DiagnosticFilter(logging.Filter):
 
 
 @contextmanager
-def solver_attempt_diagnostics() -> Iterator[None]:
+def solver_attempt_diagnostics() -> Iterator[_DiagnosticFilter]:
     """Scope INFO admission to this child; retain WARNING handlers and root state."""
     diagnostic_filter = _DiagnosticFilter()
     loggers = [logging.getLogger(name) for name in _LOGGERS]
@@ -154,7 +182,7 @@ def solver_attempt_diagnostics() -> Iterator[None]:
         for logger in loggers:
             logger.addFilter(diagnostic_filter)
             logger.setLevel(logging.INFO)
-        yield
+        yield diagnostic_filter
     finally:
         for logger, level in zip(loggers, levels, strict=True):
             logger.setLevel(level)
