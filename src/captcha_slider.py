@@ -17,15 +17,18 @@ class CaptchaSliderMixin:
             track_right = float(track_rect.get("left") or 0) + float(track_rect.get("width") or 0)
             slider_right = float(slider_info.get("x") or 0) + float(slider_info.get("width") or 0)
             candidate = track_right - slider_right
-            if 0 < candidate <= track_width + slider_info["width"]:
-                remaining = candidate
+            # Border/rounding can leave the handle up to 2px past the endpoint.
+            # This is known terminal geometry, not missing geometry: never
+            # replace it with another full-track drag.
+            if -2 <= candidate <= track_width + slider_info["width"]:
+                remaining = max(0, candidate)
             track_offset_width = float(track_rect.get("offsetWidth") or track_width)
             handle_offset_width = float(track_rect.get("handleOffsetWidth") or slider_info["width"])
             current_handle_left = track_rect.get("handleOffsetLeft")
             if current_handle_left is not None:
                 offset_remaining = track_offset_width - handle_offset_width - float(current_handle_left)
-                if 0 <= offset_remaining <= track_width + slider_info["width"]:
-                    remaining = offset_remaining
+                if -2 <= offset_remaining <= track_width + slider_info["width"]:
+                    remaining = max(0, offset_remaining)
         if remaining is None:
             remaining = track_width - slider_info["width"] + 2
         return max(1, min(remaining, 1000))
