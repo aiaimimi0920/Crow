@@ -21,3 +21,25 @@ test("empty, fractional counters and excessive worker totals are rejected", () =
   values["workers.links"] = "";
   assert.throws(read);
 });
+
+test("GPT permission and effort roundtrip as typed settings, defaulting off", () => {
+  const values: Record<string, string> = {};
+  for (const group of groups) for (const field of group.fields) values[`${group.key}.${field[0]}`] = field.length === 4 ? String(field[2]) : "fixture";
+  values["ai.base_url"] = "http://127.0.0.1:4200/v1";
+  const read = () => readConfig((key) => values[key]);
+  assert.equal(read().ai.allow_gpt, undefined);
+  values["ai.model"] = "gpt-6.1-sol";
+  assert.throws(read, /GPT/);
+  values["ai.allow_gpt"] = "true";
+  values["ai.reasoning_effort"] = "low";
+  assert.equal(read().ai.allow_gpt, true);
+  assert.equal(read().ai.reasoning_effort, "low");
+  values["ai.allow_gpt"] = "false";
+  assert.throws(read, /GPT/);
+  values["ai.model"] = "deepseek-fixture";
+  values["ai.reasoning_effort"] = "none";
+  assert.equal(read().ai.allow_gpt, undefined);
+  assert.equal(read().ai.reasoning_effort, undefined);
+  values["ai.allow_gpt"] = "1";
+  assert.throws(read, /布尔/);
+});

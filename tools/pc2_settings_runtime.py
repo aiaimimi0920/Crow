@@ -1,12 +1,16 @@
 """Opt-in bounded Compose reconciliation. Never changes browser, images or mounts."""
 import json
 import os
-from pathlib import Path
 import subprocess
 import time
+from pathlib import Path
 
-from .pc2_settings_model import inventory, literal_compose, render, workers, WORKER
-from .pc2_container_inventory import canonical_containers, require_compose_safe_inventory, BROWSER
+from .pc2_container_inventory import (
+    BROWSER,
+    canonical_containers,
+    require_compose_safe_inventory,
+)
+from .pc2_settings_model import WORKER, inventory, literal_compose, render, workers
 
 PROJECT = "fapaifang-pc2"
 
@@ -24,7 +28,7 @@ def write_private(path, value):
 
 
 class SettingsRuntime:
-    def __init__(self, root, compose_args, *, runner=run, sleep=time.sleep, clock=time.monotonic):
+    def __init__(self, root, compose_args, *, runner=run, sleep=time.sleep, clock=time.monotonic, docker_api=None):
         self.root = Path(root)
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         if os.name == "posix" and (self.root.is_symlink() or self.root.stat().st_uid != os.geteuid() or self.root.stat().st_mode & 0o077):
@@ -32,6 +36,7 @@ class SettingsRuntime:
         self.run, self.sleep, self.clock = runner, sleep, clock
         self.compose_args = compose_args
         self.active = self.root / "active.json"
+        self.docker_api = docker_api
 
     def model(self):
         if self.active.exists():
@@ -117,8 +122,11 @@ class SettingsRuntime:
         old, new = workers(before), workers(after)
         changed = sorted(name for name in new if name not in old or new[name] != old[name])
         removed = sorted(set(old) - set(new))
+        from .pc2_settings_ai_runtime import ai_only, apply_ai
+        exact_ai = ai_only(before, after, changed, removed)
         try:
-            self.require_compose_safe(set(changed) | set(removed))
+            if not exact_ai:
+                self.require_compose_safe(set(changed) | set(removed))
         except ValueError:
             return "rejected"
         directory = self.root / request["request_id"]
@@ -126,6 +134,8 @@ class SettingsRuntime:
         old_path, new_path = directory / "before.json", directory / "after.json"
         write_private(old_path, literal_compose(before))
         write_private(new_path, literal_compose(after))
+        if exact_ai:
+            return apply_ai(self, before, after, rows, changed, directory, write_private)
         self.compose(old_path, ["config", "--quiet"])
         self.compose(new_path, ["config", "--quiet"])
         attempted = False

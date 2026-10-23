@@ -102,6 +102,7 @@ UNIT_FILES = (
     "test_collection_web_console_static.py",
     "test_server_request_guard_ownership.py",
     "test_collection_settings.py",
+    "test_pc2_settings_ai_runtime.py",
     "test_collection_diagnostic_clients.py",
     "test_collection_node_credentials.py",
     "test_collection_api_credentials.py",
@@ -166,6 +167,8 @@ UNIT_FILES = (
     "test_watchdog_state_preservation.py",
 )
 SECURITY_FILES = (
+    "test_gpt_optin.py",
+    "test_pc2_settings_ai_runtime.py",
     "test_pc2_browser_security.py",
     "test_pc2_xvfb_display_isolation.py",
     "test_controller_error_diagnostics.py",
@@ -331,6 +334,7 @@ SUITES = {
         "test_pc2_x11_button_recovery.py",
     ),
     "llm": (
+        "test_gpt_optin.py",
         "test_llm_native_ownership.py",
         "test_llm_helper_openai_compatible.py",
         "test_llm_qualification_pool.py",

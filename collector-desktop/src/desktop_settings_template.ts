@@ -8,6 +8,9 @@ export const settingsTemplate = `<summary><strong>采集运行配置</strong></s
   <p id="settingsConfigSource" class="status-line" title="${defaultsObservedAt}">本地默认值 · 当前部署配置快照</p>
   <form id="runtimeSettingsForm"><fieldset id="runtimeSettingsFields">
   ${groups.map((group) => `<section class="runtime-settings-group"><h2>${group.label}</h2><div class="runtime-settings-grid">${group.fields.map((field) => `<label>${field[1]}<input id="setting-${group.key}.${field[0]}" ${field.length === 4 ? `type="number" min="${field[2]}" max="${field[3]}" step="${field[0].endsWith("delay") ? "0.1" : "1"}"` : 'type="text"'} required /></label>`).join("")}</div></section>`).join("")}
+  <label><input id="setting-ai.allow_gpt" type="checkbox" />允许使用 GPT 模型（PC2 AI 归档）</label>
+  <p class="status-line">默认关闭。开启后可填写 GPT / Codex / o 系列路由，可能产生模型费用；不会自动解除采集暂停。关闭时请同时选择非 GPT 模型。</p>
+  <label>推理强度 <select id="setting-ai.reasoning_effort">${["none", "minimal", "low", "medium", "high", "xhigh"].map((value) => `<option value="${value}">${value}</option>`).join("")}</select></label>
   <label class="settings-secret">AI API Key <input id="settingsAiKey" type="password" autocomplete="new-password" placeholder="留空保留当前密钥，不回显，不写入草稿" /></label>
   <p id="settingsKeyStatus" class="status-line"></p>
   <p class="status-line">人工认证失败次数阈值尚未接入本版本；保持现有认证策略。</p>

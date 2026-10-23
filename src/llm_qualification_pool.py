@@ -83,6 +83,13 @@ class QualifiedModelPool:
         good.sort(key=lambda item: (-item[1]["score"], item[1]["elapsed"], item[0]))
         return [name for name, _ in good[:5]]
 
+    def _scan_complete(self, snapshot):
+        # A new permitted preferred route must not be hidden by an older catalog scan.
+        return snapshot.get("scan_complete") and all(
+            not eligible_model(name) or name in snapshot["models"]
+            for name in self.config.get("models", [])
+        )
+
     def _backoff_qualification(self, exc):
         seconds = failure_cooldown(exc)
         if getattr(exc, "status_code", None) in {401, 403, 429} or not self.available():
@@ -123,6 +130,8 @@ class QualifiedModelPool:
             raise RequestBudgetExceeded()
         if self.store.snapshot().get("cooldown_until", 0) > time.time():
             raise ModelRateLimitedError(0)
+        if not eligible_model(model):
+            raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
         try:
             body = request_json(self.session, "post", self.config["base_url"] + "/chat/completions",
                                 headers=self.headers, json=payload,
@@ -182,7 +191,7 @@ class QualifiedModelPool:
         from src.llm_evidence_prompt import EvidencePrompt
         active = self.available()
         snapshot = self.store.snapshot()
-        if active and (not continue_scan or snapshot.get("scan_complete")):
+        if active and (not continue_scan or self._scan_complete(snapshot)):
             return active
         if not self.store.claim():
             return active
@@ -261,7 +270,7 @@ class QualifiedModelPool:
         """Preflight never waits for a benchmark or claims a business item."""
         active = self.available()
         snapshot = self.store.snapshot()
-        if ((active and snapshot.get("scan_complete")) or snapshot["lease_until"] > time.time()
+        if ((active and self._scan_complete(snapshot)) or snapshot["lease_until"] > time.time()
                 or snapshot["next_scan"] > time.time()):
             return active
         key = self.store.key

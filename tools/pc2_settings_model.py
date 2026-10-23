@@ -1,8 +1,9 @@
 """Pure Compose plan generation from operator-provisioned, resolved runtime input."""
-from copy import deepcopy
 import re
+from copy import deepcopy
 
 from src.collection_settings_schema import environment_changes, validate
+from src.llm_analysis_policy import gpt_models_enabled
 from src.project_environment import getenv, set_env
 
 STAGES = {"links": "seed", "details": "detail", "analysis": "analysis"}
@@ -48,14 +49,17 @@ def inventory(model):
                     "analysis_batch_attempts": int(_read(ai, "CROW_DETAIL_MAX_ATTEMPTS", 20)),
                     "ai_attempts": int(_read(ai, "OPENAI_MAX_RETRIES", 3))},
         "ai": {"base_url": _read(ai, "OPENAI_BASE_URL", ""), "model": _read(ai, "OPENAI_MODEL", ""),
-               "timeout_seconds": int(float(_read(ai, "OPENAI_TIMEOUT_SECONDS", 180)))},
+               "timeout_seconds": int(float(_read(ai, "OPENAI_TIMEOUT_SECONDS", 180))),
+               "allow_gpt": gpt_models_enabled(reader=ai.get),
+               "reasoning_effort": _read(ai, "OPENAI_REASONING_EFFORT", "none")},
     }
     config = validate(config)
     for stage, group in groups.items():
         keys = set(environment_changes(config, stage))
         if stage == "analysis":
             keys.add("OPENAI_API_KEY")
-        if any(any(_read(service["environment"], key) != _read(env[stage], key) for key in keys) for service in group):
+        defaults = {"CROW_ANALYSIS_ALLOW_GPT": "0", "OPENAI_REASONING_EFFORT": "none"}
+        if any(any(_read(service["environment"], key, defaults.get(key)) != _read(env[stage], key, defaults.get(key)) for key in keys) for service in group):
             raise ValueError("Workers in one stage must share the exposed settings")
     return {"effective": config, "api_key_configured": bool(_read(ai, "OPENAI_API_KEY"))}
 

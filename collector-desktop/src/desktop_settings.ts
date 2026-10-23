@@ -25,7 +25,9 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
   const status = (text: string) => { element("settingsStatus").textContent = text; };
   const source = (text: string) => { element("settingsConfigSource").textContent = text; };
   const secret = () => element<HTMLInputElement>("settingsAiKey");
-  const config = () => readConfig((name) => element<HTMLInputElement>(`setting-${name}`).value);
+  const config = () => readConfig((name) => name === "ai.allow_gpt"
+    ? String(element<HTMLInputElement>(`setting-${name}`).checked)
+    : element<HTMLInputElement>(`setting-${name}`).value);
   const buttons = () => {
     element<HTMLButtonElement>("settingsApply").disabled = busy || pending || activeRequests > 0;
     element<HTMLButtonElement>("settingsLoad").disabled = busy || activeRequests > 0;
@@ -37,6 +39,8 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
     for (const group of groups) for (const field of group.fields) {
       element<HTMLInputElement>(`setting-${group.key}.${field[0]}`).value = String(value[group.key][field[0]]);
     }
+    element<HTMLInputElement>("setting-ai.allow_gpt").checked = value.ai.allow_gpt === true;
+    element<HTMLSelectElement>("setting-ai.reasoning_effort").value = String(value.ai.reasoning_effort || "none");
   };
   const restore = () => {
     baseline = null; dirty = false; fill(localCollectionDefaults);

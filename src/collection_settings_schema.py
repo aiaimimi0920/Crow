@@ -28,7 +28,9 @@ def validate(value):
     result = deepcopy(value)
     for group, numbers in NUMBERS.items():
         expected = set(numbers) | ({"base_url", "model"} if group == "ai" else set())
-        if not isinstance(result[group], dict) or set(result[group]) != expected:
+        optional = {"allow_gpt", "reasoning_effort"} if group == "ai" else set()
+        if (not isinstance(result[group], dict) or not expected <= set(result[group])
+                or set(result[group]) - expected - optional):
             reject("Invalid settings fields: " + group)
         for name, (minimum, maximum) in numbers.items():
             number = result[group][name]
@@ -53,10 +55,21 @@ def validate(value):
     if not model or len(model) > 200 or any(char.isspace() for char in model):
         reject("Invalid AI model route")
     from .llm_analysis_policy import require_non_gpt_analysis_model
+    allow_gpt = ai.get("allow_gpt", False)
+    if type(allow_gpt) is not bool:
+        reject("AI GPT permission must be a boolean")
+    effort = ai.get("reasoning_effort", "none")
+    if not isinstance(effort, str) or effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
+        reject("Invalid AI reasoning effort")
     try:
-        require_non_gpt_analysis_model(model, setting="ai.model")
+        require_non_gpt_analysis_model(model, setting="ai.model", allow_gpt=allow_gpt)
     except ValueError:
-        reject("Current collection policy requires a non-GPT analysis model")
+        reject("Enable the GPT switch before selecting a GPT analysis model")
+    # Preserve the old canonical shape for missing/default-off settings and receipts.
+    if not allow_gpt:
+        ai.pop("allow_gpt", None)
+    if effort == "none":
+        ai.pop("reasoning_effort", None)
     ai.update(base_url=ai["base_url"].rstrip("/"), model=model)
     return result
 
@@ -89,5 +102,7 @@ def environment_changes(config, stage):
         result.update(OPENAI_BASE_URL=ai["base_url"], OPENAI_MODEL=ai["model"],
                       OPENAI_MODEL_CANDIDATES=ai["model"],
                       OPENAI_TIMEOUT_SECONDS=str(ai["timeout_seconds"]),
-                      OPENAI_MAX_RETRIES=str(retries["ai_attempts"]))
+                      OPENAI_MAX_RETRIES=str(retries["ai_attempts"]),
+                      CROW_ANALYSIS_ALLOW_GPT="1" if ai.get("allow_gpt", False) else "0",
+                      OPENAI_REASONING_EFFORT=ai.get("reasoning_effort", "none"))
     return result

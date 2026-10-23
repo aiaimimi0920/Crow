@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from src.project_environment import getenv as project_getenv
+from src.llm_analysis_policy import require_non_gpt_analysis_model
 from src.llm_config import get_model_pool
 from src.llm_model_selector import (
     AUTH_INVALID_ERROR_CODES,
@@ -17,8 +17,7 @@ from src.llm_model_selector import (
     get_model_selector,
 )
 from src.llm_websocket import AIService
-from src.llm_analysis_policy import require_non_gpt_analysis_model
-
+from src.project_environment import getenv as project_getenv
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +116,12 @@ def _get_openai_compatible_proxies(base_url=None):
 
 
 def _chat_with_openai_compatible(content, config):
-    from src.llm_request_policy import MAX_OUTPUT_TOKENS, MAX_RETRY_WAIT_SECONDS, retry_delay
     from src.llm_evidence_prompt import request_messages
+    from src.llm_request_policy import (
+        MAX_OUTPUT_TOKENS,
+        MAX_RETRY_WAIT_SECONDS,
+        retry_delay,
+    )
 
     url = f"{config['base_url']}/chat/completions"
     session = requests.Session()
@@ -135,6 +138,7 @@ def _chat_with_openai_compatible(content, config):
         for model in models:
             if model in forbidden_models:
                 continue
+            require_non_gpt_analysis_model(model, setting="OpenAI request model")
             request_payload = {
                 "model": model,
                 "messages": request_messages(content),
@@ -244,6 +248,7 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
         chat_model = None
         for model in models:
             try:
+                require_non_gpt_analysis_model(model, setting="OpenAI preflight model")
                 request_payload = {
                     "model": model,
                     "messages": [
@@ -441,4 +446,4 @@ def chat_with_glm(content, *, model=None):
     return stripped
 
 
-__all__ = ['_strip_json_markdown', 'require_non_gpt_analysis_model', '_get_openai_compatible_config', '_first_nonempty_env', '_is_local_openai_compatible_url', '_get_openai_compatible_proxies', '_chat_with_openai_compatible', 'preflight_openai_compatible_backend', 'preflight_llm_backend', 'chat_with_glm']
+__all__ = ['_chat_with_openai_compatible', '_first_nonempty_env', '_get_openai_compatible_config', '_get_openai_compatible_proxies', '_is_local_openai_compatible_url', '_strip_json_markdown', 'chat_with_glm', 'preflight_llm_backend', 'preflight_openai_compatible_backend', 'require_non_gpt_analysis_model']

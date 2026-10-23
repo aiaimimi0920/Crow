@@ -1,4 +1,4 @@
-export type Config = Record<string, Record<string, number | string>>;
+export type Config = Record<string, Record<string, number | string | boolean>>;
 export const groups = [
   { key: "workers", label: "Worker 数量", fields: [["links", "链接", 1, 2], ["details", "详情", 1, 8], ["analysis", "AI 归档", 1, 8]] },
   { key: "intervals", label: "采集间隔（秒）", fields: [
@@ -42,5 +42,13 @@ export function readConfig(read: (id: string) => string): Config {
   let aiUrl: URL;
   try { aiUrl = new URL(String(result.ai.base_url)); } catch { throw new Error("AI 地址必须是 HTTP 或 HTTPS URL"); }
   if (!["http:", "https:"].includes(aiUrl.protocol) || aiUrl.username || aiUrl.password || aiUrl.search || aiUrl.hash) throw new Error("AI 地址不能包含凭据、查询参数或片段；密钥请填入独立输入框");
+  const allow = read("ai.allow_gpt") ?? "";
+  if (!["", "false", "true"].includes(allow)) throw new Error("GPT 开关必须为布尔值");
+  if (allow === "true") result.ai.allow_gpt = true;
+  const effort = read("ai.reasoning_effort") || "none";
+  if (!["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort)) throw new Error("不支持的推理强度");
+  if (effort !== "none") result.ai.reasoning_effort = effort;
+  const model = String(result.ai.model);
+  if (!result.ai.allow_gpt && (/gpt|codex/i.test(model) || /(?:^|[/:._-])o\d+(?:[/:._-]|$)/i.test(model))) throw new Error("请先开启允许使用 GPT；关闭时请改用非 GPT 模型");
   return result;
 }
