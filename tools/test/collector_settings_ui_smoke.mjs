@@ -47,6 +47,7 @@ export default async function settingsSmoke(page, { origin, artifactDir }) {
   check(await page.locator('[id="setting-ai.base_url"]').inputValue() === "http://192.168.15.20:8317/v1", "default AI endpoint matches deployment");
   check(await page.locator('[id="setting-ai.model"]').inputValue() === "deepseek-v4-flash", "default AI model matches deployment");
   check(!await page.locator('[id="setting-ai.allow_gpt"]').isChecked(), "GPT permission defaults off");
+  check(await page.locator('.settings-toggle').evaluate((label) => getComputedStyle(label).display === "flex" && label.querySelector("input").getBoundingClientRect().width <= 20), "GPT switch is a compact inline checkbox");
   await page.locator('[id="setting-workers.details"]').fill("2");
   await page.locator("#settingsAiKey").fill("synthetic-never-store-this");
   await page.locator("#settingsSaveDraft").click();
