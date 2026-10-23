@@ -92,19 +92,18 @@ def run_detail_worker_once(
             _write_runtime_summary(config.output_dir, summary)
             return summary
         final_item = _load_final_item(config.output_dir, item_id)
-        if final_item is not None:
-            repository.upsert_flat_item(
-                final_item,
-                event_type="detail_worker_completed",
-                event_payload={
-                    "source": "detail_worker",
-                    "item_id": item_id,
-                    "seed_url": seed.get("url"),
-                    "source_page_url": seed.get("source_page_url"),
-                    "final_json_path": str(final_json_path),
-                    "selected_json_path": str(selected_json_path),
-                },
-            )
+        repository.upsert_flat_item(
+            final_item,
+            event_type="detail_worker_completed",
+            event_payload={
+                "source": "detail_worker",
+                "item_id": item_id,
+                "seed_url": seed.get("url"),
+                "source_page_url": seed.get("source_page_url"),
+                "final_json_path": str(final_json_path),
+                "selected_json_path": str(selected_json_path),
+            },
+        )
         repository.mark_seed_detail_completed(
             item_id,
             final_json_path=str(final_json_path),
@@ -221,19 +220,18 @@ def run_detail_analysis_once(
         final_json_path = config.output_dir / item_id / "final.json"
         selected_json_path = config.output_dir / item_id / "selected.json"
         final_item = _load_final_item(config.output_dir, item_id)
-        if final_item is not None:
-            repository.upsert_flat_item(
-                final_item,
-                event_type="detail_analysis_completed",
-                event_payload={
-                    "source": "detail_analysis_worker",
-                    "item_id": item_id,
-                    "final_json_path": str(final_json_path),
-                    "selected_json_path": str(selected_json_path),
-                    "raw_artifacts": seed.get("_raw_detail_artifacts"),
-                    "analysis_module_b": module_b_receipt,
-                },
-            )
+        repository.upsert_flat_item(
+            final_item,
+            event_type="detail_analysis_completed",
+            event_payload={
+                "source": "detail_analysis_worker",
+                "item_id": item_id,
+                "final_json_path": str(final_json_path),
+                "selected_json_path": str(selected_json_path),
+                "raw_artifacts": seed.get("_raw_detail_artifacts"),
+                "analysis_module_b": module_b_receipt,
+            },
+        )
         repository.mark_seed_detail_completed(
             item_id,
             final_json_path=str(final_json_path),

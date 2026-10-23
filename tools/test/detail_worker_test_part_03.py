@@ -355,6 +355,13 @@ def test_run_detail_worker_once_ignores_manual_required_when_target_detail_page_
         },
     )
 
+    def process_open_detail(*_args, **_kwargs):
+        processed.append("called")
+        item_dir = tmp_path / "3001"
+        item_dir.mkdir()
+        (item_dir / "final.json").write_text('{"id":"3001"}', encoding="utf-8")
+        return {"item_id": "3001", "final_core": {}}
+
     summary = detail_worker.run_detail_worker_once(
         detail_worker.DetailWorkerConfig(
             output_dir=tmp_path,
@@ -374,7 +381,7 @@ def test_run_detail_worker_once_ignores_manual_required_when_target_detail_page_
                 "https://sf-item.taobao.com/sf_item/3001.htm?track_id=test",
             )
         },
-        process_item_func=lambda *_args, **_kwargs: processed.append("called") or {"item_id": "3001", "final_core": {}},
+        process_item_func=process_open_detail,
     )
 
     assert summary["decision"] == "detail_item_completed"

@@ -100,6 +100,21 @@ not encrypted at rest: host filesystem permissions and backup access remain esse
 Unclaimed NAS keys are removed after claim/expiry on a subsequent mailbox transaction;
 private PC2 before/after models retain rollback credentials. Do not publish these files.
 
+### 保留回滚容器时的安全边界
+
+同一 Compose project/service labels 下存在非 canonical 的已停止备份时，普通
+settings apply 和 release helper 会拒绝对受影响服务执行 service-wide Compose
+重建。检查包含变更、新增与移除的服务；无关服务的已停止备份不阻挡限定操作。
+只有 canonical 容器处于 stopped 状态，不会因此被误判为回滚备份。
+
+这是 fail-closed 保护，不是通用 exact-ID 设置部署实现。不要通过删除备份、删除
+receipt、清空 mailbox 或直接运行 Compose 来绕过它。必要发布必须持有共享
+`operation.lock`，核实 canonical exact ID，保留旧容器和配置，在限定范围内替换，
+并验证安装 hash、实际健康和 authoritative model 后才能记录成功。
+apply 中途新增备份时，rollback 也不得绕过该保护；无法安全恢复时保留
+`interrupted` 状态与恢复资料。已有 restart receipt 会先交付并立即返回，
+本轮不会继续领取新 settings 请求；交付失败时 receipt 保留。
+
 ## Deployed transport and persistence
 
 1. NAS control uses `https://192.168.15.200:18443` in an independent container. Its only

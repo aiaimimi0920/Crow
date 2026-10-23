@@ -27,3 +27,16 @@ def canonical_containers(rows):
             raise ValueError("Duplicate canonical collection identity")
         result[service] = row
     return result
+
+
+def require_compose_safe_inventory(rows, services):
+    """Compose rediscovers labels, so filtering backups from reads is insufficient."""
+    canonical_containers(rows)
+    targets = set(services)
+    for row in rows:
+        service = row["Config"]["Labels"]["com.docker.compose.service"]
+        if service in targets and row.get("Name") != "/fapaifang-" + service:
+            raise ValueError(
+                "Retained collection backups require exact-ID deployment; "
+                "refusing service-wide Compose recreation"
+            )

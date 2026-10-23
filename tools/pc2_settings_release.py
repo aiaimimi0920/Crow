@@ -65,15 +65,16 @@ class ReleaseRuntime:
         after = rebase(active, target, browser_only)
         if arguments[0] == "ps":
             return self.runtime.run(["compose", "-p", "fapaifang-pc2", *compose_args, *arguments])
-        directory = self.runtime.root / ("release-" + uuid.uuid4().hex)
-        directory.mkdir(mode=0o700)
         if arguments[0] == "up":
             names = ["pc2-browser-solver"] if browser_only else sorted(after["services"])
+            self.runtime.require_compose_safe(names)
             for name in names:
                 image = self.runtime.run(["image", "inspect", "--format", "{{.Id}}", after["services"][name]["image"]]).strip()
                 if not re.fullmatch(r"sha256:[a-f0-9]{64}", image):
                     raise ValueError("Release image is not available locally")
                 after["services"][name]["image"] = image
+        directory = self.runtime.root / ("release-" + uuid.uuid4().hex)
+        directory.mkdir(mode=0o700)
         path = directory / "compose.json"
         write_private(path, literal_compose(after))
         self.runtime.compose(path, ["config", "--quiet"])

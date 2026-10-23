@@ -164,10 +164,14 @@ def _is_transient_dns_error(exc: BaseException) -> bool:
 
 def _is_llm_backend_unavailable_error(exc: BaseException) -> bool:
     from src import llm_helper
+    from src.llm_backend_failures import is_backend_http_failure
 
     if isinstance(exc, llm_helper.LLMBackendUnavailableError):
         return True
-    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
+    cause = exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc
+    if is_backend_http_failure(cause):
+        return True
+    text = repr(cause).lower()
     return any(
         marker in text
         for marker in (

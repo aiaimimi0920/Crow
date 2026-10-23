@@ -36,15 +36,18 @@ def _detail_batch_progress_event(run: int, result: dict[str, Any]) -> dict[str, 
     }
 
 
-def _load_final_item(output_dir: Path, item_id: str) -> dict[str, Any] | None:
+def _load_final_item(output_dir: Path, item_id: str) -> dict[str, Any]:
     path = output_dir / item_id / "final.json"
-    if not path.exists():
-        return None
     try:
         payload = load_json(path)
-    except (OSError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise ValueError("Final analysis artifact is missing or unreadable") from None
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Final analysis artifact must be a nonempty object")
+    identities = [payload[key] for key in ("id", "item_id") if key in payload]
+    if not identities or any(str(value) != item_id for value in identities):
+        raise ValueError("Final analysis artifact does not match the claimed item")
+    return payload
 
 
 def _record_analysis_module_b_receipt(

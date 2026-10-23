@@ -6,7 +6,7 @@ import subprocess
 import time
 
 from .pc2_settings_model import inventory, literal_compose, render, workers, WORKER
-from .pc2_container_inventory import canonical_containers, BROWSER
+from .pc2_container_inventory import canonical_containers, require_compose_safe_inventory, BROWSER
 
 PROJECT = "fapaifang-pc2"
 
@@ -38,10 +38,16 @@ class SettingsRuntime:
             return json.loads(self.active.read_text(encoding="utf-8"))
         return json.loads(self.run(["compose", "-p", PROJECT, *self.compose_args, "config", "--format", "json"]))
 
-    def inspect(self):
+    def container_rows(self):
         ids = self.run(["ps", "-aq", "--filter", "label=com.docker.compose.project=" + PROJECT]).split()
-        rows = json.loads(self.run(["inspect", *ids])) if ids else []
-        return {service: row for service, row in canonical_containers(rows).items() if service != BROWSER}
+        return json.loads(self.run(["inspect", *ids])) if ids else []
+
+    def inspect(self):
+        return {service: row for service, row in canonical_containers(self.container_rows()).items() if service != BROWSER}
+
+    def require_compose_safe(self, services):
+        if services:
+            require_compose_safe_inventory(self.container_rows(), services)
 
     @staticmethod
     def matches(model, rows, *, healthy):
@@ -87,6 +93,11 @@ class SettingsRuntime:
         return False
 
     def compose(self, path, args):
+        if args and args[0] == "up":
+            names = [name for name in args[1:] if name == BROWSER or WORKER.fullmatch(name)]
+            if not names:
+                raise ValueError("Compose recreation requires explicit collection services")
+            self.require_compose_safe(names)
         return self.run(["compose", "-p", PROJECT, "-f", str(path), *args], timeout=180)
 
     def apply(self, request):
@@ -103,6 +114,13 @@ class SettingsRuntime:
         for name, service in workers(after).items():
             template = name if name in workers(before) else name.rsplit("-", 1)[0] + "-1"
             service["image"] = rows[template]["Image"]
+        old, new = workers(before), workers(after)
+        changed = sorted(name for name in new if name not in old or new[name] != old[name])
+        removed = sorted(set(old) - set(new))
+        try:
+            self.require_compose_safe(set(changed) | set(removed))
+        except ValueError:
+            return "rejected"
         directory = self.root / request["request_id"]
         directory.mkdir(mode=0o700, exist_ok=False)
         old_path, new_path = directory / "before.json", directory / "after.json"
@@ -110,9 +128,6 @@ class SettingsRuntime:
         write_private(new_path, literal_compose(after))
         self.compose(old_path, ["config", "--quiet"])
         self.compose(new_path, ["config", "--quiet"])
-        old, new = workers(before), workers(after)
-        changed = sorted(name for name in new if name not in old or new[name] != old[name])
-        removed = sorted(set(old) - set(new))
         attempted = False
         try:
             attempted = True

@@ -101,6 +101,10 @@ def step(
             and progress_watchdog.step() == "restart_requested"
         ):
             return
+        # Deliver an earlier restart result before polling for new settings mutations.
+        if restart.journal.exists():
+            restart.step()
+            return
         # An uncertain settings operation must not be followed by a restart.
         settings.step()
         if settings.journal.exists():
