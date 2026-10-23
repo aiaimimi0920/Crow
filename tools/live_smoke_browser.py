@@ -357,6 +357,9 @@ def fetch_list_page(
     solver_enabled: bool | None = None,
     api_base_url: str | None = None,
 ) -> tuple[str, str, int | None, str]:
+    from tools.cdp_background_page import BackgroundPageCapacityError
+    from tools.list_challenge_reporting import report_list_challenge
+
     browser_fallback_enabled = list_browser_fallback_enabled()
     solver_requested = (
         captcha_solver_enabled(default=browser_fallback_enabled)
@@ -379,24 +382,29 @@ def fetch_list_page(
         if is_challenge_page(response.text, response.url):
             if not browser_fallback_enabled:
                 if solver_requested:
-                    try:
-                        login_required = is_login_page(response.text, response.url)
-                        request_captcha_solver(
-                            cdp_endpoint,
-                            target_url,
-                            api_base_url=api_base_url,
-                            manual_only=login_required,
-                        )
-                    except Exception:
-                        pass
+                    report_list_challenge(
+                        request_captcha_solver, cdp_endpoint, target_url,
+                        api_base_url=api_base_url,
+                        manual_only=is_login_page(response.text, response.url),
+                    )
                 return response.text, response.url, response.status_code, "http_cookie_challenge"
-            browser_page = recover_browser_list_page_after_challenge(
-                cdp_endpoint,
-                target_url,
-                fetch_browser_list_page(cdp_endpoint, target_url),
-                solver_enabled=solver_requested,
-                api_base_url=api_base_url,
-            )
+            initial_page = None
+            try:
+                initial_page = fetch_browser_list_page(cdp_endpoint, target_url)
+                browser_page = recover_browser_list_page_after_challenge(
+                    cdp_endpoint, target_url, initial_page,
+                    solver_enabled=solver_requested, api_base_url=api_base_url,
+                )
+            except BackgroundPageCapacityError:
+                # The HTTP response already proves a challenge. Browser
+                # backpressure must not hide it behind a generic page failure.
+                if solver_requested and initial_page is None:
+                    report_list_challenge(
+                        request_captcha_solver, cdp_endpoint, target_url,
+                        api_base_url=api_base_url,
+                        manual_only=is_login_page(response.text, response.url),
+                    )
+                return response.text, response.url, response.status_code, "http_cookie_challenge_browser_capacity"
             if browser_page is not None:
                 html, final_url = browser_page
                 return html, final_url, None, "browser_page_after_http_challenge"

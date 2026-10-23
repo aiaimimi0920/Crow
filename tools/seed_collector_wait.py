@@ -11,7 +11,8 @@ def wait_after_seed_run(
     config: SeedCollectorConfig, results: list[dict], seconds: float
 ) -> None:
     challenge_wait = any(
-        item.get("decision") == "seed_collection_paused"
+        (item.get("decision") == "seed_collection_paused"
+         and item.get("reason") != "browser_page_capacity")
         or item.get("reason") == "list_challenge_page"
         or bool((item.get("auth_probe") or {}).get("attempted"))
         for item in results

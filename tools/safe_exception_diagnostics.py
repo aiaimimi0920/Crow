@@ -42,6 +42,7 @@ _STACK_FILES = (
     "tools/live_smoke_browser.py",
     "tools/live_smoke_list.py",
     "tools/live_smoke_cdp.py",
+    "tools/cdp_background_page.py",
     "tools/detail_worker_execution.py",
     "tools/detail_worker_loop.py",
     "tools/detail_worker_artifacts.py",

@@ -101,10 +101,13 @@ def run_seed_collector_once(
     _write_runtime_summary(config.output_dir, claimed_summary)
 
     page_completed = False
+    failure_stage = "prepare_parser"
     try:
         adapter = config.collection_adapter or resolve_record_adapter(task)
         list_parser = adapter.create_seed_list_parser(browserless_seed_probe)
+        failure_stage = "resolve_user_agent"
         runtime_user_agent = resolve_runtime_user_agent(config.cdp_endpoint)
+        failure_stage = "fetch_list_page"
         html, final_url, status_code, fetch_method = fetch_list_page(
             http_session,
             cdp_endpoint=config.cdp_endpoint,
@@ -113,6 +116,7 @@ def run_seed_collector_once(
             solver_enabled=config.solver_enabled,
             api_base_url=config.api_base_url,
         )
+        failure_stage = "extract_seed_items"
         items, list_summary, has_challenge = _extract_seed_items(
             list_parser,
             html,
@@ -203,6 +207,7 @@ def run_seed_collector_once(
             item.setdefault("list_sort_key", task.get("sort_key"))
             item.setdefault("list_sort_name", task.get("sort_name"))
 
+        failure_stage = "upsert_seed_items"
         upsert = repository.upsert_seed_items(
             job_key=str(task["job_key"]),
             progress_key=str(task["progress_key"]),
@@ -225,6 +230,7 @@ def run_seed_collector_once(
             list_summary=list_summary,
             filtered_items=items,
         )
+        failure_stage = "complete_seed_scan_page"
         repository.complete_seed_scan_page(
             progress_key=str(task["progress_key"]),
             page=int(task["page"]),
@@ -257,8 +263,21 @@ def run_seed_collector_once(
         _write_runtime_summary(config.output_dir, summary)
         return summary
     except Exception as exc:  # noqa: BLE001 - Release the claim and report every per-page failure.
+        from tools.cdp_background_page import BackgroundPageCapacityError
+        from tools.seed_collector_diagnostics import record_seed_exception
+
+        record_seed_exception(config.output_dir, exc, stage=failure_stage)
         if not page_completed:
             _fail_claimed_seed_page(config, repository, task, safe_exception_text(exc))
+        if isinstance(exc, BackgroundPageCapacityError):
+            summary = {
+                "decision": "seed_collection_paused",
+                "reason": "browser_page_capacity",
+                "error": safe_exception_text(exc),
+                "counts": repository.seed_queue_counts(),
+            }
+            _write_runtime_summary(config.output_dir, summary)
+            return summary
         if isinstance(exc, CdpEndpointUnavailableError):
             summary = {
                 "decision": "seed_collection_paused",
