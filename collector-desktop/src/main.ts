@@ -20,11 +20,13 @@ import { resetAuthChallenge, openAuthChallenge, reloadAuthChallenge, resumeAfter
 import { initializeRuntimeControls, toggleRuntimePause, requestEngineRestart } from "./desktop_runtime_controls.ts";
 import { resetOverviewHistory } from "./desktop_overview.ts";
 import { initializeSettings } from "./desktop_settings.ts";
+import { initializeOperations, failOperations, resetOperations } from "./desktop_operations.ts";
 
 mountTemplate();
 const resetRuntimeSettings = initializeSettings(() => state.apiBase, showManagedDialog);
 initializeShell(reloadAll);
 initializeRuntimeControls({ apiBase: () => state.apiBase, reload: reloadAll, showDialog: showManagedDialog });
+initializeOperations({ refresh: reloadAll, pause: toggleRuntimePause, restart: requestEngineRestart, auth: openAuthChallenge });
 $("toggleRegions").addEventListener("click", () => {
   const collapsed = $("regionFilters").classList.toggle("hidden");
   $("toggleRegions").setAttribute("aria-expanded", String(!collapsed));
@@ -47,6 +49,7 @@ export async function reloadAll(options: RefreshOptions = {}): Promise<void> {
   $("windowRefresh").setAttribute("aria-label", "正在刷新");
   $<HTMLButtonElement>("refresh").disabled = true;
   $("refresh").textContent = "刷新中...";
+  $<HTMLButtonElement>("operationsRefresh").disabled = true;
   setAutoRefreshStatus(silent ? "自动刷新中..." : "刷新中...");
   try {
     if (await loadOverview() === false || !current()) return;
@@ -60,6 +63,7 @@ export async function reloadAll(options: RefreshOptions = {}): Promise<void> {
     setAutoRefreshStatus(`最后刷新 ${formatRefreshTime(state.lastRefreshAt)}；每 60 秒自动刷新`);
   } catch (error) {
     if (!current()) return;
+    failOperations();
     $("connectionStatus").innerHTML = `<span class="error">连接失败：${esc(errorMessage(error))}。请确认 crow-api 在 ${esc(state.apiBase)} 运行。</span>`;
     if (!state.lastOverview) {
       $("cards").innerHTML = '<div class="empty-state error">运行指标读取失败，等待重新连接。</div>';
@@ -79,6 +83,7 @@ export async function reloadAll(options: RefreshOptions = {}): Promise<void> {
       $("windowRefresh").setAttribute("aria-label", "刷新");
       $<HTMLButtonElement>("refresh").disabled = false;
       $("refresh").textContent = "刷新数据";
+      $<HTMLButtonElement>("operationsRefresh").disabled = false;
     }
   }
 }
@@ -168,6 +173,7 @@ $("applyApiBase").addEventListener("click", async () => {
   state.itemsRequestId += 1;
   $("cards").innerHTML = '<div class="empty-state">正在读取运行与采集指标...</div>';
   resetOverviewHistory();
+  resetOperations();
   $<HTMLInputElement>("restartToken").value = "";
   resetRuntimeSettings();
   resetAuthChallenge();

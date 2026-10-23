@@ -104,3 +104,15 @@ not validate `/api/report_captcha`. When copying an existing container specifica
 compare both credential paths with the rendered Compose environment; an old spec can
 omit a role that current Compose already supplies. Preserve existing credential files.
 After activation, check real report acknowledgements and cooldown resume events.
+
+### 自动求解连续失败的退避
+
+`collection_resume_confirmed` 仅表示 NAS 接受恢复调度，不表示验证码已通过。
+首次达到失败阈值后仍使用配置的冷却时长；未出现真实认证成功时，冷却结束后
+仅放行一次求解调用，继续失败则将等待时间翻倍，默认依次为 3、6、12、24、30
+分钟，随后保持 30 分钟。若配置的基础冷却超过 30 分钟，不会缩短该配置。
+一次调用内部仍受原有拖动、重试和超时预算约束，不等于只拖动一次。
+
+跨轮计数 `solver_cooldown_cycles` 保存于现有 fallback state，重启、挑战换代、
+过期 receipt 或恢复调度 ACK 不会清除；当前挑战的认证成功 ACK 才恢复初始额度。
+此退避不启用人工接管、不改变 Cookie 或代理，也不保证站点接受自动验证。

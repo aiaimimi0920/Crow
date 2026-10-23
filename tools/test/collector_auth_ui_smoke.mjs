@@ -6,7 +6,9 @@ export default async function authSmoke(page, { origin, artifactDir }) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.context().route("**/*", (route) => route.request().url().startsWith(`${origin}/`) ? route.continue() : route.abort());
   await page.request.post(`${origin}/__preview/state`, { data: { scenario: "normal", reset_events: true, challenge: false } });
+  let refreshGate, releaseRefresh, reachedRefresh;
   await page.route("**/api/collection/overview", async (route) => {
+    if (refreshGate) { const gate = refreshGate; refreshGate = null; reachedRefresh(); await gate; }
     const response = await route.fetch();
     const payload = await response.json();
     payload.status.captcha_solver.scopes.detail = { last_request: { target_url: "https://sf-item.taobao.com/sf_item/123456.htm" } };
@@ -88,7 +90,12 @@ export default async function authSmoke(page, { origin, artifactDir }) {
   check(await page.evaluate(() => window.__nativeCalls.at(-1).action) === "status", "manual query after timeout never republishes cookies");
   check(await dialog.isVisible(), "polling timeout is neither server failure nor success");
   await page.evaluate(() => { window.__nativeResult = { phase: "succeeded", recovery_id: "fixture-recovery" }; });
+  refreshGate = new Promise((resolve) => { releaseRefresh = resolve; });
+  const refreshEntered = new Promise((resolve) => { reachedRefresh = resolve; });
   await page.locator("#authChallengeResume").click();
+  await refreshEntered;
+  check(await dialog.isVisible() && await page.locator("#authChallengeResume").isDisabled(), "confirmed auth keeps busy dialog visible until overview refresh finishes");
+  releaseRefresh();
   await page.locator("#authChallengeDialog:not([open])").waitFor({ state: "attached" });
   check(!await dialog.isVisible(), "only confirmed recovery closes dialog");
   await page.evaluate(() => { window.__nativeResult = { phase: "ready_for_human", code: "edge_ready", target_id: "edge:fixture" }; });

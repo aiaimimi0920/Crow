@@ -11,11 +11,23 @@ from tools.pc2_solver_fallback import (
     manual_fallback_enabled,
 )
 from tools.pc2_solver_retry_state import (
-    SOLVER_COOLDOWN_SECONDS,
     _record_slider_attempt_failure,
 )
 from tools.pc2_solver_state_store import _load_fallback_state, _save_fallback_state
 from tools.pc2_solver_transport import log_event
+
+
+def log_solver_cooldown_started(state: dict[str, object], now: float) -> None:
+    """Report the scheduled duration, including persisted exponential backoff."""
+    log_event(
+        {
+            "kind": "solver_cooldown_started",
+            "until": state["solver_cooldown_until"],
+            "seconds": max(0.0, float(state["solver_cooldown_until"]) - now),
+            "cycles": state.get("solver_cooldown_cycles", 0),
+            "consecutive_failures": state.get("consecutive_failures", 0),
+        }
+    )
 
 
 def record_failed_attempt(
@@ -84,14 +96,7 @@ def record_failed_attempt(
         }
     )
     if cooldown_started:
-        log_event(
-            {
-                "kind": "solver_cooldown_started",
-                "until": state["solver_cooldown_until"],
-                "seconds": max(0.0, SOLVER_COOLDOWN_SECONDS),
-                "consecutive_failures": state["consecutive_failures"],
-            }
-        )
+        log_solver_cooldown_started(state, now)
     if should_push:
         manual_result = _report_manual_captcha(api_base_url, cdp_endpoint, target_url)
         state["manual_pushed"] = True

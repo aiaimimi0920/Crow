@@ -40,6 +40,7 @@ def _browser_backpressure(state: dict[str, object]) -> dict[str, object]:
             "slider_next_attempt_at",
             "solver_cooldown_until",
             "solver_cooldown_reason",
+            "solver_cooldown_cycles",
         )
     }
     budget["consecutive_failures"] = max(
@@ -50,10 +51,16 @@ def _browser_backpressure(state: dict[str, object]) -> dict[str, object]:
 
 
 def _reset_fallback_state(
-    *, preserve_budget_from: dict[str, object] | None = None
+    *,
+    preserve_budget_from: dict[str, object] | None = None,
+    preserve_failure_history_from: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Full reset by default; automatic expiry can retain backpressure and lineage."""
+    """仅成功全量清零；自动恢复可清当轮额度，但保留跨轮失败退避。"""
     state: dict[str, object] = _default_fallback_state()
+    if preserve_budget_from is not None:
+        state["solver_cooldown_cycles"] = (
+            preserve_budget_from.get("solver_cooldown_cycles") or 0
+        )
     if (
         preserve_budget_from is not None
         and preserve_budget_from.get("scope") in {"seed", "detail"}
@@ -63,6 +70,12 @@ def _reset_fallback_state(
             _browser_backpressure(preserve_budget_from),
             challenge_id=preserve_budget_from["challenge_id"],
             scope=preserve_budget_from["scope"],
+        )
+    if preserve_failure_history_from is not None:
+        previous = preserve_failure_history_from
+        state["solver_cooldown_cycles"] = max(
+            int(cast("str | int", previous.get("solver_cooldown_cycles") or 0)),
+            int(previous.get("solver_cooldown_reason") == "repeated_solver_failures"),
         )
     _save_fallback_state(state)
     return state
@@ -85,6 +98,7 @@ def _sync_challenge_state(
         # Generation-local receipts expire; shared-browser backpressure does not.
         previous = state
         state = _default_fallback_state()
+        state["solver_cooldown_cycles"] = previous.get("solver_cooldown_cycles") or 0
         if previous.get("scope") in {"seed", "detail"} and normalized_scope in {
             "seed",
             "detail",
@@ -141,13 +155,21 @@ def _begin_solver_cooldown_if_needed(
         int(cast("str | int", state.get("slider_attempts") or 0)),
         int(cast("str | int", state.get("consecutive_failures") or 0)),
     )
-    threshold = max(1, SOLVER_COOLDOWN_FAIL_THRESHOLD)
-    cooldown_seconds = max(0.0, SOLVER_COOLDOWN_SECONDS)
+    cycles = max(
+        0, min(64, int(cast("str | int", state.get("solver_cooldown_cycles") or 0)))
+    )
+    # 连续失败后仅放行一次恢复探测，不因调度 ACK 再送出完整十次预算。
+    threshold = 1 if cycles else max(1, SOLVER_COOLDOWN_FAIL_THRESHOLD)
+    base_seconds = max(0.0, SOLVER_COOLDOWN_SECONDS)
+    cooldown_seconds = min(
+        base_seconds * (2 ** min(cycles, 16)), max(base_seconds, 1800.0)
+    )
     if failures < threshold or cooldown_seconds <= 0:
         return False
     current_time = time.time() if now is None else float(now)
     state["solver_cooldown_until"] = current_time + cooldown_seconds
     state["solver_cooldown_reason"] = "repeated_solver_failures"
+    state["solver_cooldown_cycles"] = min(cycles + 1, 64)
     state["slider_next_attempt_at"] = None
     return True
 

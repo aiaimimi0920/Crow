@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from collector_ui_fixtures import REGIONS, item_detail, item_list, overview
 
-DIST = Path(__file__).resolve().parents[2] / "collector-desktop" / "dist"
+DIST = Path(os.environ["CROW_TEST_FRONTEND_DIST"]).resolve() if os.environ.get("CROW_TEST_FRONTEND_DIST") else Path(__file__).resolve().parents[2] / "collector-desktop" / "dist"
 
 
 class PreviewServer(ThreadingHTTPServer):

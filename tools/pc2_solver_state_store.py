@@ -33,6 +33,7 @@ def _default_fallback_state() -> dict[str, object]:
         "slider_next_attempt_at": None,
         "solver_cooldown_until": None,
         "solver_cooldown_reason": None,
+        "solver_cooldown_cycles": 0,
         "node_solver_blocked_reported": False,
         "node_solver_blocked_report_attempts": 0,
         "node_solver_blocked_report_next_retry_at": None,
@@ -114,6 +115,9 @@ def _load_fallback_state() -> dict[str, object]:
                         data.get("solver_cooldown_reason") or ""
                     ).strip()
                     or None,
+                    "solver_cooldown_cycles": max(
+                        0, min(64, int(data.get("solver_cooldown_cycles") or 0))
+                    ),
                     "node_solver_blocked_reported": bool(
                         data.get("node_solver_blocked_reported", False)
                     ),

@@ -13,6 +13,10 @@
 - `bound_health_verified`：已关联确认携带对应 scope 的健康证明。详情页证明不升级为全站授权。
 - `collection_delta`：全窗口业务计数变化；不能直接归因于某一次验证。
 
+认证日志通过 `auth_complete_result.request` 固定 ACK 清状态之前的请求身份；首次请求超时且响应没有 completion ID 时，也能用请求 ID 关联之后的确认。观察器仍须核对 completion ID、challenge、target、scope 和容器身份；旧版本日志缺少绑定时不能补猜成功。此处的脱敏承诺仅针对观察产物，原始运行日志仍可能包含业务 URL。
+
+Linux 的 `slow_exact_v4`、`slow_settle_v4`、`slow_dense_v4` 保留各自 profile 名称，未知名称仍映射为 `other`。`solver_cooldown_started` 保留实际 `seconds`、`until`、`cycles`；旧版运行日志的 `seconds` 可能只表示基础冷却值，核查旧窗口应结合截止时间和持久状态，而不能据此认定指数退避未生效。
+
 这些日志不独立证明每一次上游 `/slide` code=0，也不能排除同时发生的人工输入。保留该限制，不将应用上报偷换成无条件的站点通过率。
 
 ## 产物与恢复
@@ -25,6 +29,6 @@
 
 ## 本轮验收与部署原则
 
-先跑 `tools/test/test_solver_observation*.py`、Ruff 和仓库有效行门禁。生产求解算法不随本次观察器修改。发布使用已验证基底的离线源码层，原配置/挂载/浏览器资料/数据库保留，exact-ID 切换保留旧容器，不使用 service-wide Compose recreation。桌面构建输入未变时可复用已验证 EXE，仍需核对安装 SHA、运行路径及 Crow.lnk。
+先跑 `tools/test/test_solver_observation*.py`、真实日志发射合同回归 `tools/test/test_pc2_observation_contract.py`、Ruff 和仓库有效行门禁。生产求解算法不随本次观察器修改。发布使用已验证基底的离线源码层，原配置/挂载/浏览器资料/数据库保留，exact-ID 切换保留旧容器，不使用 service-wide Compose recreation。桌面构建输入未变时可复用已验证 EXE，仍需核对安装 SHA、运行路径及 Crow.lnk。
 
 满 24 小时后先核对覆盖缺口，再提取成功调用和相邻失败的时序、scope、profile、确认链和业务变化。只有发现可复现的程序缺陷才修改；单次成功不证明稳定有效，也不支持直接提高重试频率。

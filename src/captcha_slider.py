@@ -298,27 +298,7 @@ class CaptchaSliderMixin:
                 if local_mock_mode == "teardown_only":
                     return bool(mock_state_success and not mock_challenge_visible)
                 return bool(mock_state_success and mock_has_success_text)
-            target_ready = ready_target_matches(result, getattr(self, "target_url", None))
-            current_href = str(result.get("href") or "")
-            # Aliyun 无痕滑块验证成功后通常直接销毁挑战 DOM 并导航回目标页，业务页面
-            # 不会再渲染“验证通过”文案，也不会残留 nc-success 类；此时下面的严格判定
-            # （要求 result["success"]）恒为假，会把“实际已通过”判为失败，从而浪费
-            # attempts 并触发 cooldown。这里以“挑战已消失 + 无错误 + 已回到目标路由
-            # （且 URL 不再停留在 punish 路由）”作为可信的成功证据链。
-            if (
-                result.get("noError") is True
-                and result.get("hasError") is False
-                and result.get("sliderGone") is True
-                and result.get("challengeGone") is True
-                and target_ready
-                and "/_____tmd_____/" not in current_href
-                and "x5sec" not in current_href.lower()
-            ):
-                logger.info(
-                    "[SOLVER] Challenge teardown confirmed on target route; treating as solved. href=%s",
-                    current_href[:160],
-                )
-                return True
+            # 挑战消失不等于通过；跳转后的业务数据由轮询中的页面摘要校验。
             return bool(
                 result.get("noError") is True and result.get("hasError") is False
                 and result.get("sliderGone") is True and result.get("challengeGone") is True

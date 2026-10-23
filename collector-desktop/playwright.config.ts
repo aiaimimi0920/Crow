@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 const port = 1436;
-const output = resolve("../output/playwright", `quality-${Date.now()}-${randomUUID()}`);
+const output = resolve(process.env.CROW_TEST_OUTPUT_DIR || "../output/playwright", `quality-${Date.now()}-${randomUUID()}`);
 const python = process.env.CROW_TEST_PYTHON || "python";
 
 export default defineConfig({

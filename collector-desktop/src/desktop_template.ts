@@ -1,5 +1,6 @@
 import { defaultBrowserApiBase } from "./desktop_state.ts";
 import { element } from "./desktop_dom.ts";
+import { operationsTemplate } from "./desktop_operations.ts";
 
 export function mountTemplate() {
   const app = element("app");
@@ -12,6 +13,7 @@ export function mountTemplate() {
       </div>
       <nav class="stage-nav" aria-label="主导航">
         <button id="openCollection" class="active" aria-label="采集" title="采集" aria-pressed="true" aria-controls="collectionPage"><span data-icon="links"></span><span class="nav-label">采集</span></button>
+        <button id="openOperations" aria-label="运维" title="运维" aria-pressed="false" aria-controls="operationsPage"><span data-icon="operations"></span><span class="nav-label">运维</span></button>
       </nav>
       <div class="rail-footer">
         <button id="openSettings" aria-label="设置" title="设置" aria-pressed="false" aria-controls="settingsPage"><span data-icon="settings"></span><span class="nav-label">设置</span></button>
@@ -29,12 +31,12 @@ export function mountTemplate() {
       </header>
       <main>
     <div id="shellNotice" class="overview-notice hidden" role="alert"></div>
+    <div id="overviewNotice" class="overview-notice hidden" role="alert"></div>
     <div id="collectionPage">
       <div class="workspace-heading">
         <h1 id="workspaceTitle">采集</h1>
         <div class="workspace-actions"><button id="refresh" class="primary-button">刷新数据</button></div>
       </div>
-    <div id="overviewNotice" class="overview-notice hidden" role="alert"></div>
     <section class="cards" id="cards" aria-label="运行与采集指标"><div class="empty-state">正在读取运行与采集指标...</div></section>
     <section class="collection-workspace" id="collectionWorkspace" aria-labelledby="workspaceTitle">
     <section class="panel region-panel">
@@ -99,6 +101,7 @@ export function mountTemplate() {
     </section>
     </section>
     </div>
+    ${operationsTemplate}
     <section class="settings-page hidden" id="settingsPage" aria-labelledby="settingsTitle">
       <h1 id="settingsTitle" tabindex="-1">设置</h1>
       <details class="panel connection-panel" id="connectionSettings" open>

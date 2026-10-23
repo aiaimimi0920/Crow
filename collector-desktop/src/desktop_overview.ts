@@ -65,7 +65,7 @@ export function renderOverview(value: unknown, runtimeState: string, now = perfo
     : typeof windowSeconds === "number" ? `近 ${windowSeconds} 秒采样` : "NAS 尚未积累完整分钟采样";
   const restart = object(data.engine_restart);
   const request = object(restart.request);
-  const pending = ["requested", "restarting"].includes(String(request.status));
+  const pending = ["requested", "restarting", "unknown"].includes(String(request.status));
   const restartLabels: Record<string, string> = {
     requested: "等待 PC2 接收", restarting: "PC2 正在重启", succeeded: "Worker 已重启",
     failed: "重启失败，请检查 PC2", expired: "重启请求已过期", unknown: "重启结果未确认，请检查 PC2",

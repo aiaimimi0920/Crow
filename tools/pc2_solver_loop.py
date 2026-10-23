@@ -34,7 +34,10 @@ from tools.pc2_solver_loop_control import (
     reset_forced_solver_scopes,
     retry_blocked_report,
 )
-from tools.pc2_solver_loop_failure import record_failed_attempt
+from tools.pc2_solver_loop_failure import (
+    log_solver_cooldown_started,
+    record_failed_attempt,
+)
 from tools.pc2_solver_loop_probe import prepare_solver_browser, probe_requested_targets
 from tools.pc2_solver_manual_handoff import (
     attempt_or_manual_handoff,
@@ -43,7 +46,6 @@ from tools.pc2_solver_manual_handoff import (
 from tools.pc2_solver_manual_window import hold_manual_window
 from tools.pc2_solver_retry_state import (
     SOLVER_COOLDOWN_FAIL_THRESHOLD,
-    SOLVER_COOLDOWN_SECONDS,
     _begin_solver_cooldown_if_needed,
     _node_solver_cooldown_can_resume,
     _node_solver_cooldown_matches,
@@ -199,19 +201,13 @@ def local_solver_loop(
             ):
                 time.sleep(poll_seconds)
                 continue
-            cooldown_started = _begin_solver_cooldown_if_needed(fallback_state)
+            cooldown_now = time.time()
+            cooldown_started = _begin_solver_cooldown_if_needed(
+                fallback_state, now=cooldown_now
+            )
             if cooldown_started:
                 _save_fallback_state(fallback_state)
-                log_event(
-                    {
-                        "kind": "solver_cooldown_started",
-                        "until": fallback_state["solver_cooldown_until"],
-                        "seconds": max(0.0, SOLVER_COOLDOWN_SECONDS),
-                        "consecutive_failures": fallback_state.get(
-                            "consecutive_failures", 0
-                        ),
-                    }
-                )
+                log_solver_cooldown_started(fallback_state, cooldown_now)
             retry_blocked_report(
                 api_base_url, solver_status, fallback_state, expected_node_id
             )

@@ -14,6 +14,7 @@ import {
 import { collectionStatusLabel, itemRegion } from "./desktop_regions.ts";
 import standardizedFields from "./desktop_standardized_fields.json";
 import { renderOverview } from "./desktop_overview.ts";
+import { publishOperations } from "./desktop_operations.ts";
 import { updateRuntimeControls, refreshEngineRestartStatus } from "./desktop_runtime_controls.ts";
 import { errorMessage, object, safeExternalUrl } from "./desktop_value.ts";
 import { recordArray, type CollectionRecord } from "./desktop_collection_contract.ts";
@@ -186,6 +187,7 @@ export async function loadOverview() {
   state.lastOverview = data;
   const runtimeState = runtimeStateFromOverview(data);
   $("cards").innerHTML = renderOverview(data, runtimeState);
+  publishOperations(data);
   $("runtimePauseButton").addEventListener("click", () => callAction("toggleRuntimePause"));
   $("engineRestartButton").addEventListener("click", () => callAction("requestEngineRestart"));
   for (const scope of ["seed", "detail"] as const) {

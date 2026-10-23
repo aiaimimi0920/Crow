@@ -167,7 +167,7 @@ def _retry_pending_auth_confirmation(
         + request_attempts
     )
     if result.get("stale_challenge") is True:
-        reset_state = _reset_fallback_state()
+        reset_state = _reset_fallback_state(preserve_failure_history_from=state)
         return {
             "pending": False,
             "attempted": True,
@@ -245,8 +245,17 @@ def confirm_local_solver_success(
     pending_state = _mark_auth_complete_pending(
         target_url, challenge_id=completion_challenge_id
     )
+    # 认证 ACK 会清空状态；单独保留本次请求身份用于观察关联，不改变认证决策。
+    request = {
+        "completion_id": pending_state.get("auth_completion_id"),
+        "challenge_id": pending_state.get("challenge_id"),
+        "target_url": pending_state.get("auth_complete_target_url"),
+        "scope": pending_state.get("scope"),
+    }
     confirmation = _retry_pending_auth_confirmation(api_base_url, state=pending_state)
-    log_event({"kind": "auth_complete_result", "result": confirmation})
+    log_event(
+        {"kind": "auth_complete_result", "request": request, "result": confirmation}
+    )
     return confirmation
 
 

@@ -4,6 +4,7 @@ import { object } from "./desktop_value.ts";
 import { element } from "./desktop_dom.ts";
 import { fetchWithTimeout } from "./desktop_http.ts";
 import { AUTO_REFRESH_INTERVAL_MS, CONTROL_ORIGIN_CACHE_MS, RESTART_POLL_INTERVAL_MS, RUNTIME_TIMEOUT_MS } from "./desktop_config.ts";
+import { renderReceipt } from "./desktop_operations_view.ts";
 
 type Controls = {
   apiBase: () => string;
@@ -32,6 +33,12 @@ export function updateRuntimeControls(): void {
   if (button) button.disabled = busy || button.dataset.available !== "true" || !(installedOrigin || token);
   const toggle = document.getElementById("runtimePauseButton") as HTMLButtonElement | null;
   if (toggle) toggle.disabled = busy;
+  const opsPause = document.getElementById("operationsPause") as HTMLButtonElement | null;
+  if (opsPause) { opsPause.disabled = !toggle || toggle.disabled; opsPause.textContent = toggle?.textContent || "等待运行状态"; }
+  const opsRestart = document.getElementById("operationsRestart") as HTMLButtonElement | null;
+  if (opsRestart) opsRestart.disabled = !button || button.disabled;
+  const opsHint = document.getElementById("operationsRestartStatus");
+  if (opsHint) opsHint.textContent = document.getElementById("engineRestartStatus")?.textContent || "尚未读取控制器状态";
 }
 
 export function initializeRuntimeControls(options: Controls): void {
@@ -56,6 +63,8 @@ export async function refreshEngineRestartStatus(force = false): Promise<void> {
     const status = await installedRestartRequest(installedOrigin);
     if (base !== controls.apiBase()) return;
     const request = object(status.request);
+    const receipt = document.getElementById("operationsRestartReceipt");
+    if (receipt) receipt.innerHTML = renderReceipt(request);
     if (["requested", "restarting"].includes(String(request.status))) delay = RESTART_POLL_INTERVAL_MS;
     const labels: Record<string, string> = {
       requested: "等待 PC2 接收", restarting: "PC2 正在重启", succeeded: "PC2 采集 Worker 已重启",
@@ -116,6 +125,7 @@ export async function toggleRuntimePause(): Promise<void> {
 
 export async function requestEngineRestart(): Promise<void> {
   if (busy || element<HTMLButtonElement>("engineRestartButton").disabled) return;
+  const trigger = document.activeElement;
   const base = controls.apiBase();
   const token = element<HTMLInputElement>("restartToken").value.trim();
   const origin = installedOrigin;
@@ -143,6 +153,10 @@ export async function requestEngineRestart(): Promise<void> {
     busy = false;
     updateRuntimeControls();
     const restart = document.getElementById("engineRestartButton") as HTMLButtonElement | null;
-    if (base === controls.apiBase()) (restart?.disabled ? document.getElementById("runtimePauseButton") : restart)?.focus();
+    if (base === controls.apiBase()) {
+      if (trigger instanceof HTMLButtonElement && trigger.isConnected && !trigger.disabled && trigger.getClientRects().length) trigger.focus();
+      else if (!element("operationsPage").classList.contains("hidden")) element("operationsPause").focus();
+      else (restart?.disabled ? document.getElementById("runtimePauseButton") : restart)?.focus();
+    }
   }
 }

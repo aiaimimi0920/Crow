@@ -7,13 +7,16 @@ export function initializeShell(refresh: () => Promise<void>): void {
   mountShellIcons();
   const shell = element("appShell");
   const railToggle = element<HTMLButtonElement>("toggleSidebar");
-  const settingsButton = element<HTMLButtonElement>("openSettings");
   const backButton = element<HTMLButtonElement>("closeSettings");
-  const collection = element("collectionPage");
-  const settings = element("settingsPage");
-  const scrollArea = collection.closest("main");
-  let collectionScroll = 0;
-  const collectionButton = element<HTMLButtonElement>("openCollection");
+  const pages = {
+    collection: { panel: "collectionPage", button: "openCollection", title: "workspaceTitle" },
+    operations: { panel: "operationsPage", button: "openOperations", title: "operationsTitle" },
+    settings: { panel: "settingsPage", button: "openSettings", title: "settingsTitle" },
+  } as const;
+  type Page = keyof typeof pages;
+  const scrollArea = element("collectionPage").closest("main");
+  const scrolls: Record<Page, number> = { collection: 0, operations: 0, settings: 0 };
+  let currentPage: Page = "collection";
   const narrow = window.matchMedia("(max-width: 820px)");
   let collapsed = false;
 
@@ -29,30 +32,35 @@ export function initializeShell(refresh: () => Promise<void>): void {
   narrow.addEventListener("change", updateRail);
   updateRail();
 
-  const showSettings = (show: boolean, restoreFocus = true) => {
-    if (show) {
-      collectionScroll = scrollArea?.scrollTop || 0;
+  const showPage = (page: Page) => {
+    scrolls[currentPage] = scrollArea?.scrollTop || 0;
+    currentPage = page;
+    for (const [name, entry] of Object.entries(pages)) {
+      element(entry.panel).classList.toggle("hidden", name !== page);
+      element(entry.button).classList.toggle("active", name === page);
+      element(entry.button).setAttribute("aria-pressed", String(name === page));
     }
-    collection.classList.toggle("hidden", show);
-    settings.classList.toggle("hidden", !show);
-    backButton.classList.toggle("hidden", !show);
-    settingsButton.classList.toggle("active", show);
-    settingsButton.setAttribute("aria-pressed", String(show));
-    collectionButton.classList.toggle("active", !show);
-    collectionButton.setAttribute("aria-pressed", String(!show));
-    if (show) element("settingsTitle").focus();
-    else if (restoreFocus) settingsButton.focus();
-    if (scrollArea) scrollArea.scrollTop = show ? 0 : collectionScroll;
+    backButton.classList.toggle("hidden", page === "collection");
+    if (page !== "collection") element(pages[page].title).focus();
+    if (scrollArea) scrollArea.scrollTop = scrolls[page];
   };
-  settingsButton.addEventListener("click", () => {
-    if (settings.classList.contains("hidden")) showSettings(true);
+  for (const page of Object.keys(pages) as Page[]) {
+    element(pages[page].button).addEventListener("click", () => { if (currentPage !== page) showPage(page); });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || currentPage === "collection"
+      || document.querySelector("dialog[open], dialog.open") || (event.target instanceof Element && event.target.closest("dialog"))) return;
+    const previous = currentPage;
+    event.preventDefault(); showPage("collection"); element(pages[previous].button).focus();
   });
-  backButton.addEventListener("click", () => showSettings(false));
-  collectionButton.addEventListener("click", () => {
-    if (!settings.classList.contains("hidden")) showSettings(false, false);
-  });
-  settings.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { event.preventDefault(); showSettings(false); }
+  backButton.addEventListener("click", () => { const previous = currentPage; showPage("collection"); element(pages[previous].button).focus(); });
+  document.querySelectorAll<HTMLButtonElement>("[data-settings-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      showPage("settings");
+      element<HTMLDetailsElement>("runtimeSettings").open = true;
+      const target = document.getElementById(button.dataset.settingsTarget || "");
+      target?.focus(); target?.scrollIntoView({ block: "center" });
+    });
   });
 
   element("windowRefresh").addEventListener("click", () => void refresh());

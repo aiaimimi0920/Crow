@@ -25,7 +25,14 @@ FAILURES = {
     "slider_not_found",
     "timeout",
 }
-PROFILES = {"fast_exact_v3", "legacy_exact_release", "dense_exact_release"}
+PROFILES = {
+    "fast_exact_v3",
+    "legacy_exact_release",
+    "dense_exact_release",
+    "slow_exact_v4",
+    "slow_settle_v4",
+    "slow_dense_v4",
+}
 
 
 def fingerprint(value):
@@ -101,6 +108,11 @@ def project_line(line, container_id):
                 out[key] = event[key]
     if kind == "auth_completion_challenge_resolved":
         out["challenge_hash"] = fingerprint(event.get("completion_challenge_id"))
+    if kind == "solver_cooldown_started":
+        for key in ("until", "seconds", "cycles", "consecutive_failures"):
+            value = event.get(key)
+            if type(value) in (int, float) and 0 <= value < 1e12:
+                out[key] = value
     if kind.startswith("auth_complete"):
         result = event.get("result") or {}
         if not isinstance(result, dict):
@@ -109,18 +121,28 @@ def project_line(line, container_id):
         payload = result.get("result", {}) if kind == "auth_complete_result" else result
         if not isinstance(payload, dict):
             return None
-        out["completion_hash"] = fingerprint(payload.get("completion_id"))
         state = result.get("state") or {}
         state = state if isinstance(state, dict) else {}
-        out["challenge_hash"] = fingerprint(state.get("challenge_id"))
-        out["target_hash"] = fingerprint(state.get("auth_complete_target_url"))
+        request = event.get("request") if kind == "auth_complete_result" else None
+        request = request if isinstance(request, dict) else {}
+        response_id = payload.get("completion_id")
+        request_id = request.get("completion_id")
+        out["completion_hash"] = fingerprint(response_id or request_id)
+        binding = request or state
+        if (request_id and response_id and request_id != response_id) or (
+            request.get("scope")
+            and payload.get("scope")
+            and request["scope"] != payload["scope"]
+        ):
+            binding = {}
+        out["challenge_hash"] = fingerprint(binding.get("challenge_id"))
+        out["target_hash"] = fingerprint(
+            binding.get("target_url") or binding.get("auth_complete_target_url")
+        )
         out["confirmed"] = confirmed and payload.get("auth_state_confirmed") is True
         out["automatic_source"] = payload.get("source") == "pc2_local_solver"
-        out["scope"] = (
-            payload.get("scope")
-            if payload.get("scope") in ("seed", "detail")
-            else "unknown"
-        )
+        scope = payload.get("scope") or request.get("scope")
+        out["scope"] = scope if scope in ("seed", "detail") else "unknown"
         snapshot = payload.get("cookie_snapshot") or {}
         snapshot = snapshot if isinstance(snapshot, dict) else {}
         detail = snapshot.get("result") or {}
@@ -221,6 +243,7 @@ def summarize(events):
                 linked
                 and event.get("automatic_source")
                 and linked["scope"] == event["scope"]
+                and linked["container_id"] == event["container_id"]
             ):
                 linked["auth_confirmed"] = True
                 linked["auth_confirmed_at"] = event["at"]

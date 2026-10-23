@@ -6,6 +6,7 @@ import { draftKey, loadDraft, saveDraft, type Baseline } from "./desktop_setting
 import { settingsTemplate } from "./desktop_settings_template.ts";
 import { installedControlOrigin, settingsRequest } from "./desktop_settings_transport.ts";
 import { settingsWaitExpired } from "./desktop_settings_wait.ts";
+import { renderOperationsConfig } from "./desktop_operations_config.ts";
 
 export function initializeSettings(apiBase: () => string, showDialog: (dialog: HTMLDialogElement) => void): () => void {
   element("runtimeSettings").innerHTML = settingsTemplate;
@@ -22,7 +23,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
   let operationId = "";
   let operationStartedAt: number | null = null;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
-  const status = (text: string) => { element("settingsStatus").textContent = text; };
+  const status = (text: string) => { element("settingsStatus").textContent = text; element("operationsConfigStatus").textContent = text; };
   const source = (text: string) => { element("settingsConfigSource").textContent = text; };
   const secret = () => element<HTMLInputElement>("settingsAiKey");
   const config = () => readConfig((name) => name === "ai.allow_gpt"
@@ -32,6 +33,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
     element<HTMLButtonElement>("settingsApply").disabled = busy || pending || activeRequests > 0;
     element<HTMLButtonElement>("settingsLoad").disabled = busy || activeRequests > 0;
     element<HTMLButtonElement>("settingsStatusRefresh").disabled = busy || activeRequests > 0;
+    element<HTMLButtonElement>("operationsConfigRefresh").disabled = busy || activeRequests > 0;
     // Offline or pending operations must not prevent editing the next draft.
     element<HTMLFieldSetElement>("runtimeSettingsFields").disabled = false;
   };
@@ -66,6 +68,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
     operationId = ""; operationStartedAt = null;
     clearTimeout(pollTimer);
     element("settingsKeyStatus").textContent = "";
+    element("operationsConfig").textContent = "连接或授权已变化；请重新读取生效配置。";
     status("连接或授权已变化；草稿可继续编辑，应用前将重新校验线上配置。");
     try { if (draftKey(apiBase()) !== activeKey) restore(); }
     catch { status("API 地址无效；未发送配置或凭据。"); }
@@ -88,6 +91,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
     } finally { activeRequests -= 1; buttons(); }
   }
   const showState = (value: Record<string, unknown>) => {
+    if (value.effective) element("operationsConfig").innerHTML = renderOperationsConfig(value);
     const receipt = object(value.request);
     const labels: Record<string, string> = { requested: "已保存，等待 PC2 应用", applying: "PC2 正在应用配置", succeeded: "参数已应用，容器健康检查通过（不代表 AI 推理成功）", failed: "应用失败，请检查结果和生效配置", expired: "请求已过期，未被 PC2 领取", unknown: "应用结果未确认，需检查 PC2，不能继续提交" };
     status(`${value.available ? "PC2 控制器在线" : "PC2 控制器离线"} · 配置版本 ${value.revision ?? "未知"}${receipt.status ? ` · ${labels[String(receipt.status)] || "未知状态"}` : ""}`);
@@ -157,6 +161,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
   element("runtimeSettingsForm").addEventListener("input", () => { edits += 1; dirty = true; source("编辑中 · 尚未保存或应用"); });
   element("settingsLoad").addEventListener("click", () => void load(true));
   element("settingsStatusRefresh").addEventListener("click", () => void load(false));
+  element("operationsConfigRefresh").addEventListener("click", () => void load(false));
   element("settingsControlBase").addEventListener("change", reset);
   element("restartToken").addEventListener("change", reset);
   element("settingsSaveDraft").addEventListener("click", () => {

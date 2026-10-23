@@ -174,8 +174,10 @@ async function run(action: "open" | "complete" | "status"): Promise<void> {
     const wait = authWaitState(waitStartedAt, Date.now());
     statusText(wait.poll ? result.message : `${result.message} ${wait.hint}`);
     if (result.completed) {
-      closeManagedDialog($<HTMLDialogElement>("authChallengeDialog"));
       await callAction("reloadAll");
+      // Keep the busy dialog visible until refresh finishes. Otherwise an enabled
+      // entry button can silently drop the user's next authentication request.
+      if (id === generation && current === session) closeManagedDialog($<HTMLDialogElement>("authChallengeDialog"));
     } else if (phase === "pending_pc2" && wait.poll && ($<HTMLDialogElement>("authChallengeDialog").open || response.shared)) {
       timer = setTimeout(() => void run("status"), AUTH_POLL_INTERVAL_MS);
     }

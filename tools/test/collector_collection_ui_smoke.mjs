@@ -17,7 +17,7 @@ export default async function collectionSmoke(page, { origin, artifactDir }) {
   await page.setViewportSize({ width: 1120, height: 760 });
   await page.goto(origin);
   await page.locator("#items tr.item-row").first().waitFor();
-  check(await page.locator(".stage-nav button").count() === 1, "single collection navigation");
+  check(await page.locator(".stage-nav button").count() === 2, "collection and operations navigation");
   check(await page.locator("#cards > .card").count() === 5, "five overview cells");
   check(await page.locator("#toggleOverview").count() === 0, "no details toggle");
   check(await page.locator(".metric-card .value").allTextContents().then((values) => values.join() === "3200,1260,730"), "unique counts instead of occurrences");

@@ -221,7 +221,7 @@ def _retry_pending_collection_resume(
         + request_attempts
     )
     if result.get("stale_challenge") is True:
-        reset_state = _reset_fallback_state()
+        reset_state = _reset_fallback_state(preserve_failure_history_from=state)
         return {
             "pending": False,
             "attempted": True,
@@ -231,7 +231,7 @@ def _retry_pending_collection_resume(
             "state": reset_state,
         }
     if _resume_after_cooldown_response_confirmed(result, request_id):
-        reset_state = _reset_fallback_state()
+        reset_state = _reset_fallback_state(preserve_failure_history_from=state)
         return {
             "pending": False,
             "attempted": True,
