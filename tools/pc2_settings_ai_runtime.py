@@ -46,11 +46,18 @@ def apply_ai(runtime, before, after, rows, changed, directory, write_private):
         # Preflight every identity/payload before touching any canonical worker.
         for name in changed:
             row = api.inspect(rows[name]["Id"])
-            if row != rows[name]:
-                # State timestamps can change, but identity/config/mounts must not.
-                for field in ("Id", "Name", "Image", "Config", "HostConfig", "Mounts"):
-                    if row.get(field) != rows[name].get(field):
-                        raise ValueError("AI container changed during settings apply")
+            # Docker enumerates mounts from an unordered map. Preserve the full
+            # contract, without treating enumeration order as configuration drift.
+            fields = ("Id", "Name", "Image", "Config", "HostConfig")
+            order_mounts = lambda value: sorted(
+                value["Mounts"], key=lambda mount: mount["Destination"]
+            )
+            if (
+                not row["State"]["Running"]
+                or any(row.get(field) != rows[name].get(field) for field in fields)
+                or order_mounts(row) != order_mounts(rows[name])
+            ):
+                raise ValueError("AI container changed during settings apply")
             payload = clone_payload(
                 row, dict(item.split("=", 1) for item in row["Config"]["Env"])
             )

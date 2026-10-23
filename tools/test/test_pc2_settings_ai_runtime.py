@@ -198,6 +198,42 @@ def test_preflight_identity_drift_never_stops_a_worker(tmp_path):
     assert not docker.api_calls
 
 
+@pytest.mark.parametrize("changed_source", [False, True])
+def test_mount_enumeration_order_is_not_drift_but_mount_content_is(
+    tmp_path, changed_source
+):
+    docker = ExactDocker()
+    for service in docker.model["services"].values():
+        if "volumes" in service:
+            service["volumes"].append(
+                {"type": "bind", "source": "/fixture/second", "target": "/data/second"}
+            )
+    for row in docker.rows.values():
+        row["Mounts"].append(
+            {
+                "Type": "bind",
+                "Source": "/fixture/second",
+                "Destination": "/data/second",
+                "RW": True,
+            }
+        )
+    docker.original = deepcopy(docker.rows)
+    original = docker.inspect
+
+    def inspect(identifier):
+        row = original(identifier)
+        row["Mounts"].reverse()
+        if changed_source:
+            row["Mounts"][0]["Source"] = "/unexpected"
+        return row
+
+    docker.inspect = inspect
+    runtime, request = setup_runtime(tmp_path, docker)
+    assert runtime.apply(request) == ("rolled_back" if changed_source else "applied")
+    if changed_source:
+        assert not docker.api_calls
+
+
 def test_clone_retains_security_and_user_network_configuration_only():
     docker = ExactDocker()
     row = next(iter(docker.rows.values()))
