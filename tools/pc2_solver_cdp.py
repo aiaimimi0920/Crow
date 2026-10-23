@@ -376,6 +376,9 @@ def check_cdp_browser_for_slider(
                         solver, target_url, tab.get("url")
                     )
                 ]
+        challenge_tab_ids = {
+            str(tab.get("id") or "").strip() for tab in challenge_tabs
+        }
         for target in challenge_tabs + page_tabs + other_tabs:
             ws_url = str(target.get("webSocketDebuggerUrl") or "").strip()
             ws = None
@@ -400,6 +403,25 @@ def check_cdp_browser_for_slider(
                         resp = json.loads(socket.recv())
                         if resp.get("id") == mid:
                             return resp.get("result")
+
+                if str(target.get("id") or "").strip() in challenge_tab_ids:
+                    # A background challenge tab is never laid out by Chromium:
+                    # offsetParent stays None and getBoundingClientRect() returns
+                    # all zeros, so the slider would remain undetected until the
+                    # tab is foregrounded. Aliyun NC also rejects CDP-synthesised
+                    # pointer input, so the real drag needs a foreground tab
+                    # anyway -- bring it to front and let one layout pass run.
+                    try:
+                        _send("Page.bringToFront")
+                        _send(
+                            "Runtime.evaluate",
+                            {
+                                "expression": "new Promise(r => setTimeout(r, 150))",
+                                "awaitPromise": True,
+                            },
+                        )
+                    except Exception:  # noqa: BLE001 - probing must stay best-effort
+                        pass
 
                 _send("Runtime.enable")
                 ret = _send(

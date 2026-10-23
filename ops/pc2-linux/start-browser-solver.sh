@@ -17,12 +17,56 @@ vnc_password_file="$(crow_env CROW_VNC_PASSWORD_FILE "/run/secrets/pc2_vnc_passw
 cdp_endpoint="$(crow_env CROW_CDP_ENDPOINT "http://127.0.0.1:9223")"
 cdp_public_port="$(crow_env CROW_CDP_PUBLIC_PORT "9224")"
 cdp_allowed_client_cidrs="$(crow_env CROW_CDP_ALLOWED_CLIENT_CIDRS "127.0.0.0/8,::1/128,172.16.0.0/12,192.168.15.20/32,192.168.15.200/32")"
-api_base_url="$(crow_env CROW_API_BASE_URL "http://192.168.15.200:8001/api")"
+api_base_url="$(crow_env CROW_API_BASE_URL "https://192.168.15.200:9520/api")"
 node_id="$(crow_env CROW_NODE_ID "pc2")"
 browser_user_agent="$(crow_env CROW_BROWSER_USER_AGENT "")"
 browser_identity_full_version="$(crow_env CROW_BROWSER_IDENTITY_FULL_VERSION "")"
 browser_executable="$(crow_env CROW_BROWSER_EXECUTABLE "")"
 browser_identity_ready_path="$(crow_env CROW_BROWSER_IDENTITY_READY_PATH "/tmp/fapaifang-browser-identity.ready")"
+# 出口代理：用于规避「出口 IP 级」风控（x5sec punish）。留空表示直连。
+browser_proxy="$(crow_env CROW_BROWSER_PROXY "")"
+browser_proxy_bypass="$(crow_env CROW_BROWSER_PROXY_BYPASS "127.0.0.1;localhost;<local>")"
+# 免重建切换出口：env 未配置代理时，回退读取代理文件（便于出口 A/B 与快速回滚）
+if [[ -z "$browser_proxy" ]]; then
+  proxy_file="$(crow_env CROW_BROWSER_PROXY_FILE "/tmp/fapaifang-browser-proxy")"
+  if [[ -s "$proxy_file" ]]; then
+    browser_proxy="$(head -n1 "$proxy_file" | tr -d '[:space:]')"
+    echo "Browser egress proxy loaded from $proxy_file"
+  fi
+fi
+
+# —— 求解器安全基线 ——
+# 把编排中过激／危险的取值收敛到安全域：关闭人工兜底、放宽失败阈值与停滞后重试，
+# 并降低滑块重试频率（频率过高会在出口 IP 已被风控时持续加深标记）。
+# CROW_/FAPAI_ 双前缀在运行时都可能被读取，这里统一收敛；
+# 若确需放宽，请显式设置 *_OVERRIDE 变量（例如 CROW_SOLVER_MANUAL_FALLBACK_ENABLED_OVERRIDE=1）。
+crow_clamp_solver_env() {
+  local prefix cur
+  if [[ "$(crow_env CROW_SOLVER_MANUAL_FALLBACK_ENABLED_OVERRIDE "")" == "1" ]]; then
+    echo "solver manual fallback override requested; skip clamping" >&2
+    return 0
+  fi
+  for prefix in CROW FAPAI; do
+    cur="$(crow_env "${prefix}_SOLVER_MANUAL_FALLBACK_ENABLED" "0")"
+    case "${cur,,}" in
+      1|true|yes|on) export "${prefix}_SOLVER_MANUAL_FALLBACK_ENABLED=0" ;;
+    esac
+    cur="$(crow_env "${prefix}_SOLVER_FALLBACK_FAIL_THRESHOLD" "10")"
+    if [[ "$cur" =~ ^[0-9]+$ ]] && (( cur < 10 )); then
+      export "${prefix}_SOLVER_FALLBACK_FAIL_THRESHOLD=10"
+    fi
+    cur="$(crow_env "${prefix}_SOLVER_FALLBACK_STALL_SECONDS" "180")"
+    if [[ "$cur" =~ ^[0-9]+$ ]] && (( cur < 180 )); then
+      export "${prefix}_SOLVER_FALLBACK_STALL_SECONDS=180"
+    fi
+  done
+  cur="$(crow_env CROW_SLIDER_RETRY_INTERVAL_SECONDS "$(crow_env FAPAI_SLIDER_RETRY_INTERVAL_SECONDS "30")")"
+  if [[ ! "$cur" =~ ^[0-9]+$ ]] || (( cur < 30 )); then
+    export CROW_SLIDER_RETRY_INTERVAL_SECONDS=30
+    export FAPAI_SLIDER_RETRY_INTERVAL_SECONDS=30
+  fi
+}
+crow_clamp_solver_env
 xauthority="${XAUTHORITY:-/tmp/.Xauthority}"
 vnc_auth_file="/tmp/tigervnc.passwd"
 
@@ -211,6 +255,13 @@ graphics_output="$(python tools/pc2_browser_graphics.py \
 mapfile -t browser_graphics_args <<< "$graphics_output"
 echo "Browser graphics backend: $graphics_backend"
 
+browser_proxy_args=()
+if [[ -n "$browser_proxy" ]]; then
+  browser_proxy_args+=(--proxy-server="$browser_proxy")
+  browser_proxy_args+=(--proxy-bypass-list="$browser_proxy_bypass")
+  echo "Browser egress proxy: $browser_proxy (bypass: $browser_proxy_bypass)"
+fi
+
 "$browser_executable" \
   --disable-dev-shm-usage \
   --disable-blink-features=AutomationControlled \
@@ -223,6 +274,7 @@ echo "Browser graphics backend: $graphics_backend"
   --no-first-run \
   --accept-lang=zh-CN,zh \
   "${browser_identity_args[@]}" \
+  ${browser_proxy_args[@]+"${browser_proxy_args[@]}"} \
   --remote-allow-origins='*' \
   --remote-debugging-address=0.0.0.0 \
   --remote-debugging-port=9223 \

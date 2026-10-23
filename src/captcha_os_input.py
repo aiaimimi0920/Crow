@@ -40,7 +40,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (0.0, 1.2),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (2, 3),
-                "hold_before_release": (1.5, 2.5),
+                "hold_before_release": (0.08, 0.28),
                 "release_mode": "exact_release",
                 "warmup_px": (1.0, 3.0),
                 "warmup_steps": (1, 2),
@@ -60,7 +60,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (4.0, 8.0),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (3, 5),
-                "hold_before_release": (1.5, 2.5),
+                "hold_before_release": (0.08, 0.28),
                 "release_mode": "exact_release",
                 "warmup_px": (2.0, 5.0),
                 "warmup_steps": (2, 3),
@@ -80,7 +80,7 @@ class CaptchaOSInputMixin:
                 "overshoot": (5.0, 9.0),
                 "release_overshoot": (0.0, 0.0),
                 "settle_steps": (4, 6),
-                "hold_before_release": (1.5, 2.5),
+                "hold_before_release": (0.08, 0.28),
                 "release_mode": "exact_release",
                 "warmup_px": (2.0, 6.0),
                 "warmup_steps": (2, 4),
@@ -89,17 +89,17 @@ class CaptchaOSInputMixin:
             },
         )
         if os.name != "nt":
-            # Physical Linux desktop: visible, bounded motion rather than the
-            # sub-second Windows profile. Endpoint hold remains a separate phase.
+            # Physical Linux desktop: human-scale motion (~0.5-1.5s for 256px).
+            # Multi-second drags and long endpoint dwell get rejected by NC.
             for index, profile in enumerate(profiles):
                 profile.update(
                     name=("slow_exact_v4", "slow_settle_v4", "slow_dense_v4")[index],
-                    total_time=(2.6 + index * 0.4, 3.6 + index * 0.4),
-                    steps=(72 + index * 8, 88 + index * 8),
-                    pre_pause=(0.3, 0.6), press_hold=(0.18, 0.3),
-                    approach_duration=(0.35, 0.6), start_duration=(0.25, 0.4),
+                    total_time=(0.55 + index * 0.12, 1.05 + index * 0.18),
+                    steps=(30 + index * 4, 42 + index * 6),
+                    pre_pause=(0.08, 0.25), press_hold=(0.05, 0.15),
+                    approach_duration=(0.06, 0.16), start_duration=(0.05, 0.14),
                     tremor_x=0.7, pixel_tremor=True, normalize_duration=True,
-                    overshoot=(0.0, 1.2), settle_steps=(3, 5),
+                    overshoot=(2.0, 5.0), settle_steps=(2, 3),
                 )
         return profiles
 
