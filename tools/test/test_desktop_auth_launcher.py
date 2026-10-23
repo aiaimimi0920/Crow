@@ -117,10 +117,12 @@ def test_stderr_warning_is_not_a_powershell_terminating_error(bundle):
     assert result(launch(bundle))["phase"] == "pending_human"
 
 
-def test_query_arguments_remain_single_values(bundle):
+@pytest.mark.parametrize("extra,browser", [((), "dedicated"), (("-Browser", "edge"), "edge")])
+def test_query_arguments_remain_single_values(bundle, extra, browser):
     url = "https://sf.taobao.com/list/123.htm?city=hello%20world&item=123"
-    payload = result(launch(bundle, extra=("-TargetUrl", url, "-TargetId", "fixture-target")))
+    payload = result(launch(bundle, extra=(*extra, "-TargetUrl", url, "-TargetId", "fixture-target")))
     assert payload["args"] == ["--action", "status", "--api-base", "invalid",
+                               "--browser", browser,
                                "--target-url", url, "--target-id", "fixture-target"]
 
 

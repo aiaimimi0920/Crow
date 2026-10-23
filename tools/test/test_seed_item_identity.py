@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -192,6 +193,7 @@ def test_detail_worker_uses_storage_item_id_for_artifacts_and_updates(
 ) -> None:
     storage_id = GenericSeedScanPolicy(source_platform="catalog_x").storage_item_id("shared-1")
     completed: list[str] = []
+    stored: list[str] = []
 
     class Repository:
         def claim_seed_detail_item(self, *_args, **_kwargs):
@@ -204,13 +206,25 @@ def test_detail_worker_uses_storage_item_id_for_artifacts_and_updates(
             }
 
         def mark_seed_detail_completed(self, item_id: str, **_kwargs) -> None:
+            assert stored == [storage_id]
             completed.append(item_id)
 
         def seed_queue_counts(self):
             return {}
 
-        def upsert_flat_item(self, *_args, **_kwargs) -> None:
-            raise AssertionError("no final artifact was created")
+        def upsert_flat_item(self, item, **kwargs) -> None:
+            assert item["id"] == storage_id
+            assert item["source_item_id"] == "shared-1"
+            assert kwargs["event_payload"]["item_id"] == storage_id
+            stored.append(item["id"])
+
+    def process_item(*_args, **_kwargs):
+        item_dir = tmp_path / storage_id
+        item_dir.mkdir()
+        (item_dir / "final.json").write_text(
+            json.dumps({"id": storage_id, "source_item_id": "shared-1"}), encoding="utf-8"
+        )
+        return {"ok": True}
 
     monkeypatch.setattr(detail_worker, "_collection_pause_state_with_retry", lambda _url: {"paused": False})
     config = detail_worker.DetailWorkerConfig(
@@ -227,12 +241,14 @@ def test_detail_worker_uses_storage_item_id_for_artifacts_and_updates(
         repository=Repository(),  # type: ignore[arg-type]
         http_session=object(),
         browser_pages={},
-        process_item_func=lambda *_args, **_kwargs: {"ok": True},
+        process_item_func=process_item,
     )
 
+    assert summary["decision"] == "detail_item_completed"
     assert summary["item_id"] == storage_id
     assert summary["final_json_path"] == str(tmp_path / storage_id / "final.json")
     assert completed == [storage_id]
+    assert stored == [storage_id]
 
 
 def test_flat_storage_keeps_platform_scoped_item_ids(tmp_path: Path) -> None:
