@@ -4,6 +4,10 @@ import time
 
 from tools import worker_lifecycle
 from tools.detail_worker_context import DetailWorkerConfig
+from tools.detail_worker_pause_state import (
+    collection_scope_statuses,
+    operator_pause_requested,
+)
 from tools.internal_api_http import fetch_json
 
 
@@ -42,7 +46,9 @@ def wait_after_detail_batch(
             continue
         if not isinstance(status, dict):
             continue
-        scopes = status.get("collection_scopes")
+        if operator_pause_requested(status):
+            continue
+        scopes = collection_scope_statuses(status)
         detail = scopes.get("detail") if isinstance(scopes, dict) else None
         seed = scopes.get("seed") if isinstance(scopes, dict) else None
         # The aggregate pause includes seed-only challenges. A confirmed clear

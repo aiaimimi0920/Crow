@@ -121,6 +121,7 @@ def test_routes_require_distinct_tokens_and_never_return_keys(
             raw = json.dumps(body).encode()
             self.headers = {
                 "Content-Length": str(len(raw)),
+                "Content-Type": "application/json",
                 "X-FAPAI-Control-Token": token,
             }
             self.rfile = io.BytesIO(raw)

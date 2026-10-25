@@ -139,6 +139,7 @@ class AuthCompletion:
                 else str(self.runtime().recovery.snapshot().challenge_id or "").strip()
                 or None
             )
+            snapshot_payload["scope"] = completion_scope
 
         clear_error: str | None = None
         receipt_error: str | None = None
@@ -271,6 +272,21 @@ class AuthCompletion:
             if (
                 cookie_snapshot.get("status") == "completed"
                 and cookie_snapshot.get("refreshed") is True
+                and (
+                    not completion_id
+                    or cookie_snapshot.get("completion_id") != completion_id
+                    or cookie_snapshot.get("expected_challenge_id")
+                    != expected_challenge_id
+                    or cookie_snapshot.get("scope") != completion_scope
+                )
+            ):
+                finalization_error = (
+                    "cookie snapshot belongs to another authentication request"
+                )
+            if (
+                cookie_snapshot.get("status") == "completed"
+                and cookie_snapshot.get("refreshed") is True
+                and finalization_error is None
             ):
                 finalization = self.finalize(
                     completion_id,
@@ -344,6 +360,8 @@ class AuthCompletion:
             result["error"] = (
                 "cookie snapshot refresh failed; collection remains paused"
             )
+        elif snapshot_status == "busy":
+            result["error"] = "cookie snapshot refresh is busy with another completion"
         elif snapshot_status == "completed" and not auth_state_confirmed:
             result["error"] = (
                 "cookie snapshot completed but auth state could not be confirmed"

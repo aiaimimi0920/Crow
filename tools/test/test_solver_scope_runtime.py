@@ -440,6 +440,9 @@ def test_async_completion_does_not_overwrite_finalizer_outcome(
         return {
             "status": scheduler_status,
             "refreshed": scheduler_status == "completed",
+            "completion_id": completion_id,
+            "expected_challenge_id": kwargs["expected_challenge_id"],
+            "scope": _payload.get("scope"),
         }
 
     monkeypatch.setattr(server, "_captcha_solver_runtime_status", dict)
@@ -528,7 +531,13 @@ def test_completion_preparation_cannot_adopt_a_newer_challenge(
     def schedule(_payload, _completion_id, **kwargs):
         writers[0].result(timeout=5)
         scheduled_ids.append(kwargs["expected_challenge_id"])
-        return {"status": "completed", "refreshed": True}
+        return {
+            "status": "completed",
+            "refreshed": True,
+            "completion_id": _completion_id,
+            "expected_challenge_id": kwargs["expected_challenge_id"],
+            "scope": _payload.get("scope"),
+        }
 
     monkeypatch.setattr(server, "_captcha_solver_runtime_status", dict)
     monkeypatch.setattr(server, "_remember_solver_auth_completion", lambda _: None)

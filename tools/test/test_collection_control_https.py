@@ -1,9 +1,8 @@
 """Real loopback TLS with synthetic CA/tokens, no live services or credentials."""
+
 import datetime
 import ipaddress
 import json
-from pathlib import Path
-import ssl
 import threading
 import urllib.error
 
@@ -25,36 +24,78 @@ def control(tmp_path, monkeypatch):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Crow test only")])
     now = datetime.datetime.now(datetime.timezone.utc)
-    certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
-                   .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(minutes=1))
-                   .not_valid_after(now + datetime.timedelta(days=1))
-                   .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-                   .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-                   .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()), critical=False)
-                   .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=True,
-                                                data_encipherment=False, key_agreement=False, key_cert_sign=True, crl_sign=True,
-                                                encipher_only=False, decipher_only=False), critical=True)
-                   .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
-                   .sign(key, hashes.SHA256()))
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=True,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+            ),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
     ca, private = tmp_path / "ca.pem", tmp_path / "server.key"
     ca.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-    private.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    private.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
     tokens = {}
     for role, letter in [("operator", "o"), ("agent", "a")]:
         tokens[role] = tmp_path / (role + ".token")
         tokens[role].write_text(letter * 48, encoding="utf-8")
-        monkeypatch.setenv("FAPAI_ENGINE_" + role.upper() + "_TOKEN_FILE", str(tokens[role]))
+        monkeypatch.setenv(
+            "FAPAI_ENGINE_" + role.upper() + "_TOKEN_FILE", str(tokens[role])
+        )
     server = create_server(("127.0.0.1", 0), tmp_path / "state", ca, private)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
     thread.start()
     origin = f"https://127.0.0.1:{server.server_port}"
-    env = {"FAPAI_SETTINGS_API_BASE": origin, "FAPAI_SETTINGS_CA_FILE": str(ca),
-           "FAPAI_ENGINE_OPERATOR_TOKEN_FILE": str(tokens["operator"])}
+    env = {
+        "FAPAI_SETTINGS_API_BASE": origin,
+        "FAPAI_SETTINGS_CA_FILE": str(ca),
+        "FAPAI_ENGINE_OPERATOR_TOKEN_FILE": str(tokens["operator"]),
+    }
     for key in env:
         monkeypatch.delenv(key, raising=False)
     # The service role token must remain configured; bundle selection uses the same fixture.
     monkeypatch.setenv("FAPAI_ENGINE_OPERATOR_TOKEN_FILE", str(tokens["operator"]))
-    (tmp_path / "crow-desktop.runtime.json").write_text(json.dumps({"version": 1, "environment": env}), encoding="utf-8")
+    (tmp_path / "crow-desktop.runtime.json").write_text(
+        json.dumps({"version": 1, "environment": env}), encoding="utf-8"
+    )
     try:
         yield origin, ca, tokens, tmp_path
     finally:
@@ -71,12 +112,24 @@ def test_private_ca_role_boundary_and_desktop_receipt(control):
     agent.post("poll", {"effective": config, "api_key_configured": True})
     state = execute({"action": "get", "origin": origin}, root)
     assert state["available"] is True and state["effective"] == config
-    body = {"request_id": "settings-tls-fixture-001", "expected_revision": state["revision"], "config": config, "api_key": None}
+    body = {
+        "request_id": "settings-tls-fixture-001",
+        "expected_revision": state["revision"],
+        "config": config,
+        "api_key": None,
+    }
     receipt = execute({"action": "apply", "origin": origin, "body": body}, root)
     assert receipt["request"]["status"] == "requested"
-    command = agent.post("poll", {"effective": config, "api_key_configured": True})["command"]
-    final = {"request_id": command["request_id"], "claim": command["claim"], "result": "applied",
-             "effective": config, "api_key_configured": True}
+    command = agent.post("poll", {"effective": config, "api_key_configured": True})[
+        "command"
+    ]
+    final = {
+        "request_id": command["request_id"],
+        "claim": command["claim"],
+        "result": "applied",
+        "effective": config,
+        "api_key_configured": True,
+    }
     assert agent.post("result", final) == agent.post("result", final)
     assert operator.get()["request"]["status"] == "succeeded"
     with pytest.raises(urllib.error.HTTPError) as error:
@@ -100,5 +153,12 @@ def test_restart_mailbox_shares_tls_but_never_executes_docker(control):
     assert agent.post("poll", {})["command"] is None
     operator.request("", {"request_id": "restart-tls-fixture-001"})
     command = agent.post("poll", {})["command"]
-    agent.post("result", {"request_id": command["request_id"], "claim": command["claim"], "result": "workers_ready"})
+    agent.post(
+        "result",
+        {
+            "request_id": command["request_id"],
+            "claim": command["claim"],
+            "result": "workers_ready",
+        },
+    )
     assert operator.get()["request"]["status"] == "succeeded"

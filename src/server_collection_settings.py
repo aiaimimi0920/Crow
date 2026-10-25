@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from src import collection_engine_restart as _settings_auth
 from src import collection_settings_schema as _settings_schema
 from src import collection_settings_store as _settings_store
-from src.server_request_guard import GuardRequest, _read_limited_body
+from src.server_request_guard import GuardRequest, _read_limited_body, _send_guard_error
 
 
 class SettingsRequest(GuardRequest, Protocol):
@@ -18,6 +18,20 @@ class SettingsRequest(GuardRequest, Protocol):
 
 def _collection_settings_store() -> _settings_store.SettingsStore:
     return _settings_store.SettingsStore(_settings_auth.runtime_root())
+
+
+def _reject_settings_body(
+    handler: SettingsRequest, message: str, status: int = 400
+) -> None:
+    _send_guard_error(
+        handler,
+        {
+            "status": status,
+            "code": "SETTINGS_REJECTED",
+            "message": message,
+            "details": {},
+        },
+    )
 
 
 def _server_collection_settings(
@@ -37,13 +51,28 @@ def _server_collection_settings(
         if read:
             result = store.status()
         else:
+            # Match the shared JSON transport policy without changing the
+            # existing settings-specific error codes or bounded-body contract.
+            if handler.headers.get("Transfer-Encoding"):
+                _reject_settings_body(handler, "Unsupported transfer encoding")
+                return
+            content_type = (
+                str(handler.headers.get("Content-Type") or "")
+                .split(";", 1)[0]
+                .strip()
+                .lower()
+            )
+            if content_type != "application/json":
+                _reject_settings_body(
+                    handler, "Content-Type must be application/json", 415
+                )
+                return
             try:
                 body = _read_limited_body(handler, max_bytes=16384, min_bytes=2)
-            except ValueError as error:
-                raise _settings_auth.RestartError(
-                    "Invalid settings body length", 400
-                ) from error
-            payload = json.loads(body)
+            except ValueError:
+                _reject_settings_body(handler, "Invalid settings body length")
+                return
+            payload = json.loads(body.decode("utf-8"))
             if not isinstance(payload, dict):
                 raise _settings_auth.RestartError("Expected a settings object", 400)
             action = path.rsplit("/", 1)[-1]
@@ -75,9 +104,9 @@ def _server_collection_settings(
 
 
 __all__ = [
-    "_settings_schema",
-    "_settings_store",
-    "_settings_auth",
     "_collection_settings_store",
     "_server_collection_settings",
+    "_settings_auth",
+    "_settings_schema",
+    "_settings_store",
 ]

@@ -18,50 +18,87 @@ def _collection_pause_state(api_base_url: str) -> dict[str, Any]:
     try:
         payload = fetch_json(endpoint, timeout=5)
     except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return {"paused": False, "reason": "status_unavailable", "error": safe_exception_text(exc)}
+        return {
+            "paused": False,
+            "reason": "status_unavailable",
+            "error": safe_exception_text(exc),
+        }
 
     if not isinstance(payload, dict):
-        return {"paused": False, "reason": "status_unavailable", "error": "non_object_status"}
+        return {
+            "paused": False,
+            "reason": "status_unavailable",
+            "error": "non_object_status",
+        }
 
     return _normalize_collection_pause_state(payload, scope="detail")
 
 
-def _normalize_collection_pause_state(payload: dict[str, Any], scope: str = "detail") -> dict[str, Any]:
+def _normalize_collection_pause_state(
+    payload: dict[str, Any], scope: str = "detail"
+) -> dict[str, Any]:
+    from tools.detail_worker_pause_state import (
+        collection_scope_statuses,
+        operator_pause_requested,
+    )
+
     captcha_solver = payload.get("captcha_solver")
     if not isinstance(captcha_solver, dict):
         captcha_solver = {}
-    scope_statuses = payload.get("collection_scopes")
-    if not isinstance(scope_statuses, dict):
-        scope_statuses = captcha_solver.get("collection_scopes")
-    if not isinstance(scope_statuses, dict):
-        scope_statuses = captcha_solver.get("scopes")
+    if operator_pause_requested(payload):
+        return {
+            "paused": True,
+            "operator_paused": True,
+            "reason": "operator_paused",
+            "captcha_solver": dict(captcha_solver),
+            "scope": scope,
+        }
+    scope_statuses = collection_scope_statuses(payload)
     scoped = scope_statuses.get(scope) if isinstance(scope_statuses, dict) else None
     if isinstance(scoped, dict):
         scoped_solver = dict(captcha_solver)
         scoped_solver.update(scoped)
-        scoped_solver["last_request"] = scoped.get("last_request") or captcha_solver.get("last_request") or {}
+        scoped_solver["last_request"] = (
+            scoped.get("last_request") or captcha_solver.get("last_request") or {}
+        )
         scoped_solver["running"] = bool(scoped.get("last_status") == "running")
         scoped_solver["paused"] = bool(scoped.get("paused"))
         scoped_solver["manual_required"] = bool(scoped.get("manual_required"))
         scoped_solver["force_unlock_flag_exists"] = False
         return {
             "paused": bool(scoped.get("paused") or scoped.get("manual_required")),
-            "reason": "captcha_solver_manual_required" if scoped.get("manual_required") else "captcha_solver_running" if scoped.get("paused") else None,
+            "reason": "captcha_solver_manual_required"
+            if scoped.get("manual_required")
+            else "captcha_solver_running"
+            if scoped.get("paused")
+            else None,
             "captcha_solver": scoped_solver,
             "scope": scope,
         }
     manual_required = bool(captcha_solver.get("manual_required"))
-    solver_running_for_current_node = _captcha_solver_targets_current_node(captcha_solver)
+    solver_running_for_current_node = _captcha_solver_targets_current_node(
+        captcha_solver
+    )
     solver_running_only = (
         bool(payload.get("paused"))
         and bool(captcha_solver.get("running"))
         and bool(captcha_solver.get("paused"))
         and not manual_required
     )
-    paused = bool(payload.get("paused")) or manual_required or solver_running_for_current_node
+    paused = (
+        bool(payload.get("paused"))
+        or manual_required
+        or solver_running_for_current_node
+    )
     if solver_running_only and not solver_running_for_current_node:
         paused = False
-    reason = "captcha_solver_manual_required" if manual_required else "collection_paused" if paused else None
+    reason = (
+        "captcha_solver_manual_required"
+        if manual_required
+        else "collection_paused"
+        if paused
+        else None
+    )
     if solver_running_for_current_node and not manual_required:
         reason = "captcha_solver_running"
     elif solver_running_only:
@@ -88,7 +125,10 @@ def _captcha_solver_targets_current_node(captcha_solver: dict[str, Any]) -> bool
 
 def _collection_pause_state_with_retry(api_base_url: str) -> dict[str, Any]:
     pause_state = _collection_pause_state(api_base_url)
-    if not str(api_base_url or "").strip() or pause_state.get("reason") != "status_unavailable":
+    if (
+        not str(api_base_url or "").strip()
+        or pause_state.get("reason") != "status_unavailable"
+    ):
         return pause_state
 
     for _attempt in range(1, STATUS_UNAVAILABLE_RETRY_ATTEMPTS):
@@ -107,7 +147,9 @@ def _pause_state_detail_target_item_id(pause_state: dict[str, Any]) -> str | Non
     last_request = captcha_solver.get("last_request")
     if not isinstance(last_request, dict):
         return None
-    target_url = str(last_request.get("target_url") or last_request.get("url") or "").strip()
+    target_url = str(
+        last_request.get("target_url") or last_request.get("url") or ""
+    ).strip()
     if not target_url:
         return None
     match = DETAIL_ITEM_ID_RE.search(target_url)
@@ -120,6 +162,10 @@ def _pause_state_has_resolved_open_detail_page(
     pause_state: dict[str, Any],
     browser_pages: dict[str, tuple[str, str]],
 ) -> bool:
+    from tools.detail_worker_pause_state import operator_pause_requested
+
+    if operator_pause_requested(pause_state):
+        return False
     item_id = _pause_state_detail_target_item_id(pause_state)
     if not item_id:
         return False
@@ -131,7 +177,9 @@ def _pause_state_has_resolved_open_detail_page(
 
 
 def _is_detail_challenge_error(exc: BaseException) -> bool:
-    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
+    text = repr(
+        exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc
+    ).lower()
     return any(
         marker in text
         for marker in (
@@ -147,7 +195,9 @@ def _is_detail_challenge_error(exc: BaseException) -> bool:
 
 
 def _is_transient_dns_error(exc: BaseException) -> bool:
-    text = repr(exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc).lower()
+    text = repr(
+        exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc
+    ).lower()
     return any(
         marker in text
         for marker in (
@@ -190,13 +240,20 @@ def _report_captcha_solver(
     *,
     manual_only: bool = False,
 ) -> dict[str, Any]:
-    from tools.taobao_login_health import build_captcha_solver_target_url, report_captcha_via_api
+    from tools.taobao_login_health import (
+        build_captcha_solver_target_url,
+        report_captcha_via_api,
+    )
 
     normalized_target_url = build_captcha_solver_target_url(target_url)
     report_kwargs: dict[str, Any] = {"scope": "detail"}
     if manual_only:
         report_kwargs["manual_only"] = True
-    return dict(report_captcha_via_api(api_base_url, cdp_endpoint, normalized_target_url, **report_kwargs))
+    return dict(
+        report_captcha_via_api(
+            api_base_url, cdp_endpoint, normalized_target_url, **report_kwargs
+        )
+    )
 
 
 def _detail_seed_target_url(
@@ -218,7 +275,9 @@ def _detail_seed_target_url(
     return active_adapter.seed_scan_policy.item_url(source_item_id)
 
 
-def _challenge_retry_budget_preserved(*, is_challenge_error: bool, is_transient_dns: bool) -> bool:
+def _challenge_retry_budget_preserved(
+    *, is_challenge_error: bool, is_transient_dns: bool
+) -> bool:
     return bool(is_challenge_error or is_transient_dns)
 
 
@@ -234,7 +293,9 @@ def _captcha_report_suppresses_challenge(report: Any) -> bool:
     }
 
 
-def _detail_challenge_should_break_batch(_config: DetailWorkerConfig, result: dict[str, Any]) -> bool:
+def _detail_challenge_should_break_batch(
+    _config: DetailWorkerConfig, result: dict[str, Any]
+) -> bool:
     if result.get("decision") != "detail_item_retryable_failure":
         return False
     if result.get("reason") == "detail_cdp_unreachable":
@@ -271,7 +332,9 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _build_cdp_unreachable_health(config: DetailWorkerConfig, target_url: str) -> dict[str, Any]:
+def _build_cdp_unreachable_health(
+    config: DetailWorkerConfig, target_url: str
+) -> dict[str, Any]:
     from tools import taobao_login_health
     from tools.safe_exception_diagnostics import safe_cdp_endpoint
 
@@ -284,7 +347,9 @@ def _build_cdp_unreachable_health(config: DetailWorkerConfig, target_url: str) -
     )
     redacted = str(config.cdp_endpoint).strip().rstrip("/") != endpoint
     if redacted:
-        hint["message"] += " Connection parameters were omitted; use the configured CDP endpoint locally."
+        hint["message"] += (
+            " Connection parameters were omitted; use the configured CDP endpoint locally."
+        )
     return {
         "status": taobao_login_health.CDP_UNREACHABLE,
         "cdp_endpoint": endpoint,
@@ -295,22 +360,22 @@ def _build_cdp_unreachable_health(config: DetailWorkerConfig, target_url: str) -
 
 
 __all__ = (
-    '_write_runtime_summary',
-    '_collection_pause_state',
-    '_normalize_collection_pause_state',
-    '_captcha_solver_targets_current_node',
-    '_collection_pause_state_with_retry',
-    '_pause_state_detail_target_item_id',
-    '_pause_state_has_resolved_open_detail_page',
-    '_is_detail_challenge_error',
-    '_is_transient_dns_error',
-    '_is_llm_backend_unavailable_error',
-    '_report_captcha_solver',
-    '_detail_seed_target_url',
-    '_challenge_retry_budget_preserved',
-    '_captcha_report_suppresses_challenge',
-    '_detail_challenge_should_break_batch',
-    '_detail_challenge_retry_after_seconds',
-    '_env_bool',
-    '_build_cdp_unreachable_health',
+    "_build_cdp_unreachable_health",
+    "_captcha_report_suppresses_challenge",
+    "_captcha_solver_targets_current_node",
+    "_challenge_retry_budget_preserved",
+    "_collection_pause_state",
+    "_collection_pause_state_with_retry",
+    "_detail_challenge_retry_after_seconds",
+    "_detail_challenge_should_break_batch",
+    "_detail_seed_target_url",
+    "_env_bool",
+    "_is_detail_challenge_error",
+    "_is_llm_backend_unavailable_error",
+    "_is_transient_dns_error",
+    "_normalize_collection_pause_state",
+    "_pause_state_detail_target_item_id",
+    "_pause_state_has_resolved_open_detail_page",
+    "_report_captcha_solver",
+    "_write_runtime_summary",
 )

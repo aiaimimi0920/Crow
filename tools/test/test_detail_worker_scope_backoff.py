@@ -8,7 +8,10 @@ from tools import detail_worker_wait as owner
 
 
 @pytest.mark.parametrize("seed_manual", [False, True])
-def test_seed_only_pause_wakes_confirmed_clear_detail_scope(monkeypatch, seed_manual):
+@pytest.mark.parametrize("layout", ["top", "collection_scopes", "scopes"])
+def test_seed_only_pause_wakes_confirmed_clear_detail_scope(
+    monkeypatch, seed_manual, layout
+):
     clock = {"now": 0, "polls": 0}
     monkeypatch.setattr(owner.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(owner.worker_lifecycle, "checkpoint", lambda _: True)
@@ -18,7 +21,7 @@ def test_seed_only_pause_wakes_confirmed_clear_detail_scope(monkeypatch, seed_ma
 
     def fetch(*args, **kwargs):
         clock["polls"] += 1
-        return {
+        status = {
             "paused": True,
             "collection_scopes": {
                 "seed": {"paused": True, "manual_required": seed_manual},
@@ -29,6 +32,9 @@ def test_seed_only_pause_wakes_confirmed_clear_detail_scope(monkeypatch, seed_ma
                 },
             },
         }
+        if layout != "top":
+            status["captcha_solver"] = {layout: status.pop("collection_scopes")}
+        return status
 
     monkeypatch.setattr(owner.worker_lifecycle, "wait", wait)
     monkeypatch.setattr(owner, "fetch_json", fetch)

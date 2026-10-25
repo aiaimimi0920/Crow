@@ -1,17 +1,26 @@
 """App-scoped TLS control endpoint. No business database or Docker access."""
-from src.project_data_paths import resolve_project_data_root
 
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
+import socket
 import sqlite3
 import ssl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
-from src.collection_engine_restart import PREFIX as RESTART, RestartError, RestartMailbox, authorize, configured
+from src.collection_engine_restart import (
+    PREFIX as RESTART,
+)
+from src.collection_engine_restart import (
+    RestartError,
+    RestartMailbox,
+    authorize,
+    configured,
+)
 from src.collection_settings_schema import PREFIX, ROLES
 from src.collection_settings_store import SettingsStore
+from src.project_data_paths import resolve_project_data_root
 from tools.collection_runtime_proxy import RUNTIME_ROUTES, forward_runtime
 
 
@@ -32,7 +41,9 @@ def dispatch(root, method, path, headers, body):
         action = path.rsplit("/", 1)[-1]
         if action not in {"apply", "poll", "result"}:
             raise RestartError("Unsupported control action", 405)
-        return {"apply": store.apply, "poll": store.poll, "result": store.finish}[action](body)
+        return {"apply": store.apply, "poll": store.poll, "result": store.finish}[
+            action
+        ](body)
     store = RestartMailbox(root)
     if method == "GET":
         return {"ok": True, **store.status()}
@@ -68,26 +79,52 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def reject(self, status, code):
+        self.close_connection = True
+        self.respond(status, {"ok": False, "code": code})
+        # Do not lose a rejection to a TCP reset from an unread upload.
+        try:
+            self.connection.shutdown(socket.SHUT_WR)
+            length = int(self.headers.get("Content-Length", "0"))
+            if 0 < length <= 16384:
+                self.connection.settimeout(0.1)
+                self.rfile.read(length)
+        except (OSError, ValueError):
+            pass
+
     def handle_control(self):
         try:
             if self.headers.get("Transfer-Encoding"):
                 raise RestartError("Transfer encoding is unsupported", 400)
             body = {}
             if self.command == "POST":
+                content_type = (
+                    str(self.headers.get("Content-Type") or "")
+                    .split(";", 1)[0]
+                    .strip()
+                    .lower()
+                )
+                if content_type != "application/json":
+                    raise RestartError("Content-Type must be application/json", 415)
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 2 <= length <= 16384:
                     raise RestartError("Invalid request size", 413)
-                body = json.loads(self.rfile.read(length))
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError("incomplete request body")
+                body = json.loads(raw.decode("utf-8"))
                 if not isinstance(body, dict):
                     raise ValueError("object required")
-            result = dispatch(self.server.runtime_root, self.command, self.path, self.headers, body)
+            result = dispatch(
+                self.server.runtime_root, self.command, self.path, self.headers, body
+            )
             self.respond(200, result)
         except RestartError as error:
-            self.respond(error.status, {"ok": False, "code": "CONTROL_REJECTED"})
+            self.reject(error.status, "CONTROL_REJECTED")
         except (ValueError, TypeError, UnicodeError):
-            self.respond(400, {"ok": False, "code": "CONTROL_INVALID"})
+            self.reject(400, "CONTROL_INVALID")
         except (OSError, sqlite3.Error):
-            self.respond(503, {"ok": False, "code": "CONTROL_UNAVAILABLE"})
+            self.reject(503, "CONTROL_UNAVAILABLE")
 
     do_GET = handle_control
     do_POST = handle_control
@@ -100,7 +137,9 @@ def create_server(address, root, cert_file, key_file):
     server = ThreadingHTTPServer(address, Handler)
     server.daemon_threads = True
     server.runtime_root = Path(root)
-    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    server.socket = context.wrap_socket(
+        server.socket, server_side=True, do_handshake_on_connect=False
+    )
     return server
 
 
@@ -113,11 +152,15 @@ def main():
     parser.add_argument("--runtime-root", type=Path, default=None)
     args = parser.parse_args()
     if args.runtime_root is None:
-        args.runtime_root = resolve_project_data_root(Path(__file__).resolve().parents[1])
+        args.runtime_root = resolve_project_data_root(
+            Path(__file__).resolve().parents[1]
+        )
     if not configured():
         parser.error("Two distinct operator/agent token files are required")
     os.umask(0o077)
-    with create_server((args.bind, args.port), args.runtime_root, args.cert_file, args.key_file) as server:
+    with create_server(
+        (args.bind, args.port), args.runtime_root, args.cert_file, args.key_file
+    ) as server:
         print("Crow HTTPS control ready", flush=True)
         server.serve_forever()
 

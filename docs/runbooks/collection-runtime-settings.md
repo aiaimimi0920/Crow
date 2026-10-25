@@ -52,6 +52,8 @@ Routes under `/api/collection/settings`:
 | `POST /poll` | agent | Observed inventory; claims one command at most once |
 | `POST /result` | agent | Claim-bound applied/rolled-back/rejected/interrupted receipt |
 
+两个 HTTP 服务入口均要求 POST 使用 `Content-Type: application/json`（可带 charset 参数）、UTF-8 对象正文和准确的 `Content-Length`，不支持 `Transfer-Encoding`。正文上限保持 16 KiB；不完整正文不得进入设置或重启业务处理。缺少或不匹配的媒体类型返回 415，既有的角色鉴权和各入口错误码合同保持不变。
+
 Operator and agent tokens use the existing distinct engine-control token files.
 They are not AI credentials. Request bodies are bounded to 16 KiB.
 The controller and editor reject remote plaintext HTTP for settings. Use trusted HTTPS

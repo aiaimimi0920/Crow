@@ -20,7 +20,9 @@ def run_detail_worker_batch(
         preflight = _run_llm_preflight(config)
     else:
         preflight = None
-    if _llm_preflight_is_unavailable(preflight) or (preflight and preflight.get("error")):
+    if _llm_preflight_is_unavailable(preflight) or (
+        preflight and preflight.get("error")
+    ):
         summary = {
             "decision": "detail_worker_llm_unavailable",
             "attempts": 0,
@@ -39,7 +41,11 @@ def run_detail_worker_batch(
     attempts = 0
     challenge_break = False
     challenge_retry_after_seconds = 0
-    while attempts < config.max_attempts and completed < config.target_success and checkpoint("detail_item"):
+    while (
+        attempts < config.max_attempts
+        and completed < config.target_success
+        and checkpoint("detail_item")
+    ):
         attempts += 1
         if config.analysis_only:
             result = run_detail_analysis_once(
@@ -61,7 +67,10 @@ def run_detail_worker_batch(
         item_id = result.get("item_id")
         if item_id:
             attempted_item_ids.add(str(item_id))
-        if result.get("decision") in {"detail_queue_empty", "detail_analysis_queue_empty"}:
+        if result.get("decision") in {
+            "detail_queue_empty",
+            "detail_analysis_queue_empty",
+        }:
             break
         item_completed = result.get("decision") in {
             "detail_item_completed",
@@ -73,11 +82,15 @@ def run_detail_worker_batch(
         if result.get("decision") == "detail_analysis_backend_unavailable":
             break
         challenge_break = _detail_challenge_should_break_batch(config, result)
-        challenge_retry_after_seconds = _detail_challenge_retry_after_seconds(config, result)
+        challenge_retry_after_seconds = _detail_challenge_retry_after_seconds(
+            config, result
+        )
         if challenge_break:
             break
         if attempts < config.max_attempts and completed < config.target_success:
-            delay_seconds = _detail_inter_item_delay_seconds(config, item_completed=item_completed)
+            delay_seconds = _detail_inter_item_delay_seconds(
+                config, item_completed=item_completed
+            )
             if delay_seconds > 0:
                 wait(delay_seconds)
     summary = {
@@ -96,14 +109,20 @@ def run_detail_worker_batch(
     return summary
 
 
-def _detail_inter_item_delay_seconds(config: DetailWorkerConfig, *, item_completed: bool) -> float:
+def _detail_inter_item_delay_seconds(
+    config: DetailWorkerConfig, *, item_completed: bool
+) -> float:
     if config.analysis_only:
         return 0.0
-    base_delay = config.success_delay_seconds if item_completed else config.failure_delay_seconds
+    base_delay = (
+        config.success_delay_seconds if item_completed else config.failure_delay_seconds
+    )
     return jittered_delay_seconds(base_delay, config.pacing_jitter_ratio)
 
 
-def _detail_batch_sleep_seconds(config: DetailWorkerConfig, result: dict[str, Any]) -> int:
+def _detail_batch_sleep_seconds(
+    config: DetailWorkerConfig, result: dict[str, Any]
+) -> int:
     completed = result.get("completed")
     try:
         completed_count = int(completed)
@@ -148,7 +167,9 @@ def run_detail_worker_loop(
     results: list[dict[str, Any]] = []
     last_runtime_context: RuntimeContext | None = None
     runs = 0
-    release_worker_leases = getattr(repository, "release_seed_detail_worker_leases", None)
+    release_worker_leases = getattr(
+        repository, "release_seed_detail_worker_leases", None
+    )
     if callable(release_worker_leases):
         release_summary = release_worker_leases(config.worker_id)
         if int((release_summary or {}).get("released") or 0) > 0:
@@ -165,7 +186,7 @@ def run_detail_worker_loop(
         try:
             current_http_session, current_browser_pages = runtime_context_factory()
             last_runtime_context = (current_http_session, current_browser_pages)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve the last usable context after a refresh failure.
             if last_runtime_context is not None:
                 current_http_session, current_browser_pages = last_runtime_context
                 reuse_event = {
@@ -207,6 +228,8 @@ def run_detail_worker_loop(
             browser_pages=current_browser_pages,
         )
         results.append(result)
+        # Bound live retention as well as the final summary of an unattended loop.
+        del results[:-20]
         emit_progress(_detail_batch_progress_event(runs, result))
         if config.max_runs is not None and runs >= config.max_runs:
             break
@@ -234,8 +257,8 @@ def run_detail_worker_loop(
 
 
 __all__ = (
-    'run_detail_worker_batch',
-    '_detail_inter_item_delay_seconds',
-    '_detail_batch_sleep_seconds',
-    'run_detail_worker_loop',
+    "_detail_batch_sleep_seconds",
+    "_detail_inter_item_delay_seconds",
+    "run_detail_worker_batch",
+    "run_detail_worker_loop",
 )

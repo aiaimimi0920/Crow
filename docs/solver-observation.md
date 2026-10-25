@@ -23,7 +23,7 @@ Linux 的 `slow_exact_v4`、`slow_settle_v4`、`slow_dense_v4` 保留各自 prof
 
 私有输出目录包含 `run.json`（固定开始/结束时间）、`events.jsonl`（白名单脱敏事件）、`business.jsonl`、`issues.jsonl`、`checkpoint.json` 与原子更新的 `report.json`。不保存原始日志、响应体、Cookie、完整 URL、令牌或异常消息；目标与 completion ID 仅保留可关联哈希。
 
-建议由独立 systemd service 运行，使用唯一 unit 和输出目录，不依赖 SSH 会话。重启同一命令会复用原窗口和已持久化事件；文件锁拒绝重复实例。日志读取失败保留 cursor，后续补采；容器更换补采保留的旧 exact ID，重启边界使旧未完成调用不能跨生命周期完成。日志轮转或应用未发出的事件仍可能无法检测。
+建议由独立 systemd service 运行，使用唯一 unit 和输出目录，不依赖 SSH 会话。重启同一命令会复用原窗口和已持久化事件；文件锁拒绝重复实例。日志读取或事件持久化失败均保留 cursor，只有本批事件全部落盘后才推进检查点；恢复后补采未持久化事件，已落盘事件按 ID 去重。容器更换补采保留的旧 exact ID，重启边界使旧未完成调用不能跨生命周期完成。日志轮转或应用未发出的事件仍可能无法检测。
 
 `window_finished` 表示时间窗口结束，不等于无缺口；同时查看 `logs_read_through_deadline` 与 `coverage_issues`。未到期只能报告阶段数据。若达到结束时间仍不能读取，记录缺口后停止，不无限延长采样或假装统计完整。
 

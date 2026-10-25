@@ -214,7 +214,6 @@ def observe(args):
                     }
                     if boundary["id"] not in seen:
                         projected.append(boundary)
-                read_ok = True
                 for row in sorted(projected, key=lambda e: (e["epoch"], e["at"])):
                     if row["id"] in seen:
                         continue
@@ -222,6 +221,9 @@ def observe(args):
                     seen.add(row["id"])
                     events.append(row)
                 events.sort(key=lambda e: (e["epoch"], e["at"]))
+                # Advance only after every projected event is durably appended.
+                # A failed write must be replayable beyond the two-second overlap.
+                read_ok = True
                 if time.time() >= next_sample or upper >= run["end_epoch"]:
                     next_sample = time.time() + 300
                     try:

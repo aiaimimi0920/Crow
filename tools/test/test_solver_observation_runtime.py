@@ -155,3 +155,63 @@ def test_partial_multi_container_read_does_not_poison_dedup(fake_host, monkeypat
     monitor.observe(args)
     rows = monitor.load_rows(args.output / "events.jsonl")
     assert sum(r["kind"] == "local_solver_start" for r in rows) == 1
+
+
+@pytest.mark.parametrize("at_deadline", [False, True])
+def test_event_write_failure_preserves_cursor_and_recovers_without_duplicates(
+    fake_host, monkeypatch, at_deadline
+):
+    from tools.solver_observation_evidence import timestamp
+
+    args, _, clock, _, original_docker = fake_host
+    start = clock[0]
+    args.hours = (3 if at_deadline else 9) / 3600
+    args.interval = 3
+    rows = [
+        (start + 0.2, {"kind": "local_solver_start"}),
+        (start + 0.4, {"kind": "local_solver_end", "success": False}),
+    ]
+
+    def docker(*parts, **options):
+        if parts[0] != "logs":
+            return original_docker(*parts, **options)
+        lower = timestamp(parts[parts.index("--since") + 1])
+        upper = timestamp(parts[parts.index("--until") + 1])
+        lines = [
+            monitor.utc(epoch) + " " + json.dumps(row)
+            for epoch, row in rows
+            if lower <= epoch <= upper
+        ]
+        return SimpleNamespace(stdout="\n".join(lines), stderr="")
+
+    original_append = monitor.append
+    failed = False
+
+    def append(path, row):
+        nonlocal failed
+        if (
+            path.name == "events.jsonl"
+            and row["kind"] == "local_solver_end"
+            and not failed
+        ):
+            failed = True
+            raise OSError("synthetic private disk failure")
+        original_append(path, row)
+
+    monkeypatch.setattr(monitor, "docker", docker)
+    monkeypatch.setattr(monitor, "append", append)
+    monitor.observe(args)
+    assert failed
+    if at_deadline:
+        checkpoint = json.loads((args.output / "checkpoint.json").read_text())
+        assert checkpoint["cursor"] == start
+        report = json.loads((args.output / "report.json").read_text())
+        assert report["window_finished"] and not report["logs_read_through_deadline"]
+        monitor.observe(args)
+    saved = monitor.load_rows(args.output / "events.jsonl")
+    assert [r["kind"] for r in saved] == ["local_solver_start", "local_solver_end"]
+    report_text = (args.output / "report.json").read_text()
+    report = json.loads(report_text)
+    assert report["logs_read_through_deadline"]
+    assert any(issue["kind"] == "log_read_gap" for issue in report["coverage_issues"])
+    assert "synthetic private" not in report_text

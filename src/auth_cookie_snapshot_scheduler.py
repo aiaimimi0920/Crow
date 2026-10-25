@@ -37,12 +37,36 @@ def schedule_refresh(
     completion_request: dict[str, object] | None = None,
     stop_event: Event | None = None,
 ) -> dict[str, object]:
+    # Explicit None is the legacy owner, not a missing scope hint.
+    scope_value = payload.get("scope", (completion_request or {}).get("scope"))
+    scope = str(scope_value or "").strip().lower() or None
     with state.lock:
         if stop_event is not None and stop_event.is_set():
             raise RuntimeError("Collection application is closing")
         current = cast(dict[str, object], state.snapshot())
+        same_completion = (
+            bool(completion_id) and current.get("completion_id") == completion_id
+        )
+        if finalize_auth:
+            same_completion = bool(
+                same_completion
+                and current.get("expected_challenge_id") == expected_challenge_id
+                and current.get("scope") == scope
+            )
         if state.active_thread() is not None:
-            current["retry_queued"] = True
+            if not same_completion:
+                # This request was not queued and cannot consume the active job's proof.
+                current.update(
+                    status="busy",
+                    refreshed=False,
+                    auth_state_confirmed=False,
+                    retry_queued=False,
+                )
+            else:
+                current["retry_queued"] = current.get("status") in {
+                    "pending",
+                    "running",
+                }
             current["reason"] = "refresh_already_running"
             return current
         if not refresh_enabled:
@@ -61,16 +85,13 @@ def schedule_refresh(
                     }
                 ),
             )
-        if (
-            completion_id
-            and current.get("completion_id") == completion_id
-            and current.get("status") == "completed"
-        ):
+        if same_completion and current.get("status") == "completed":
             return current
         state.replace(
             {
                 "status": "pending",
                 "completion_id": completion_id,
+                "scope": scope,
                 "attempts": 0,
                 "max_attempts": retry_attempts(),
                 "refreshed": False,
