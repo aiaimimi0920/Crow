@@ -1,4 +1,5 @@
 """Bounded discovery, five-case qualification and failover for collection AI."""
+
 import re
 import sqlite3
 import threading
@@ -9,7 +10,10 @@ import requests
 from src.llm_analysis_policy import require_non_gpt_analysis_model
 from src.llm_model_selector import LLMBackendUnavailableError
 from src.llm_qualification_cases import CASES, INSTRUCTION, VERSION, exact_match
-from src.llm_qualification_diagnostics import report_request_failure
+from src.llm_qualification_diagnostics import (
+    report_fallback_selection,
+    report_request_failure,
+)
 from src.llm_qualification_runtime import (
     QualificationCancelled,
     check_cancelled,
@@ -26,13 +30,21 @@ from src.project_environment import getenv as project_getenv
 MAX_CANDIDATES = 8
 PROBE_TIMEOUT = 60
 QUALIFICATION_TTL = 86400
-MEDIA = re.compile(r"image|embedding|rerank|(?:^|[-_/])(?:tts|asr|ocr|video|audio)(?:$|[-_/])|flux", re.IGNORECASE)
+MEDIA = re.compile(
+    r"image|embedding|rerank|(?:^|[-_/])(?:tts|asr|ocr|video|audio)(?:$|[-_/])|flux",
+    re.IGNORECASE,
+)
 _REFRESH_LOCK = threading.Lock()
 _REFRESH_THREADS = {}
 
 
 def pool_enabled():
-    return project_getenv("CROW_ANALYSIS_MODEL_POOL_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
+    return project_getenv("CROW_ANALYSIS_MODEL_POOL_ENABLED", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def eligible_model(model):
@@ -61,15 +73,24 @@ class RequestBudgetExceeded(LLMBackendUnavailableError):
 
 
 class QualifiedModelPool:
-    def __init__(self, config, *, proxies=None, store=None, session=None, cancel_event=None):
+    def __init__(
+        self, config, *, proxies=None, store=None, session=None, cancel_event=None
+    ):
         self.config = config
         self.probe_timeout = min(PROBE_TIMEOUT, max(1, float(config["timeout"])))
         self.store = store if store is not None else shared_store(config)
-        self.cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        self.cancel_event = (
+            cancel_event if cancel_event is not None else threading.Event()
+        )
         self.session = session or requests.Session()
         self.session.trust_env = False
         self.session.proxies = proxies or {}
         self.headers = {"Authorization": "Bearer " + config["api_key"]}
+
+    def allowed_models(self):
+        """Configuration authorizes exact IDs; discovery and stored scores do not."""
+        models = [self.config.get("model"), *self.config.get("models", [])]
+        return list(dict.fromkeys(name for name in models if eligible_model(name)))
 
     def available(self):
         now = time.time()
@@ -77,17 +98,28 @@ class QualifiedModelPool:
         if snapshot.get("cooldown_until", 0) > now:
             return []
         rows = snapshot["models"]
-        good = [(name, row) for name, row in rows.items() if eligible_model(name)
-                and qualified_score(row) and row["checked_at"] + QUALIFICATION_TTL > now
-                and row.get("blocked_until", 0) <= now]
-        good.sort(key=lambda item: (-item[1]["score"], item[1]["elapsed"], item[0]))
-        return [name for name, _ in good[:5]]
+        return [
+            name
+            for name in self.allowed_models()
+            if name in rows
+            and qualified_score(rows[name])
+            and rows[name]["checked_at"] + QUALIFICATION_TTL > now
+            and rows[name].get("blocked_until", 0) <= now
+        ]
 
     def _scan_complete(self, snapshot):
-        # A new permitted preferred route must not be hidden by an older catalog scan.
+        # Neither a new route nor an expired primary may hide behind a ready fallback.
+        now = time.time()
+        rows = snapshot["models"]
         return snapshot.get("scan_complete") and all(
-            not eligible_model(name) or name in snapshot["models"]
-            for name in self.config.get("models", [])
+            name in rows
+            and (
+                rows[name].get("blocked_until", 0) > now
+                or rows[name]["checked_at"]
+                + (QUALIFICATION_TTL if qualified_score(rows[name]) else 900)
+                > now
+            )
+            for name in self.allowed_models()
         )
 
     def _backoff_qualification(self, exc):
@@ -102,9 +134,14 @@ class QualifiedModelPool:
         from src.llm_request_policy import MAX_OUTPUT_TOKENS
 
         check_cancelled(self.cancel_event)
-        if not eligible_model(model):
+        if model not in self.allowed_models():
             raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
-        payload = {"model": model, "messages": request_messages(content), "temperature": 0, "max_tokens": MAX_OUTPUT_TOKENS}
+        payload = {
+            "model": model,
+            "messages": request_messages(content),
+            "temperature": 0,
+            "max_tokens": MAX_OUTPUT_TOKENS,
+        }
         if self.config.get("reasoning_effort"):
             payload["reasoning_effort"] = self.config["reasoning_effort"]
         if probe:
@@ -130,14 +167,23 @@ class QualifiedModelPool:
             raise RequestBudgetExceeded()
         if self.store.snapshot().get("cooldown_until", 0) > time.time():
             raise ModelRateLimitedError(0)
-        if not eligible_model(model):
+        if model not in self.allowed_models():
             raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
         try:
-            body = request_json(self.session, "post", self.config["base_url"] + "/chat/completions",
-                                headers=self.headers, json=payload,
-                                timeout=timeout,
-                                max_bytes=65536 if probe else 2097152)
-        except (requests.RequestException, LLMBackendUnavailableError, ValueError) as exc:
+            body = request_json(
+                self.session,
+                "post",
+                self.config["base_url"] + "/chat/completions",
+                headers=self.headers,
+                json=payload,
+                timeout=timeout,
+                max_bytes=65536 if probe else 2097152,
+            )
+        except (
+            requests.RequestException,
+            LLMBackendUnavailableError,
+            ValueError,
+        ) as exc:
             check_cancelled(self.cancel_event)
             report_request_failure(model, probe=probe, error=exc)
             if probe:
@@ -149,34 +195,34 @@ class QualifiedModelPool:
         try:
             value = body["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError):
-            raise LLMBackendUnavailableError("LLM backend unavailable: invalid chat response") from None
+            raise LLMBackendUnavailableError(
+                "LLM backend unavailable: invalid chat response"
+            ) from None
         if not isinstance(value, str) or not value.strip():
-            raise LLMBackendUnavailableError("LLM backend unavailable: empty chat response")
+            raise LLMBackendUnavailableError(
+                "LLM backend unavailable: empty chat response"
+            )
         return value
 
     def discover(self):
         check_cancelled(self.cancel_event)
-        body = request_json(self.session, "get", self.config["base_url"] + "/models",
-                            headers=self.headers, timeout=min(10, self.probe_timeout), max_bytes=2097152)
+        body = request_json(
+            self.session,
+            "get",
+            self.config["base_url"] + "/models",
+            headers=self.headers,
+            timeout=min(10, self.probe_timeout),
+            max_bytes=2097152,
+        )
         data = body.get("data") if isinstance(body, dict) else None
         if not isinstance(data, list) or len(data) > 10000:
             raise LLMBackendUnavailableError("LLM backend unavailable: invalid catalog")
-        names = {row.get("id") for row in data if isinstance(row, dict) and eligible_model(row.get("id"))}
-        # Try different families before spending a whole batch on one provider's aliases.
-        preferred = self.config.get("models", [])
-        families = ("deepseek", "glm", "gemini", "qwen", "mistral", "grok", "kimi", "minimax", "llama", "claude")
-        buckets = {}
-        for name in names:
-            family = next((family for family in families if family in name.casefold()), "other")
-            buckets.setdefault(family, []).append(name)
-        ranked = []
-        for family, models in buckets.items():
-            models.sort(key=lambda name: (not any(word in name.casefold() for word in ("flash", "small", "mini")),
-                                          "think" in name.casefold(), "/" in name, len(name), name))
-            for index, name in enumerate(models):
-                ranked.append((0 if name in preferred else 1, index,
-                               families.index(family) if family in families else len(families), name))
-        return [row[-1] for row in sorted(ranked)]
+        names = {
+            row.get("id")
+            for row in data
+            if isinstance(row, dict) and eligible_model(row.get("id"))
+        }
+        return [name for name in self.allowed_models() if name in names]
 
     def ensure(self, *, continue_scan=True):
         check_cancelled(self.cancel_event)
@@ -189,6 +235,9 @@ class QualifiedModelPool:
 
     def _ensure(self, *, continue_scan=True):
         from src.llm_evidence_prompt import EvidencePrompt
+
+        if not self.allowed_models():
+            return []
         active = self.available()
         snapshot = self.store.snapshot()
         if active and (not continue_scan or self._scan_complete(snapshot)):
@@ -205,24 +254,19 @@ class QualifiedModelPool:
             records = self.store.snapshot()["models"]
             now = time.time()
             ordered = [
-                name for name in candidates if name not in records or (
+                name
+                for name in candidates
+                if name not in records
+                or (
                     records[name].get("blocked_until", 0) <= now
                     and records[name]["checked_at"]
-                    + (QUALIFICATION_TTL if qualified_score(records[name]) else 900) <= now
+                    + (QUALIFICATION_TTL if qualified_score(records[name]) else 900)
+                    <= now
                 )
             ]
             # Catalogs can shrink during provider cooldown. Remember IDs, not positions,
             # so changing catalogs cannot repeatedly restart the first eight probes.
-            # Renew explicit and previously qualified routes before exploring aliases;
-            # a large failing catalog must not starve the routes that carried business.
-            preferred = {name: index for index, name in enumerate(self.config.get("models", []))}
-
-            def priority(name):
-                row = records.get(name, {})
-                tier = 0 if name in preferred else 1 if qualified_score(row) else 2
-                return tier, preferred.get(name, 0), name in records, row.get("checked_at", 0)
-
-            ordered.sort(key=priority)
+            # Discovery preserves explicit primary/fallback order. No catalog expansion.
             tested = 0
             for model in ordered[:MAX_CANDIDATES]:
                 check_cancelled(self.cancel_event)
@@ -233,7 +277,12 @@ class QualifiedModelPool:
                 errors = []
                 for source, expected in CASES:
                     try:
-                        answer = self.request(model, EvidencePrompt(INSTRUCTION, source), probe=True, deadline=deadline)
+                        answer = self.request(
+                            model,
+                            EvidencePrompt(INSTRUCTION, source),
+                            probe=True,
+                            deadline=deadline,
+                        )
                         matches.append(int(exact_match(answer, expected)))
                         errors.append(None)
                     except QualificationCancelled:
@@ -241,24 +290,55 @@ class QualifiedModelPool:
                     except (ModelRateLimitedError, RequestBudgetExceeded):
                         # An account limit is not five wrong answers from this model.
                         return self.available()
-                    except (requests.RequestException, LLMBackendUnavailableError, ValueError) as exc:
-                        errors.append(str(exc) if isinstance(exc, LLMBackendUnavailableError) else type(exc).__name__)
-                        self.store.record(model, {"score": None, "matches": matches, "errors": errors,
-                            "checked_at": time.time(), "elapsed": round(time.monotonic() - start, 3),
-                            "blocked_until": 0, "version": VERSION, "status": "probe_error"})
+                    except (
+                        requests.RequestException,
+                        LLMBackendUnavailableError,
+                        ValueError,
+                    ) as exc:
+                        errors.append(
+                            str(exc)
+                            if isinstance(exc, LLMBackendUnavailableError)
+                            else type(exc).__name__
+                        )
+                        self.store.record(
+                            model,
+                            {
+                                "score": None,
+                                "matches": matches,
+                                "errors": errors,
+                                "checked_at": time.time(),
+                                "elapsed": round(time.monotonic() - start, 3),
+                                "blocked_until": 0,
+                                "version": VERSION,
+                                "status": "probe_error",
+                            },
+                        )
                         self._backoff_qualification(exc)
                         return self.available()
                 score = sum(matches)
-                self.store.record(model, {"score": score, "matches": matches, "errors": errors,
-                    "checked_at": time.time(), "elapsed": round(time.monotonic() - start, 3),
-                    "blocked_until": 0, "version": VERSION})
+                self.store.record(
+                    model,
+                    {
+                        "score": score,
+                        "matches": matches,
+                        "errors": errors,
+                        "checked_at": time.time(),
+                        "elapsed": round(time.monotonic() - start, 3),
+                        "blocked_until": 0,
+                        "version": VERSION,
+                    },
+                )
                 tested += 1
             cursor = len(set(candidates) & self.store.snapshot()["models"].keys())
             complete = tested == len(ordered)
             return self.available()
         except QualificationCancelled:
             raise
-        except (requests.RequestException, ValueError, LLMBackendUnavailableError) as exc:
+        except (
+            requests.RequestException,
+            ValueError,
+            LLMBackendUnavailableError,
+        ) as exc:
             self._backoff_qualification(exc)
             return self.available()
         except RuntimeError:
@@ -269,13 +349,19 @@ class QualifiedModelPool:
     def refresh_in_background(self):
         """Preflight never waits for a benchmark or claims a business item."""
         active = self.available()
+        if not self.allowed_models():
+            return active
         snapshot = self.store.snapshot()
-        if ((active and self._scan_complete(snapshot)) or snapshot["lease_until"] > time.time()
-                or snapshot["next_scan"] > time.time()):
+        if (
+            (active and self._scan_complete(snapshot))
+            or snapshot["lease_until"] > time.time()
+            or snapshot["next_scan"] > time.time()
+        ):
             return active
         key = self.store.key
         with _REFRESH_LOCK:
             if key not in _REFRESH_THREADS:
+
                 def run():
                     try:
                         self.ensure()
@@ -285,7 +371,10 @@ class QualifiedModelPool:
                         with _REFRESH_LOCK:
                             _REFRESH_THREADS.pop(key, None)
                         self.session.close()
-                thread = threading.Thread(target=run, name="analysis-model-qualification", daemon=True)
+
+                thread = threading.Thread(
+                    target=run, name="analysis-model-qualification", daemon=True
+                )
                 _REFRESH_THREADS[key] = thread
                 thread.start()
         return active
@@ -295,14 +384,16 @@ class QualifiedModelPool:
         candidates = self.available()
         if model:
             candidates = [model] if model in candidates else []
-        else:
-            candidates = self.store.route_order(candidates)
+        # A healthy primary is never rotated away by historical shared route_cursor.
         for candidate in candidates:
             if candidate not in self.available():
                 continue
             try:
                 answer = self.request(candidate, content)
                 self.config["last_successful_model"] = candidate
+                preferred = self.allowed_models()[0]
+                if candidate != preferred:
+                    report_fallback_selection(candidate, preferred=preferred)
                 return answer
             except QualificationCancelled:
                 raise
@@ -311,4 +402,6 @@ class QualifiedModelPool:
             except (requests.RequestException, LLMBackendUnavailableError, ValueError):
                 self.store.disable(candidate)
         # Re-qualification is performed by the next worker preflight, not per item.
-        raise LLMBackendUnavailableError("LLM backend unavailable: qualified model pool exhausted or probing")
+        raise LLMBackendUnavailableError(
+            "LLM backend unavailable: qualified model pool exhausted or probing"
+        )

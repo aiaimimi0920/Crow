@@ -119,3 +119,63 @@ def test_stale_operator_reason_without_active_pause_does_not_block_detail():
     status["collection_scopes"]["seed"]["paused"] = False
     result = detail_worker_policy._normalize_collection_pause_state(status)
     assert result["paused"] is False
+
+
+@pytest.mark.parametrize(
+    "reason", ["operator_paused", "collection_paused", "manual_required"]
+)
+def test_paused_batch_stops_after_one_status_check_without_inter_item_wait(
+    tmp_path, monkeypatch, reason
+):
+    from tools import worker_lifecycle
+
+    calls = {"status": 0, "counts": 0}
+
+    def status(_base):
+        calls["status"] += 1
+        return {"paused": True, "reason": reason, "captcha_solver": {}}
+
+    def counts():
+        calls["counts"] += 1
+        return {}
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("paused batch must not claim, process or wait between items")
+
+    monkeypatch.setattr(detail_worker, "_collection_pause_state_with_retry", status)
+    monkeypatch.setattr(worker_lifecycle, "checkpoint", lambda _: True)
+    monkeypatch.setattr(worker_lifecycle, "wait", unexpected)
+    result = detail_worker.run_detail_worker_batch(
+        detail_worker.DetailWorkerConfig(
+            output_dir=tmp_path,
+            cdp_endpoint="",
+            api_base_url="https://example.invalid/api",
+            target_success=10,
+            max_attempts=30,
+            raw_only=True,
+            llm_preflight_enabled=False,
+            failure_delay_seconds=15,
+            worker_id="paused-batch",
+            do_risk=False,
+        ),
+        repository=SimpleNamespace(
+            seed_queue_counts=counts, claim_seed_detail_item=unexpected
+        ),
+        http_session=None,
+        browser_pages={},
+        process_item_func=unexpected,
+    )
+    assert result["attempts"] == 1
+    assert result["completed"] == 0
+    assert result["claimed_items"] == 0
+    assert result["process_item_calls"] == 0
+    assert result["analysis_item_calls"] == 0
+    assert result["paused_results"] == 1
+    assert result["page_requests"] is None
+    assert result["decision_counts"] == {"detail_collection_paused": 1}
+    assert result["results"][0]["decision"] == "detail_collection_paused"
+    assert calls["status"] == 1
+    assert calls["counts"] == 1
+    assert result["counts_metadata"]["valid"] is True
+    event = detail_worker._detail_batch_progress_event(1, result)
+    assert event["counts_metadata"] == result["counts_metadata"]

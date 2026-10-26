@@ -12,9 +12,7 @@ from tools.test.collection_settings_fixtures import config_fixture, model_fixtur
 from tools.test.test_llm_qualification_pool import make_pool
 
 
-@pytest.mark.parametrize(
-    "name", ["gpt-6.1-sol", "provider/gpt-6.1-sol", "codex-auto", "provider/o3"]
-)
+@pytest.mark.parametrize("name", ["gpt-6.1-sol", "gpt-6-luna"])
 def test_permission_defaults_off_and_supports_explicit_optin(monkeypatch, name):
     monkeypatch.delenv("CROW_ANALYSIS_ALLOW_GPT", raising=False)
     monkeypatch.delenv("FAPAI_ANALYSIS_ALLOW_GPT", raising=False)

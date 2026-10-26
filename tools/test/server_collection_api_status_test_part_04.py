@@ -13,6 +13,8 @@ def test_repeated_old_completion_id_does_not_clear_a_new_manual_required_state(m
         lambda _payload, current_id, **_kwargs: {
             "status": "completed",
             "completion_id": current_id,
+            "scope": _payload.get("scope"),
+            "expected_challenge_id": _kwargs.get("expected_challenge_id"),
             "refreshed": True,
             "retry_queued": False,
         },
@@ -58,6 +60,8 @@ def test_collection_observer_auth_complete_rejects_unconfirmed_cleanup(monkeypat
         lambda _payload, completion_id, **_kwargs: {
             "status": "completed",
             "completion_id": completion_id,
+            "scope": _payload.get("scope"),
+            "expected_challenge_id": _kwargs.get("expected_challenge_id"),
             "refreshed": True,
             "retry_queued": False,
         },

@@ -15,7 +15,10 @@ def run_detail_worker_batch(
     analyze_item_func: AnalyzeItemFunc = analyze_raw_item,
 ) -> dict[str, Any]:
     from tools.worker_lifecycle import checkpoint, wait
+    from tools.detail_worker_statistics import worker_queue_statistics
+    from tools.detail_worker_observation import batch_observation
 
+    started = time.monotonic()
     if config.llm_preflight_enabled and not config.raw_only:
         preflight = _run_llm_preflight(config)
     else:
@@ -31,7 +34,8 @@ def run_detail_worker_batch(
             "max_attempts": config.max_attempts,
             "llm_preflight": preflight,
             "results": [],
-            "counts": repository.seed_queue_counts(),
+            **worker_queue_statistics(repository),
+            **batch_observation([], elapsed_seconds=time.monotonic() - started),
         }
         _write_runtime_summary(config.output_dir, summary)
         return summary
@@ -70,7 +74,9 @@ def run_detail_worker_batch(
         if result.get("decision") in {
             "detail_queue_empty",
             "detail_analysis_queue_empty",
+            "detail_collection_paused",
         }:
+            # Hand control back to the existing scope-aware, cancellable batch wait.
             break
         item_completed = result.get("decision") in {
             "detail_item_completed",
@@ -103,7 +109,8 @@ def run_detail_worker_batch(
         "challenge_break": challenge_break,
         "retry_after_seconds": challenge_retry_after_seconds,
         "results": results,
-        "counts": repository.seed_queue_counts(),
+        **worker_queue_statistics(repository),
+        **batch_observation(results, elapsed_seconds=time.monotonic() - started),
     }
     _write_runtime_summary(config.output_dir, summary)
     return summary
@@ -156,7 +163,9 @@ def run_detail_worker_loop(
     runtime_context_factory: RuntimeContextFactory | None = None,
     progress_emit_func: ProgressEmitFunc | None = None,
 ) -> dict[str, Any]:
-    from tools.worker_lifecycle import checkpoint, wait
+    from tools.worker_lifecycle import checkpoint
+    from tools.detail_worker_statistics import worker_queue_statistics
+    from tools.detail_worker_wait import wait_after_detail_batch, wait_without_auth_poll
 
     if runtime_context_factory is None:
         if http_session is None or browser_pages is None:
@@ -177,7 +186,7 @@ def run_detail_worker_loop(
                 "decision": "detail_worker_leases_released",
                 "worker_id": config.worker_id,
                 "release_summary": release_summary,
-                "counts": repository.seed_queue_counts(),
+                **worker_queue_statistics(repository),
             }
             emit_progress({"event": "detail_worker_leases_released", **release_event})
             _write_runtime_summary(config.output_dir, release_event)
@@ -194,7 +203,7 @@ def run_detail_worker_loop(
                     "run": runs,
                     "decision": "detail_runtime_refresh_reused_last_context",
                     "error": safe_exception_text(exc),
-                    "counts": repository.seed_queue_counts(),
+                    **worker_queue_statistics(repository),
                 }
                 emit_progress(reuse_event)
                 _write_runtime_summary(config.output_dir, reuse_event)
@@ -204,7 +213,7 @@ def run_detail_worker_loop(
                     "run": runs,
                     "decision": "detail_runtime_refresh_failed",
                     "error": safe_exception_text(exc),
-                    "counts": repository.seed_queue_counts(),
+                    **worker_queue_statistics(repository),
                 }
                 emit_progress(failure_event)
                 _write_runtime_summary(config.output_dir, failure_event)
@@ -217,9 +226,13 @@ def run_detail_worker_loop(
                         "run": runs,
                         "sleep_seconds": sleep_seconds,
                         "counts": failure_event.get("counts"),
+                        "counts_metadata": failure_event.get("counts_metadata"),
                     }
                 )
-                wait(sleep_seconds)
+                receipt = wait_without_auth_poll(sleep_seconds)
+                emit_progress(
+                    {"event": "detail_worker_wait_finished", "run": runs, **receipt}
+                )
                 continue
         result = run_detail_worker_batch(
             config,
@@ -240,17 +253,21 @@ def run_detail_worker_loop(
                 "run": runs,
                 "sleep_seconds": sleep_seconds,
                 "counts": result.get("counts"),
+                **(
+                    {"counts_metadata": result["counts_metadata"]}
+                    if "counts_metadata" in result
+                    else {}
+                ),
             }
         )
-        from tools.detail_worker_wait import wait_after_detail_batch
-
-        wait_after_detail_batch(config, result, sleep_seconds)
+        receipt = wait_after_detail_batch(config, result, sleep_seconds)
+        emit_progress({"event": "detail_worker_wait_finished", "run": runs, **receipt})
     summary = {
         "decision": "detail_worker_loop_finished",
         "runs": runs,
         "last_decision": results[-1].get("decision") if results else None,
         "results": results[-20:],
-        "counts": repository.seed_queue_counts(),
+        **worker_queue_statistics(repository),
     }
     _write_runtime_summary(config.output_dir, summary)
     return summary

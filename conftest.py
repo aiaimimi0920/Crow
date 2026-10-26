@@ -248,6 +248,13 @@ def _use_fast_local_server_poll(
     if collection_status:
         monkeypatch.chdir(runtime_root)
         monkeypatch.delenv("FAPAI_SOLVER_STATE_DIR", raising=False)
+        # Projection/auth tests need deterministic counts, not a live async loader.
+        # Background status responsiveness has its own blocked-loader regressions.
+        from src.collection_statistics import StatisticsCache
+
+        monkeypatch.setattr(
+            server_module._collection_statistics, "SNAPSHOTS", StatisticsCache()
+        )
     neutral_runtime = RuntimeState()
     monkeypatch.setattr(server_module, "RUNTIME", neutral_runtime)
     monkeypatch.setattr(server_module, "DATA_DIR", str(runtime_root))

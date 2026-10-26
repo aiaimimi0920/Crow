@@ -20,6 +20,8 @@ def _emit_progress_event(event: dict[str, Any]) -> None:
 
 
 def _detail_batch_progress_event(run: int, result: dict[str, Any]) -> dict[str, Any]:
+    from tools.detail_worker_observation import batch_observation
+
     results = result.get("results") if isinstance(result.get("results"), list) else []
     last_result = results[-1] if results and isinstance(results[-1], dict) else {}
     return {
@@ -33,6 +35,14 @@ def _detail_batch_progress_event(run: int, result: dict[str, Any]) -> dict[str, 
         "last_result_decision": last_result.get("decision"),
         "last_item_id": last_result.get("item_id"),
         "counts": result.get("counts"),
+        **batch_observation(
+            results, elapsed_seconds=result.get("batch_elapsed_seconds")
+        ),
+        **(
+            {"counts_metadata": result["counts_metadata"]}
+            if "counts_metadata" in result
+            else {}
+        ),
     }
 
 
@@ -70,7 +80,9 @@ def _record_analysis_module_b_receipt(
         )
 
 
-def _load_analysis_module_b_latest(output_dir: Path, item_id: str) -> dict[str, Any] | None:
+def _load_analysis_module_b_latest(
+    output_dir: Path, item_id: str
+) -> dict[str, Any] | None:
     path = output_dir / item_id / "analysis-b" / "latest.json"
     if not path.exists():
         return None
@@ -115,7 +127,12 @@ def _write_durable_detail_archive(
     回填工具可以按 item_id 直接 glob，不依赖 DB 里记的路径。
     """
     moment = captured_at or datetime.datetime.now()
-    target_dir = archive_root / "html_archive" / moment.strftime("%Y") / moment.strftime("%Y-%m-%d")
+    target_dir = (
+        archive_root
+        / "html_archive"
+        / moment.strftime("%Y")
+        / moment.strftime("%Y-%m-%d")
+    )
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / f"item-{item_id}.html"
     shutil.copyfile(detail_html_path, target_path)
@@ -145,11 +162,15 @@ def _archive_raw_detail_if_configured(
             item_id=item_id,
         )
     except Exception as archive_error:
-        print(f"[DETAIL-ARCHIVE] durable archive failed for {item_id}: {safe_exception_text(archive_error)}")
+        print(
+            f"[DETAIL-ARCHIVE] durable archive failed for {item_id}: {safe_exception_text(archive_error)}"
+        )
         return ""
 
 
-def _stage_raw_detail_artifacts_for_analysis(seed: dict[str, Any], *, output_dir: Path, item_id: str) -> dict[str, Any]:
+def _stage_raw_detail_artifacts_for_analysis(
+    seed: dict[str, Any], *, output_dir: Path, item_id: str
+) -> dict[str, Any]:
     item_dir = output_dir / item_id
     item_dir.mkdir(parents=True, exist_ok=True)
     seed_payload = dict(seed)
@@ -159,9 +180,15 @@ def _stage_raw_detail_artifacts_for_analysis(seed: dict[str, Any], *, output_dir
     if not isinstance(artifacts, dict):
         artifacts = {}
     staged = {
-        "detail_html_path": _copy_raw_artifact(artifacts.get("detail_html_path"), item_dir / "detail.html"),
-        "description_json_path": _copy_raw_artifact(artifacts.get("description_json_path"), item_dir / "description-data.json"),
-        "selected_json_path": _copy_raw_artifact(artifacts.get("selected_json_path"), item_dir / "selected.json"),
+        "detail_html_path": _copy_raw_artifact(
+            artifacts.get("detail_html_path"), item_dir / "detail.html"
+        ),
+        "description_json_path": _copy_raw_artifact(
+            artifacts.get("description_json_path"), item_dir / "description-data.json"
+        ),
+        "selected_json_path": _copy_raw_artifact(
+            artifacts.get("selected_json_path"), item_dir / "selected.json"
+        ),
     }
     return {key: value for key, value in staged.items() if value}
 
@@ -181,27 +208,33 @@ def _raw_detail_final_url(selected_json_path: Path) -> str:
     return str(fetch.get("detail_final_url") or "")
 
 
-def _assert_raw_detail_artifact_is_not_challenge(*, detail_html_path: Path, selected_json_path: Path) -> None:
+def _assert_raw_detail_artifact_is_not_challenge(
+    *, detail_html_path: Path, selected_json_path: Path
+) -> None:
     try:
         html = detail_html_path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise RuntimeError(f"raw detail artifact missing or unreadable: {detail_html_path}") from exc
+        raise RuntimeError(
+            f"raw detail artifact missing or unreadable: {detail_html_path}"
+        ) from exc
     final_url = _raw_detail_final_url(selected_json_path)
     if is_challenge_page(html, final_url):
-        raise RuntimeError(f"raw detail artifact returned anti-bot challenge: {final_url}")
+        raise RuntimeError(
+            f"raw detail artifact returned anti-bot challenge: {final_url}"
+        )
 
 
 __all__ = (
-    '_build_runtime_context',
-    '_emit_progress_event',
-    '_detail_batch_progress_event',
-    '_load_final_item',
-    '_record_analysis_module_b_receipt',
-    '_load_analysis_module_b_latest',
-    '_copy_raw_artifact',
-    '_write_durable_detail_archive',
-    '_archive_raw_detail_if_configured',
-    '_stage_raw_detail_artifacts_for_analysis',
-    '_raw_detail_final_url',
-    '_assert_raw_detail_artifact_is_not_challenge',
+    "_build_runtime_context",
+    "_emit_progress_event",
+    "_detail_batch_progress_event",
+    "_load_final_item",
+    "_record_analysis_module_b_receipt",
+    "_load_analysis_module_b_latest",
+    "_copy_raw_artifact",
+    "_write_durable_detail_archive",
+    "_archive_raw_detail_if_configured",
+    "_stage_raw_detail_artifacts_for_analysis",
+    "_raw_detail_final_url",
+    "_assert_raw_detail_artifact_is_not_challenge",
 )

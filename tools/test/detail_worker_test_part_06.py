@@ -194,7 +194,13 @@ def test_run_detail_worker_once_exits_cleanly_when_queue_is_empty(tmp_path: Path
         process_item_func=lambda *_args, **_kwargs: {},
     )
 
-    assert summary == {"decision": "detail_queue_empty"}
+    assert summary == {
+        "decision": "detail_queue_empty",
+        "claimed_items": 0,
+        "process_item_calls": 0,
+        "analysis_item_calls": 0,
+        "paused_results": 0,
+    }
 
 def test_run_detail_worker_loop_refreshes_runtime_context_each_batch(tmp_path: Path, monkeypatch) -> None:
     repo = _make_repo(tmp_path)
@@ -318,6 +324,7 @@ def test_run_detail_worker_loop_emits_compact_batch_and_sleep_events(tmp_path: P
     assert [event["event"] for event in events] == [
         "detail_worker_batch",
         "detail_worker_sleep",
+        "detail_worker_wait_finished",
         "detail_worker_batch",
     ]
     assert events[0]["run"] == 1
@@ -331,6 +338,10 @@ def test_run_detail_worker_loop_emits_compact_batch_and_sleep_events(tmp_path: P
         "sleep_seconds": 7,
         "counts": events[0]["counts"],
     }
+    assert events[2]["requested_wait_seconds"] == 7
+    assert events[2]["status_poll_count"] == 0
+    assert events[2]["wait_exit"] == "wait_returned"
+    assert events[2]["actual_wait_seconds"] >= 0
 
 def test_run_detail_worker_loop_uses_active_sleep_after_productive_batch(tmp_path: Path, monkeypatch) -> None:
     repo = _make_repo(tmp_path)

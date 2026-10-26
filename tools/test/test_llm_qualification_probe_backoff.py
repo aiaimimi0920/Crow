@@ -1,4 +1,5 @@
 """An exploratory model failure must not stop already qualified business routes."""
+
 import time
 
 import pytest
@@ -13,6 +14,7 @@ def ready_pool(tmp_path):
     pool = make_pool(tmp_path, {"good": 5})
     assert pool.ensure() == ["good"]
     pool.session.models["candidate"] = 5
+    pool.config["models"].append("candidate")
     pool.store.change(lambda state: state.update(next_scan=0, scan_complete=False))
     return pool
 
@@ -41,7 +43,9 @@ def fail_exploration(pool, phase, failure, calls):
 
 @pytest.mark.parametrize("phase", ["catalog", "candidate"])
 @pytest.mark.parametrize("failure", ["timeout", "invalid_response", 400, 503])
-def test_failed_exploration_defers_scan_but_keeps_qualified_business(tmp_path, phase, failure):
+def test_failed_exploration_defers_scan_but_keeps_qualified_business(
+    tmp_path, phase, failure
+):
     pool = ready_pool(tmp_path)
     qualified_before = pool.store.snapshot()["models"]["good"]
     calls = []
@@ -66,7 +70,9 @@ def test_failed_exploration_defers_scan_but_keeps_qualified_business(tmp_path, p
 
 @pytest.mark.parametrize("phase", ["catalog", "candidate"])
 @pytest.mark.parametrize("status", [401, 403, 429])
-def test_account_rejection_still_blocks_qualified_routes_across_workers(tmp_path, phase, status):
+def test_account_rejection_still_blocks_qualified_routes_across_workers(
+    tmp_path, phase, status
+):
     pool = ready_pool(tmp_path)
     qualified_before = pool.store.snapshot()["models"]["good"]
     calls = []

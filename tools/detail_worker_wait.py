@@ -11,9 +11,25 @@ from tools.detail_worker_pause_state import (
 from tools.internal_api_http import fetch_json
 
 
+def _receipt(started, seconds, polls, exit_reason):
+    return {
+        "requested_wait_seconds": seconds,
+        "actual_wait_seconds": round(max(0.0, time.monotonic() - started), 3),
+        "status_poll_count": polls,
+        "wait_exit": exit_reason,
+    }
+
+
+def wait_without_auth_poll(seconds):
+    started = time.monotonic()
+    worker_lifecycle.wait(seconds)
+    return _receipt(started, seconds, 0, "wait_returned")
+
+
 def wait_after_detail_batch(
     config: DetailWorkerConfig, result: dict, seconds: float
-) -> None:
+) -> dict:
+    started, polls = time.monotonic(), 0
     challenge_wait = any(
         isinstance(item, dict)
         and (
@@ -30,17 +46,18 @@ def wait_after_detail_batch(
         or seconds <= 30
     ):
         worker_lifecycle.wait(seconds)
-        return
+        return _receipt(started, seconds, polls, "wait_returned")
 
     deadline = time.monotonic() + seconds
     while worker_lifecycle.checkpoint("detail_auth_backoff"):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return
+            return _receipt(started, seconds, polls, "deadline_elapsed")
         worker_lifecycle.wait(min(remaining, 30))
         if not worker_lifecycle.checkpoint("detail_auth_backoff"):
-            return
+            return _receipt(started, seconds, polls, "stopping")
         try:
+            polls += 1
             status = fetch_json(config.api_base_url.rstrip("/") + "/status", timeout=5)
         except (OSError, ValueError, TimeoutError):
             continue
@@ -65,4 +82,5 @@ def wait_after_detail_batch(
             and detail.get("manual_required") is False
             and not detail.get("challenge_id")
         ):
-            return
+            return _receipt(started, seconds, polls, "detail_resumed")
+    return _receipt(started, seconds, polls, "stopping")

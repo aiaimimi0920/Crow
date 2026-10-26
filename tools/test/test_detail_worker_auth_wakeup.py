@@ -42,7 +42,7 @@ def run(
 
     monkeypatch.setattr(owner, "fetch_json", fetch)
     config = SimpleNamespace(analysis_only=analysis, api_base_url="https://nas/api")
-    owner.wait_after_detail_batch(config, {"results": [{"reason": reason}]}, 900)
+    return owner.wait_after_detail_batch(config, {"results": [{"reason": reason}]}, 900)
 
 
 def resumed():
@@ -60,9 +60,15 @@ def resumed():
 
 @pytest.mark.parametrize("layout", ["top", "collection_scopes", "scopes"])
 def test_confirmed_recovery_wakes_worker_within_one_poll(monkeypatch, clock, layout):
-    run(monkeypatch, clock, resumed(), layout=layout)
+    receipt = run(monkeypatch, clock, resumed(), layout=layout)
     assert clock["now"] == 30
     assert clock["requests"] == 1
+    assert receipt == {
+        "requested_wait_seconds": 900,
+        "actual_wait_seconds": 30,
+        "status_poll_count": 1,
+        "wait_exit": "detail_resumed",
+    }
 
 
 @pytest.mark.parametrize(
@@ -98,8 +104,10 @@ def test_confirmed_recovery_wakes_worker_within_one_poll(monkeypatch, clock, lay
 def test_unknown_or_still_blocked_state_keeps_backoff(
     monkeypatch, clock, status, layout
 ):
-    run(monkeypatch, clock, status, layout=layout)
+    receipt = run(monkeypatch, clock, status, layout=layout)
     assert clock["now"] == 900
+    assert receipt["wait_exit"] == "deadline_elapsed"
+    assert receipt["status_poll_count"] == clock["requests"] == 30
 
 
 @pytest.mark.parametrize(
@@ -111,18 +119,45 @@ def test_unknown_or_still_blocked_state_keeps_backoff(
     ],
 )
 def test_unrelated_backoffs_do_not_probe_or_wake(monkeypatch, clock, analysis, reason):
-    run(monkeypatch, clock, resumed(), analysis=analysis, reason=reason)
+    receipt = run(monkeypatch, clock, resumed(), analysis=analysis, reason=reason)
     assert clock["waits"] == [900]
     assert clock["requests"] == 0
+    assert receipt["wait_exit"] == "wait_returned"
+    assert receipt["actual_wait_seconds"] == 900
 
 
 def test_shutdown_during_wait_does_not_probe(monkeypatch, clock):
     monkeypatch.setattr(
         owner.worker_lifecycle, "checkpoint", lambda _: clock["now"] == 0
     )
-    run(monkeypatch, clock, resumed())
+    receipt = run(monkeypatch, clock, resumed())
     assert clock["now"] == 30
     assert clock["requests"] == 0
+    assert receipt["wait_exit"] == "stopping"
+
+
+def test_already_stopping_has_no_wait_or_probe(monkeypatch, clock):
+    monkeypatch.setattr(owner.worker_lifecycle, "checkpoint", lambda _: False)
+    receipt = run(monkeypatch, clock, resumed())
+    assert clock["waits"] == []
+    assert clock["requests"] == 0
+    assert receipt["actual_wait_seconds"] == 0
+    assert receipt["wait_exit"] == "stopping"
+
+
+def test_actual_wait_includes_status_request_time(monkeypatch, clock):
+    def fetch(*_args, **_kwargs):
+        clock["now"] += 4
+        return resumed()
+
+    monkeypatch.setattr(owner, "fetch_json", fetch)
+    receipt = owner.wait_after_detail_batch(
+        SimpleNamespace(analysis_only=False, api_base_url="https://nas/api"),
+        {"results": [{"decision": "detail_collection_paused"}]},
+        900,
+    )
+    assert receipt["actual_wait_seconds"] == 34
+    assert receipt["status_poll_count"] == 1
 
 
 @pytest.mark.parametrize("authoritative", [{}, {"detail": {"paused": True}}])

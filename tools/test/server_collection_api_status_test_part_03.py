@@ -276,6 +276,7 @@ def test_collection_observer_auth_complete_keeps_pause_while_cookie_snapshot_is_
             "completion_id": "desktop-completion-1",
             "refresh_cookie_snapshot": True,
             "scheduled_completion_id": "desktop-completion-1",
+            "scope": "",
             "finalize_auth": True,
             "expected_challenge_id": None,
         }
@@ -373,6 +374,8 @@ def test_collection_observer_auth_complete_is_idempotent_for_repeated_completion
         lambda _payload, current_id, **_kwargs: {
             "status": "completed",
             "completion_id": current_id,
+            "scope": _payload.get("scope"),
+            "expected_challenge_id": _kwargs.get("expected_challenge_id"),
             "refreshed": True,
             "retry_queued": False,
         },

@@ -11,6 +11,26 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def report_fallback_selection(model: str, *, preferred: str) -> None:
+    """Reuse hashed model identities; never log credentials or business content."""
+    try:
+        logger.info(
+            "%s",
+            json.dumps(
+                {
+                    "kind": "analysis_model_fallback_selected",
+                    "phase": "business",
+                    "model": "sha256:"
+                    + hashlib.sha256(model.encode("utf-8")).hexdigest(),
+                    "preferred_model": "sha256:"
+                    + hashlib.sha256(preferred.encode("utf-8")).hexdigest(),
+                }
+            ),
+        )
+    except Exception:  # noqa: BLE001 -- diagnostics must never change a successful request
+        return
+
+
 def report_request_failure(model: str, *, probe: bool, error: Exception) -> None:
     """Best effort only: never log exception text, URLs, headers or response bodies."""
     try:

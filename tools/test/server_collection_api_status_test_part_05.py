@@ -243,6 +243,7 @@ def test_refresh_auth_cookie_snapshot_derives_node_scoped_path_when_env_is_missi
     repo_root.mkdir(parents=True)
     shared_root = repo_root / "FPFData"
     shared_root.mkdir()
+    (shared_root / "datas").mkdir()
     cookies = [{"name": "cookie2", "value": "v", "domain": ".taobao.com", "path": "/"}]
     writes: list[tuple[list[dict[str, object]], str]] = []
 

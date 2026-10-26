@@ -46,6 +46,7 @@ def test_run_detail_worker_loop_retries_after_runtime_context_refresh_failure(tm
     assert [event["event"] for event in events] == [
         "detail_worker_runtime_refresh_failed",
         "detail_worker_sleep",
+        "detail_worker_wait_finished",
         "detail_worker_batch",
     ]
     assert events[0]["run"] == 1
@@ -103,10 +104,12 @@ def test_run_detail_worker_loop_reuses_last_runtime_context_after_later_refresh_
     assert [event["event"] for event in events] == [
         "detail_worker_batch",
         "detail_worker_sleep",
+        "detail_worker_wait_finished",
         "detail_worker_runtime_refresh_reused_last_context",
         "detail_worker_batch",
     ]
-    assert events[2]["run"] == 2
-    assert events[2]["error"] == "RuntimeError: runtime_error"
+    assert events[2]["requested_wait_seconds"] == 5
+    assert events[3]["run"] == 2
+    assert events[3]["error"] == "RuntimeError: runtime_error"
     assert summary["runs"] == 2
     assert summary["last_decision"] == "detail_worker_batch_finished"

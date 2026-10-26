@@ -14,6 +14,10 @@ def run_detail_worker_once(
     process_item_func: Callable[..., dict[str, Any]] = process_item,
     exclude_item_ids: set[str] | None = None,
 ) -> dict[str, Any]:
+    from tools.detail_worker_statistics import worker_queue_statistics
+    from tools.detail_worker_observation import item_observation
+
+    observation = item_observation()
     config.output_dir.mkdir(parents=True, exist_ok=True)
     pause_state = _collection_pause_state_with_retry(config.api_base_url)
     pause_override = False
@@ -21,11 +25,13 @@ def run_detail_worker_once(
         if _pause_state_has_resolved_open_detail_page(pause_state, browser_pages):
             pause_override = True
         else:
+            observation["paused_results"] = 1
             summary = {
                 "decision": "detail_collection_paused",
                 "reason": pause_state.get("reason") or "collection_paused",
                 "captcha_solver": pause_state.get("captcha_solver") or {},
-                "counts": repository.seed_queue_counts(),
+                **worker_queue_statistics(repository),
+                **observation,
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
@@ -38,10 +44,11 @@ def run_detail_worker_once(
         failure_cooldown_seconds=config.failure_cooldown_seconds,
     )
     if seed is None:
-        summary = {"decision": "detail_queue_empty"}
+        summary = {"decision": "detail_queue_empty", **observation}
         _write_runtime_summary(config.output_dir, summary)
         return summary
 
+    observation["claimed_items"] = 1
     item_id = str(seed.get("item_id") or seed.get("id") or seed.get("source_item_id"))
     detail_target_url = ""
     try:
@@ -50,17 +57,21 @@ def run_detail_worker_once(
             item_id,
             adapter=config.collection_adapter,
         )
+        live_config = _live_config(config, target_url=detail_target_url)
+        observation["process_item_calls"] = 1
         selected = process_item_func(
             http_session,
             seed,
             browser_pages,
-            config=_live_config(config, target_url=detail_target_url),
+            config=live_config,
         )
         final_json_path = config.output_dir / item_id / "final.json"
         selected_json_path = config.output_dir / item_id / "selected.json"
         if config.raw_only:
             detail_html_path = config.output_dir / item_id / "detail.html"
-            description_json_path = config.output_dir / item_id / "description-data.json"
+            description_json_path = (
+                config.output_dir / item_id / "description-data.json"
+            )
             _assert_raw_detail_artifact_is_not_challenge(
                 detail_html_path=detail_html_path,
                 selected_json_path=selected_json_path,
@@ -83,7 +94,8 @@ def run_detail_worker_once(
                 "detail_html_path": str(detail_html_path),
                 "description_json_path": str(description_json_path),
                 "selected_json_path": str(selected_json_path),
-                "counts": repository.seed_queue_counts(),
+                **worker_queue_statistics(repository),
+                **observation,
             }
             if archived_path:
                 summary["detail_archive_path"] = archived_path
@@ -115,7 +127,8 @@ def run_detail_worker_once(
             "selected": selected,
             "final_json_path": str(final_json_path),
             "selected_json_path": str(selected_json_path),
-            "counts": repository.seed_queue_counts(),
+            **worker_queue_statistics(repository),
+            **observation,
         }
         if pause_override:
             summary["pause_override"] = "resolved_open_detail_page"
@@ -125,10 +138,13 @@ def run_detail_worker_once(
         is_challenge_error = _is_detail_challenge_error(exc)
         is_transient_dns = _is_transient_dns_error(exc)
         is_cdp_unreachable = isinstance(exc, CdpEndpointUnavailableError)
-        preserve_retry_budget = _challenge_retry_budget_preserved(
-            is_challenge_error=is_challenge_error,
-            is_transient_dns=is_transient_dns,
-        ) or is_cdp_unreachable
+        preserve_retry_budget = (
+            _challenge_retry_budget_preserved(
+                is_challenge_error=is_challenge_error,
+                is_transient_dns=is_transient_dns,
+            )
+            or is_cdp_unreachable
+        )
         captcha_solver_report: dict[str, Any] | None = None
         if (
             is_challenge_error
@@ -144,9 +160,14 @@ def run_detail_worker_once(
                 if config.solver_enabled:
                     captcha_solver_report = _report_captcha_solver(*report_args)
                 else:
-                    captcha_solver_report = _report_captcha_solver(*report_args, manual_only=True)
+                    captcha_solver_report = _report_captcha_solver(
+                        *report_args, manual_only=True
+                    )
             except Exception as solver_exc:
-                captcha_solver_report = {"status": "report_failed", "error": safe_exception_text(solver_exc)}
+                captcha_solver_report = {
+                    "status": "report_failed",
+                    "error": safe_exception_text(solver_exc),
+                }
         repository.mark_seed_detail_failed(
             item_id,
             safe_exception_text(exc),
@@ -155,7 +176,8 @@ def run_detail_worker_once(
             restore_pending=preserve_retry_budget,
         )
         stale_challenge_suppressed = bool(
-            is_challenge_error and _captcha_report_suppresses_challenge(captcha_solver_report)
+            is_challenge_error
+            and _captcha_report_suppresses_challenge(captcha_solver_report)
         )
         summary = {
             "decision": "detail_item_retryable_failure",
@@ -173,7 +195,8 @@ def run_detail_worker_once(
             "item_id": item_id,
             "error": safe_exception_text(exc),
             "traceback": safe_exception_traceback(exc),
-            "counts": repository.seed_queue_counts(),
+            **worker_queue_statistics(repository),
+            **observation,
         }
         if pause_override:
             summary["pause_override"] = "resolved_open_detail_page"
@@ -199,6 +222,10 @@ def run_detail_analysis_once(
     analyze_item_func: AnalyzeItemFunc = analyze_raw_item,
     exclude_item_ids: set[str] | None = None,
 ) -> dict[str, Any]:
+    from tools.detail_worker_statistics import worker_queue_statistics
+    from tools.detail_worker_observation import item_observation
+
+    observation = item_observation()
     config.output_dir.mkdir(parents=True, exist_ok=True)
     seed = repository.claim_seed_raw_detail_item(
         config.worker_id,
@@ -207,16 +234,26 @@ def run_detail_analysis_once(
         max_analysis_attempts=config.item_max_attempts,
     )
     if seed is None:
-        summary = {"decision": "detail_analysis_queue_empty"}
+        summary = {"decision": "detail_analysis_queue_empty", **observation}
         _write_runtime_summary(config.output_dir, summary)
         return summary
 
+    observation["claimed_items"] = 1
     item_id = str(seed.get("item_id") or seed.get("id") or seed.get("source_item_id"))
     try:
-        staged_artifacts = _stage_raw_detail_artifacts_for_analysis(seed, output_dir=config.output_dir, item_id=item_id)
-        selected = analyze_item_func(item_id, output_dir=config.output_dir, do_risk=config.do_risk)
-        module_b_receipt = selected.get("analysis_module_b") if isinstance(selected, dict) else None
-        _record_analysis_module_b_receipt(repository, item_id=item_id, receipt=module_b_receipt)
+        staged_artifacts = _stage_raw_detail_artifacts_for_analysis(
+            seed, output_dir=config.output_dir, item_id=item_id
+        )
+        observation["analysis_item_calls"] = 1
+        selected = analyze_item_func(
+            item_id, output_dir=config.output_dir, do_risk=config.do_risk
+        )
+        module_b_receipt = (
+            selected.get("analysis_module_b") if isinstance(selected, dict) else None
+        )
+        _record_analysis_module_b_receipt(
+            repository, item_id=item_id, receipt=module_b_receipt
+        )
         final_json_path = config.output_dir / item_id / "final.json"
         selected_json_path = config.output_dir / item_id / "selected.json"
         final_item = _load_final_item(config.output_dir, item_id)
@@ -244,7 +281,8 @@ def run_detail_analysis_once(
             "final_json_path": str(final_json_path),
             "selected_json_path": str(selected_json_path),
             "staged_raw_artifacts": staged_artifacts,
-            "counts": repository.seed_queue_counts(),
+            **worker_queue_statistics(repository),
+            **observation,
         }
         _write_runtime_summary(config.output_dir, summary)
         return summary
@@ -268,23 +306,27 @@ def run_detail_analysis_once(
                 "item_id": item_id,
                 "error": backend_error,
                 "traceback": safe_exception_traceback(exc),
-                "counts": repository.seed_queue_counts(),
+                **worker_queue_statistics(repository),
+                **observation,
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
-        repository.mark_seed_detail_analysis_failed(item_id, safe_exception_text(exc), retryable=True)
+        repository.mark_seed_detail_analysis_failed(
+            item_id, safe_exception_text(exc), retryable=True
+        )
         summary = {
             "decision": "detail_analysis_retryable_failure",
             "item_id": item_id,
             "error": safe_exception_text(exc),
             "traceback": safe_exception_traceback(exc),
-            "counts": repository.seed_queue_counts(),
+            **worker_queue_statistics(repository),
+            **observation,
         }
         _write_runtime_summary(config.output_dir, summary)
         return summary
 
 
 __all__ = (
-    'run_detail_worker_once',
-    'run_detail_analysis_once',
+    "run_detail_worker_once",
+    "run_detail_analysis_once",
 )

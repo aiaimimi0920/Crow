@@ -44,7 +44,10 @@ class Session:
         if len(messages) == 2:
             import json as json_module
 
-            prompt = INSTRUCTION + json_module.loads(messages[1]["content"])["source_evidence"]
+            prompt = (
+                INSTRUCTION
+                + json_module.loads(messages[1]["content"])["source_evidence"]
+            )
         else:
             prompt = messages[0]["content"]
         answer = "production"
@@ -58,30 +61,53 @@ class Session:
         pass
 
 
-def make_pool(tmp_path, models, **overrides):
-    config = {"base_url": "https://models.example.test/v1", "api_key": "test-key",
-              "model": "a", "models": [], "timeout": 10, **overrides}
+def make_pool(tmp_path, catalog, **overrides):
+    # Mock catalogs are explicitly authorized by default; tests can narrow models.
+    allowed = overrides.get("models", list(catalog))
+    config = {
+        "base_url": "https://models.example.test/v1",
+        "api_key": "test-key",
+        "model": next(iter(allowed), "a"),
+        "models": allowed,
+        "timeout": 10,
+        **overrides,
+    }
     store = QualificationStore(config, tmp_path / "private" / "pool.sqlite3")
     # Rate scheduling is exercised separately with a deterministic clock.
     store.reserve_request_slot = lambda: 0
-    session = Session(models)
+    session = Session(catalog)
     return QualifiedModelPool(config, store=store, session=session)
 
 
-@pytest.mark.parametrize("model", ["gpt-5.4", "openai/gpt-oss-120b", "codex-auto-review",
-    "o3", "provider/openai/o3", "provider/o1-mini", "gpt-image-2", "FLUX.2-dev",
-    "mimo-v2.5-tts", "Qwen3-Embedding-8B", "Qwen3-Reranker-8B", "", None])
+@pytest.mark.parametrize(
+    "model",
+    [
+        "gpt-5.4",
+        "openai/gpt-oss-120b",
+        "codex-auto-review",
+        "o3",
+        "provider/openai/o3",
+        "provider/o1-mini",
+        "gpt-image-2",
+        "FLUX.2-dev",
+        "mimo-v2.5-tts",
+        "Qwen3-Embedding-8B",
+        "Qwen3-Reranker-8B",
+        "",
+        None,
+    ],
+)
 def test_excluded_models_never_eligible(model):
     assert not eligible_model(model)
 
 
-def test_five_exact_cases_ranking_and_no_excluded_calls(tmp_path):
-    pool = make_pool(tmp_path, {"a": 5, "b": 4, "c": 3, "d": 5, "e": 5, "f": 5,
-                                "g": 4, "gpt-5.4": 5, "o3": 5})
+def test_five_exact_cases_configured_order_and_no_excluded_calls(tmp_path):
+    pool = make_pool(
+        tmp_path,
+        {"a": 5, "b": 4, "c": 3, "d": 5, "e": 5, "f": 5, "g": 4, "gpt-5.4": 5, "o3": 5},
+    )
     selected = pool.ensure()
-    assert len(selected) == 5
-    assert {"a", "d", "e", "f"}.issubset(selected)
-    assert "c" not in selected
+    assert selected == ["a", "b", "d", "e", "f", "g"]
     assert len(pool.session.calls) == 35
     assert "gpt-5.4" not in pool.session.calls and "o3" not in pool.session.calls
     rows = pool.store.snapshot()["models"]
@@ -128,7 +154,7 @@ def test_shared_single_flight_key_change_and_crash_recovery(tmp_path):
     assert b"test-key" not in pool.store.path.read_bytes()
 
 
-def test_bounded_batches_continue_to_find_best_models(tmp_path):
+def test_bounded_batches_continue_explicit_candidates_in_order(tmp_path):
     pool = make_pool(tmp_path, {f"m{i:02}": 4 if i < 8 else 5 for i in range(12)})
     pool.ensure()
     assert len(pool.session.calls) == 40
@@ -138,7 +164,7 @@ def test_bounded_batches_continue_to_find_best_models(tmp_path):
     pool.store.change(lambda state: state.update(next_scan=0))
     selected = pool.ensure()
     assert len(pool.session.calls) == 60
-    assert all(f"m{i:02}" in selected for i in range(8, 12))
+    assert selected == [f"m{i:02}" for i in range(12)]
     assert pool.store.snapshot()["scan_complete"]
 
 
@@ -146,6 +172,7 @@ def test_empty_catalog_and_bad_response_are_not_success(tmp_path):
     pool = make_pool(tmp_path, {})
     assert pool.ensure() == []
     pool.session.post = lambda *_a, **_kw: Response({"choices": []})
+    pool.config.update(model="deepseek", models=["deepseek"])
     with pytest.raises(LLMBackendUnavailableError, match="invalid chat"):
         pool.request("deepseek", "test")
     with pytest.raises(LLMBackendUnavailableError, match="excluded"):
@@ -165,27 +192,37 @@ def test_explicit_route_cannot_silently_fallback(tmp_path):
 def test_preflight_reuses_pool_without_spending_calls(tmp_path, monkeypatch):
     from src import llm_helper, llm_openai_compatible
     from src import llm_qualification_pool
+
     pool = make_pool(tmp_path, {"a": 5})
     pool.ensure()
     monkeypatch.setenv("FAPAI_ANALYSIS_MODEL_POOL_ENABLED", "1")
-    monkeypatch.setattr(llm_openai_compatible, "_get_openai_compatible_config", lambda: pool.config)
-    monkeypatch.setattr(llm_qualification_pool, "QualifiedModelPool", lambda *_a, **_kw: pool)
+    monkeypatch.setattr(
+        llm_openai_compatible, "_get_openai_compatible_config", lambda: pool.config
+    )
+    monkeypatch.setattr(
+        llm_qualification_pool, "QualifiedModelPool", lambda *_a, **_kw: pool
+    )
     result = llm_helper.preflight_openai_compatible_backend(check_chat=True)
     assert result["chat_status_code"] == 200 and result["qualified_models"] == ["a"]
     assert len(pool.session.calls) == 5
     assert llm_helper.chat_with_glm("actual data") == "production"
 
 
-def test_background_refresh_does_not_block_preflight_or_repeat_in_same_process(tmp_path, monkeypatch):
+def test_background_refresh_does_not_block_preflight_or_repeat_in_same_process(
+    tmp_path, monkeypatch
+):
     import threading
     from src import llm_qualification_pool as module
+
     pool = make_pool(tmp_path, {"a": 5})
     entered, release = threading.Event(), threading.Event()
     calls = []
+
     def probe():
         calls.append(1)
         entered.set()
         release.wait(5)
+
     monkeypatch.setattr(pool, "ensure", probe)
     try:
         assert pool.refresh_in_background() == []
@@ -201,6 +238,7 @@ def test_background_refresh_does_not_block_preflight_or_repeat_in_same_process(t
 
 def test_transport_closes_and_rejects_oversized_and_redirect_responses():
     from src.llm_qualification_transport import request_json
+
     session = Session({})
     response = Response({"large": "x" * 100})
     closed = []
@@ -219,6 +257,7 @@ def test_catalog_change_tests_unseen_ids_without_retesting_the_prefix(tmp_path):
     pool = make_pool(tmp_path, {f"m{i:02}": 0 for i in range(12)})
     pool.ensure()
     pool.session.models["aa"] = 5
+    pool.config["models"].append("aa")  # Catalog discovery alone is not admission.
     pool.store.change(lambda state: state.update(next_scan=0))
     assert "aa" in pool.ensure()
     assert pool.session.calls.count("m00") == 5

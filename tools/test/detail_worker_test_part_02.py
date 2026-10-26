@@ -195,7 +195,13 @@ def test_run_detail_worker_once_passes_failure_cooldown_to_repository(tmp_path: 
         process_item_func=lambda *_args, **_kwargs: {},
     )
 
-    assert summary == {"decision": "detail_queue_empty"}
+    assert summary == {
+        "decision": "detail_queue_empty",
+        "claimed_items": 0,
+        "process_item_calls": 0,
+        "analysis_item_calls": 0,
+        "paused_results": 0,
+    }
     assert repository.claim_kwargs is not None
     assert repository.claim_kwargs["failure_cooldown_seconds"] == 1800
 
