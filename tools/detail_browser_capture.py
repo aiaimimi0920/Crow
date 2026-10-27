@@ -28,6 +28,8 @@ def run_capture_process(
 
         job = CaptureJob()
     process = None
+    started_at = time.monotonic()
+    deadline_error = None
     try:
         process = subprocess.Popen(
             command,
@@ -42,8 +44,19 @@ def run_capture_process(
             job.assign(process.pid)
         try:
             output, _ = process.communicate(request, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            raise TimeoutError("detail browser capture deadline exceeded") from None
+        except subprocess.TimeoutExpired as error:
+            from tools.capture_progress import (
+                CaptureDeadlineExceeded,
+                parse_capture_progress,
+            )
+
+            observed_at = time.monotonic()
+            deadline_error = CaptureDeadlineExceeded(
+                parse_capture_progress(
+                    error.stderr, started_at=started_at, observed_at=observed_at
+                )
+            )
+            raise deadline_error from None
         if process.returncode:
             raise RuntimeError("detail browser capture helper failed")
         return output
@@ -54,10 +67,16 @@ def run_capture_process(
 
             cleanup_capture_session(process, deadline=deadline)
         else:
-            _cleanup_windows_capture(job, process, deadline=deadline)
+            stderr = _cleanup_windows_capture(job, process, deadline=deadline)
+            # Windows reader threads expose buffered stderr only after EOF.
+            if deadline_error is not None and stderr:
+                deadline_error.progress = parse_capture_progress(
+                    stderr, started_at=started_at, observed_at=observed_at
+                )
 
 
 def _cleanup_windows_capture(job, process, *, deadline):
+    stderr = None
     try:
         if job:
             job.close()
@@ -66,15 +85,19 @@ def _cleanup_windows_capture(job, process, *, deadline):
             if process.poll() is None:
                 process.kill()
             try:
-                process.communicate(timeout=max(0.001, deadline - time.monotonic()))
+                _, stderr = process.communicate(
+                    timeout=max(0.001, deadline - time.monotonic())
+                )
             except subprocess.TimeoutExpired:
                 raise SystemExit(
                     "detail capture process cleanup did not finish"
                 ) from None
+    return stderr
 
 
 def decode_capture_reply(output, *, cdp_endpoint):
     from src.project_environment import EnvironmentAliasConflict
+    from tools.capture_failure_diagnostics import CaptureHelperError
     from tools.live_smoke_context import (
         CdpEndpointUnavailableError,
         DetailChallengeError,
@@ -99,10 +122,14 @@ def decode_capture_reply(output, *, cdp_endpoint):
         raise DetailChallengeError(value["operation"], value["challenge_url"])
     if kind == "cdp":
         raise CdpEndpointUnavailableError(
-            cdp_endpoint, value["operation"], RuntimeError("capture transport failed")
+            cdp_endpoint,
+            value["operation"],
+            CaptureHelperError(value.get("diagnostic")),
         )
     if kind == "configuration":
         raise EnvironmentAliasConflict(value["message"])
+    if kind == "error":
+        raise CaptureHelperError(value.get("diagnostic"))
     raise RuntimeError("detail browser capture failed")
 
 
@@ -110,7 +137,14 @@ def capture_detail_with_deadline(seed, *, cdp_endpoint):
     from tools.live_smoke_context import CdpEndpointUnavailableError
 
     request = json.dumps(
-        {"seed": seed, "cdp_endpoint": cdp_endpoint}, ensure_ascii=False
+        {
+            "seed": seed,
+            "cdp_endpoint": cdp_endpoint,
+            "deadline_monotonic": time.monotonic()
+            + DEFAULT_CAPTURE_SECONDS
+            - CLEANUP_SECONDS,
+        },
+        ensure_ascii=False,
     ).encode("utf-8")
     try:
         output = run_capture_process(

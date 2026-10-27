@@ -363,35 +363,42 @@ def test_connect_tab_reuses_cached_target_websocket_when_list_is_unavailable(mon
     ]
     assert len([item for item in requested if item[0] == "PUT"]) == 1
 
+
 def test_connect_tab_reuses_probed_target_before_page_compaction() -> None:
     solver = captcha_solver.CaptchaSolver(
         port=9223,
         target_url="https://sf.taobao.com/list/50025969__2.htm?page=3&__captcha_solver_bg=1",
     )
-    solver._remember_target_tab(
-        {
-            "id": "visible-slider",
-            "url": "https://sf.taobao.com/list/50025969__2.htm?__captcha_solver_bg=1",
-            "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/visible-slider",
-        }
+    visible = {
+        "id": "visible-slider",
+        "type": "page",
+        "url": "https://sf.taobao.com/list/50025969__2.htm?page=3&__captcha_solver_bg=1",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/visible-slider",
+    }
+    solver._remember_target_tab(visible)
+    solver._get_json = lambda _endpoint: (
+        [visible]
+        + [
+            {
+                "id": f"page-{index}",
+                "type": "page",
+                "url": f"https://example.test/{index}",
+                "webSocketDebuggerUrl": f"ws://127.0.0.1:9223/devtools/page/page-{index}",
+            }
+            for index in range(captcha_solver.DEFAULT_CDP_PAGE_TARGET_LIMIT)
+        ]
     )
-    solver._get_json = lambda _endpoint: [
-        {
-            "id": f"page-{index}",
-            "type": "page",
-            "url": f"https://example.test/{index}",
-            "webSocketDebuggerUrl": f"ws://127.0.0.1:9223/devtools/page/page-{index}",
-        }
-        for index in range(captcha_solver.DEFAULT_CDP_PAGE_TARGET_LIMIT)
-    ]
-    solver._compact_cdp_pages_if_needed = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-        AssertionError("a live probed target must be reused before compaction")
-    )
+    solver._compact_cdp_pages_if_needed = lambda *_args, **_kwargs: (
+        _ for _ in ()
+    ).throw(AssertionError("a live probed target must be reused before compaction"))
     connected: list[str] = []
-    solver._connect_to_target = lambda target_ws, _title: connected.append(target_ws) or True
+    solver._connect_to_target = lambda target_ws, _title: (
+        connected.append(target_ws) or True
+    )
 
     assert solver.connect_tab() is True
     assert connected == ["ws://127.0.0.1:9223/devtools/page/visible-slider"]
+
 
 def test_connect_tab_prunes_same_route_duplicates_before_cached_target_reuse() -> None:
     target_url = "https://sf.taobao.com/list/50025969__2.htm?__captcha_solver_bg=1"

@@ -107,10 +107,19 @@ def test_compaction_reuses_snapshot_when_refresh_fails(monkeypatch):
         "http://cdp.test",
         {
             "scopes": {
-                "seed": {"challenge_id": "s", "last_request": {"target_url": "seed"}},
+                "seed": {
+                    "challenge_id": "s",
+                    "last_request": {
+                        "target_url": "seed",
+                        "cdp_endpoint": "http://cdp.test",
+                    },
+                },
                 "detail": {
                     "challenge_id": "d",
-                    "last_request": {"target_url": "detail"},
+                    "last_request": {
+                        "target_url": "detail",
+                        "cdp_endpoint": "http://cdp.test",
+                    },
                 },
             }
         },

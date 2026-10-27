@@ -223,6 +223,18 @@ class CaptchaCDPMixin:
     def connect_tab(self):
         """Connect to the background worker tab using explicit URL parameters."""
         tabs = self._get_json("list")
+        seed_target = self._solver_target_scope(self.target_url) == "seed"
+        if seed_target and self.target_ws_url:
+            cached_url = self.current_target_url if tabs is None else None
+            for tab in tabs if isinstance(tabs, list) else []:
+                if isinstance(tab, dict) and tab.get("id") == self.target_id:
+                    cached_url = tab.get("url")
+                    self._remember_target_tab(tab)
+                    break
+            if not cached_url or not self._manual_challenge_matches_requested_target(
+                cached_url
+            ):
+                self._reset_current_target()
         if tabs is None:
             if self.target_ws_url:
                 logger.info("[SOLVER] CDP target list unavailable; reusing cached target websocket.")
@@ -276,12 +288,20 @@ class CaptchaCDPMixin:
         target_ws = None
         target_title = ""
         normalized_target_url = self._normalize_target_url(self.target_url)
+        if seed_target:
+            tabs = [
+                tab
+                for tab in tabs
+                if isinstance(tab, dict)
+                and self._manual_challenge_matches_requested_target(tab.get("url"))
+            ]
 
         # Priority 0: exact requested target URL
         if normalized_target_url:
             for tab in tabs:
                 url = self._normalize_target_url(tab.get("url", ""))
-                if url == normalized_target_url:
+                same_seed = seed_target and self._solver_target_scope(url) == "seed"
+                if url == normalized_target_url or same_seed:
                     self._remember_target_tab(tab)
                     target_ws = tab.get("webSocketDebuggerUrl")
                     target_title = tab.get("title", "")

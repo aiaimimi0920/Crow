@@ -5,7 +5,7 @@ import logging
 import random
 
 from .captcha_dom import eval_in_all_frames
-from .captcha_verification import ready_target_matches
+from .captcha_verification import ready_target_matches, retry_failure_is_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,11 @@ class CaptchaSliderMixin:
 
             function tryFind(doc, frameOffsetX, frameOffsetY, context) {{
                 for (var i = 0; i < selectors.length; i++) {{
-                    var el = doc.querySelector(selectors[i]);
-                    if (el && el.offsetParent !== null) {{
+                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
+                        var r = node.getBoundingClientRect();
+                        return r.width > 5 && r.height > 5;
+                    }});
+                    if (el) {{
                         var rect = el.getBoundingClientRect();
                         if (rect.width > 5 && rect.height > 5) {{
                             return {{
@@ -62,7 +65,7 @@ class CaptchaSliderMixin:
                 return null;
             }}
 
-            return visitAccessibleDocuments(tryFind, false);
+            return visitAccessibleDocuments(tryFind, true);
         }})()
         """
         ret = self._send_cdp("Runtime.evaluate", {
@@ -103,7 +106,9 @@ class CaptchaSliderMixin:
 
             function tryFind(doc) {{
                 for (var i = 0; i < selectors.length; i++) {{
-                    var el = doc.querySelector(selectors[i]);
+                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
+                        return node.getBoundingClientRect().width > 50;
+                    }});
                     if (el) {{
                         var rect = el.getBoundingClientRect();
                         if (rect.width > 50) {{
@@ -114,7 +119,7 @@ class CaptchaSliderMixin:
                 return null;
             }}
 
-            return visitAccessibleDocuments(tryFind, false);
+            return visitAccessibleDocuments(tryFind, true);
         }})()
         """
 
@@ -140,11 +145,14 @@ class CaptchaSliderMixin:
             var selectors = {track_selectors_js};
             function find(doc) {{
                 for (var i = 0; i < selectors.length; i++) {{
-                    var el = doc.querySelector(selectors[i]);
+                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
+                        var r = node.getBoundingClientRect();
+                        return r.width > 50 && r.height > 5;
+                    }});
                     if (!el) continue;
                     var rect = el.getBoundingClientRect();
                     if (rect.width > 50 && rect.height > 5) {{
-                        var handle = doc.querySelector(__NC_HANDLE_SELECTOR__);
+                        var handle = firstVisibleMatch(doc, __NC_HANDLE_SELECTOR__);
                         return {{
                             left: rect.left,
                             top: rect.top,
@@ -158,7 +166,7 @@ class CaptchaSliderMixin:
                 }}
                 return null;
             }}
-            return visitAccessibleDocuments(find, false);
+            return visitAccessibleDocuments(find, true);
         }})()
         """
         ret = self._send_cdp("Runtime.evaluate", {
@@ -200,21 +208,20 @@ class CaptchaSliderMixin:
                 }
 
                 // Check for NC success class
-                var container = doc.querySelector('.nc-container');
-                if (container && container.className) {
-                    if (verificationElementVisible(container) && (' ' + container.className + ' ').indexOf(' nc-success ') !== -1) {
-                        hasSuccess = true;
-                    }
-                }
+                if (hasCompletedNCWidget(doc)) hasSuccess = true;
 
                 // Check if slider is still visible
-                var sliderVisible = hasVisibleMatch(doc, __VERIFY_SLIDER_SELECTOR__);
-                var challengeVisible = hasVisibleMatch(doc, __VERIFY_CHALLENGE_SELECTOR__);
-                hasError = hasError || hasVisibleMatch(doc, __NC_ERROR_SELECTOR__);
+                var sliderVisible = hasActiveVerificationMatch(doc, __VERIFY_SLIDER_SELECTOR__);
+                var challengeVisible = hasActiveVerificationMatch(doc, __VERIFY_CHALLENGE_SELECTOR__);
+                var errorText = hasError;
+                var errorWidget = hasVisibleMatch(doc, __NC_ERROR_SELECTOR__);
+                hasError = hasError || errorWidget;
 
                 return {
                     hasSuccess: hasSuccess,
                     hasError: hasError,
+                    errorText: errorText,
+                    errorWidget: errorWidget,
                     sliderVisible: sliderVisible,
                     challengeVisible: challengeVisible
                 };
@@ -226,6 +233,8 @@ class CaptchaSliderMixin:
                 if (result === null) { result = scanned; return null; }
                 // Only main-document success is evidence; visible frames can veto it.
                 result.hasError = result.hasError || scanned.hasError;
+                result.errorText = result.errorText || scanned.errorText;
+                result.errorWidget = result.errorWidget || scanned.errorWidget;
                 result.sliderVisible = result.sliderVisible || scanned.sliderVisible;
                 result.challengeVisible = result.challengeVisible || scanned.challengeVisible;
                 return null;
@@ -245,6 +254,8 @@ class CaptchaSliderMixin:
                 sliderGone: !result.sliderVisible,
                 challengeGone: !result.challengeVisible,
                 hasError: result.hasError,
+                errorText: result.errorText,
+                errorWidget: result.errorWidget,
                 noError: !result.hasError,
                 href: document.location ? String(document.location.href) : '',
                 readyState: document.readyState || '',
@@ -272,6 +283,16 @@ class CaptchaSliderMixin:
                 f"challengeGone={result.get('challengeGone')}",
                 f"hasError={result.get('hasError')}",
             ]
+            if (
+                type(result.get("errorText")) is bool
+                and type(result.get("errorWidget")) is bool
+            ):
+                log_parts.extend(
+                    [
+                        f"errorText={result['errorText']}",
+                        f"errorWidget={result['errorWidget']}",
+                    ]
+                )
             if local_mock_mode:
                 log_parts.extend([
                     f"mockSuccess={result.get('mockStateSuccess')}",
@@ -319,6 +340,7 @@ class CaptchaSliderMixin:
         self._last_mock_terminal_state = None
         if local_mock_target:
             checks = max(checks, 10)
+        retry_failure_samples = 0
         for check_index in range(checks):
             if self._stop_if_cancelled():
                 return False
@@ -329,6 +351,14 @@ class CaptchaSliderMixin:
                 if challenge_summary.get("authenticatedPage"):
                     logger.info("[SOLVER] Auction page became accessible after drag; treating as solved.")
                     return True
+                if retry_failure_is_terminal(
+                    challenge_summary, getattr(self, "target_url", None)
+                ):
+                    retry_failure_samples += 1
+                else:
+                    retry_failure_samples = 0
+                if retry_failure_samples >= 2:
+                    return False
             terminal_state = self._last_mock_terminal_state
             if terminal_state == "manual_required":
                 self.last_failure_reason = "manual_required"

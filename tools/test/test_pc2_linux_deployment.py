@@ -71,7 +71,7 @@ def test_linux_compose_preserves_solver_retry_contract() -> None:
 
     assert "FAPAI_SOLVER_COOLDOWN_FAIL_THRESHOLD:-10" in compose
     assert "FAPAI_SOLVER_COOLDOWN_SECONDS:-180" in compose
-    assert "FAPAI_SLIDER_RETRY_INTERVAL_SECONDS:-5" in compose
+    assert "FAPAI_SLIDER_RETRY_INTERVAL_SECONDS:-30" in compose
     assert 'FAPAI_SOLVER_MANUAL_FALLBACK_ENABLED: "0"' in compose
     assert 'FAPAI_SOLVER_ENABLE_HEADED_PLAYWRIGHT: "0"' in compose
     assert "FAPAI_LOCAL_SOLVER_EXECUTION_TIMEOUT_SECONDS:-180" in compose

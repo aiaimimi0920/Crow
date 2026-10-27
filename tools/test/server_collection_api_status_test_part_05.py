@@ -1,4 +1,4 @@
-from tools.test.server_collection_api_status_test_context import *  # noqa: F401,F403
+from tools.test.server_collection_api_status_test_context import *
 
 
 def test_auth_cookie_snapshot_retry_records_failure_then_success(monkeypatch) -> None:
@@ -196,16 +196,18 @@ def test_refresh_auth_cookie_snapshot_writes_only_after_healthy_probe(monkeypatc
     assert writes == [(cookies, str(snapshot_path))]
 
 def test_auth_cookie_health_probe_uses_current_cdp_user_agent(monkeypatch) -> None:
-    from src import server
-    from src import auth_cookie_health
+    from types import SimpleNamespace
+
+    from src import auth_cookie_health, server
 
     observed: dict[str, object] = {}
+    closed = []
     cookies = [{"name": "cookie2", "value": "v", "domain": ".taobao.com", "path": "/"}]
 
     monkeypatch.setattr(
         auth_cookie_health,
         "build_session_from_playwright_cookies",
-        lambda _cookies: object(),
+        lambda _cookies: SimpleNamespace(close=lambda: closed.append(True)),
     )
 
     def fake_resolve_user_agent(endpoint: str) -> str:
@@ -216,7 +218,9 @@ def test_auth_cookie_health_probe_uses_current_cdp_user_agent(monkeypatch) -> No
         observed["user_agent"] = kwargs.get("user_agent")
         return {"final_url": _url, "status": 200, "has_script": True}
 
-    monkeypatch.setattr(auth_cookie_health, "resolve_cdp_user_agent", fake_resolve_user_agent)
+    monkeypatch.setattr(
+        auth_cookie_health, "resolve_cdp_user_agent", fake_resolve_user_agent
+    )
     monkeypatch.setattr(auth_cookie_health, "probe_seed_page", fake_probe)
     monkeypatch.setattr(
         auth_cookie_health,
@@ -231,6 +235,7 @@ def test_auth_cookie_health_probe_uses_current_cdp_user_agent(monkeypatch) -> No
     )
 
     assert result["healthy"] is True
+    assert closed == [True]
     assert observed == {
         "endpoint": "http://192.168.15.104:9223",
         "user_agent": "Current Edge UA",
@@ -252,6 +257,8 @@ def test_refresh_auth_cookie_snapshot_derives_node_scoped_path_when_env_is_missi
     monkeypatch.setenv("FAPAI_NODE_ID", "pc2")
     monkeypatch.delenv("FAPAI_COOKIE_SNAPSHOT_ROOT", raising=False)
     monkeypatch.delenv("FAPAI_SHARED_DATA_ROOT_HOST", raising=False)
+    monkeypatch.delenv("CROW_DATA_ROOT_HOST", raising=False)
+    monkeypatch.delenv("FAPAI_DATA_ROOT_HOST", raising=False)
     monkeypatch.setattr(server, "REPO_ROOT", repo_root)
     monkeypatch.setattr(
         server.RUNTIME.recovery,

@@ -280,14 +280,24 @@ def _cdp_url(cdp_endpoint: str, path: str) -> str:
     return f"{str(cdp_endpoint or '').rstrip('/')}/{path.lstrip('/')}"
 
 def _cdp_http_get(cdp_endpoint: str, path: str, *, timeout_seconds: float) -> Any:
-    session = requests.Session()
-    session.trust_env = False
-    return session.get(_cdp_url(cdp_endpoint, path), timeout=timeout_seconds)
+    from tools.cdp_http_session import request_cdp
+
+    return request_cdp(
+        requests.Session,
+        "get",
+        _cdp_url(cdp_endpoint, path),
+        timeout_seconds=timeout_seconds,
+    )
 
 def _cdp_http_put(cdp_endpoint: str, path: str, *, timeout_seconds: float) -> Any:
-    session = requests.Session()
-    session.trust_env = False
-    return session.put(_cdp_url(cdp_endpoint, path), timeout=timeout_seconds)
+    from tools.cdp_http_session import request_cdp
+
+    return request_cdp(
+        requests.Session,
+        "put",
+        _cdp_url(cdp_endpoint, path),
+        timeout_seconds=timeout_seconds,
+    )
 
 def _fallback_cached_playwright_cdp_endpoint(cdp_endpoint: str) -> str:
     try:

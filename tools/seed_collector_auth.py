@@ -71,7 +71,13 @@ def _normalize_collection_pause_state(payload: dict[str, Any], scope: str = "see
         scoped_solver["force_unlock_flag_exists"] = False
         return {
             "paused": bool(scoped.get("paused") or scoped.get("manual_required")),
-            "reason": "captcha_solver_manual_required" if scoped.get("manual_required") else "captcha_solver_running" if scoped.get("paused") else None,
+            "reason": "captcha_solver_manual_required"
+            if scoped.get("manual_required")
+            else "captcha_solver_running"
+            if scoped.get("paused") and scoped_solver["running"]
+            else "collection_paused"
+            if scoped.get("paused")
+            else None,
             "captcha_solver": scoped_solver,
             "scope": scope,
         }

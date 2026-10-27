@@ -70,6 +70,8 @@ def _normalize_collection_pause_state(
             "reason": "captcha_solver_manual_required"
             if scoped.get("manual_required")
             else "captcha_solver_running"
+            if scoped.get("paused") and scoped_solver["running"]
+            else "collection_paused"
             if scoped.get("paused")
             else None,
             "captcha_solver": scoped_solver,

@@ -14,9 +14,9 @@ def run_detail_worker_batch(
     process_item_func: Callable[..., dict[str, Any]] = process_item,
     analyze_item_func: AnalyzeItemFunc = analyze_raw_item,
 ) -> dict[str, Any]:
-    from tools.worker_lifecycle import checkpoint, wait
-    from tools.detail_worker_statistics import worker_queue_statistics
     from tools.detail_worker_observation import batch_observation
+    from tools.detail_worker_statistics import worker_queue_statistics
+    from tools.worker_lifecycle import checkpoint, wait
 
     started = time.monotonic()
     if config.llm_preflight_enabled and not config.raw_only:
@@ -163,15 +163,36 @@ def run_detail_worker_loop(
     runtime_context_factory: RuntimeContextFactory | None = None,
     progress_emit_func: ProgressEmitFunc | None = None,
 ) -> dict[str, Any]:
-    from tools.worker_lifecycle import checkpoint
+    from contextlib import nullcontext
+
+    from tools.detail_worker_sessions import OwnedRuntimeContext
+
+    if runtime_context_factory is not None:
+        context_scope = nullcontext(runtime_context_factory)
+    elif http_session is not None and browser_pages is not None:
+        context_scope = nullcontext(lambda: (http_session, browser_pages))
+    else:
+        context_scope = OwnedRuntimeContext(lambda: _build_runtime_context(config))
+    with context_scope as factory:
+        return _run_detail_worker_loop(
+            config,
+            repository=repository,
+            runtime_context_factory=factory,
+            progress_emit_func=progress_emit_func,
+        )
+
+
+def _run_detail_worker_loop(
+    config: DetailWorkerConfig,
+    *,
+    repository: PropertyRepository,
+    runtime_context_factory: RuntimeContextFactory,
+    progress_emit_func: ProgressEmitFunc | None = None,
+) -> dict[str, Any]:
     from tools.detail_worker_statistics import worker_queue_statistics
     from tools.detail_worker_wait import wait_after_detail_batch, wait_without_auth_poll
+    from tools.worker_lifecycle import checkpoint
 
-    if runtime_context_factory is None:
-        if http_session is None or browser_pages is None:
-            runtime_context_factory = lambda: _build_runtime_context(config)
-        else:
-            runtime_context_factory = lambda: (http_session, browser_pages)
     emit_progress = progress_emit_func or _emit_progress_event
     results: list[dict[str, Any]] = []
     last_runtime_context: RuntimeContext | None = None
@@ -276,6 +297,7 @@ def run_detail_worker_loop(
 __all__ = (
     "_detail_batch_sleep_seconds",
     "_detail_inter_item_delay_seconds",
+    "_run_detail_worker_loop",
     "run_detail_worker_batch",
     "run_detail_worker_loop",
 )

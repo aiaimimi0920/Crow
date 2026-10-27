@@ -457,6 +457,9 @@ class CaptchaTargetMixin:
         if not challenge_route:
             return False
         challenge_scope = self._solver_target_scope(value)
+        if requested_scope == "seed":
+            # A different region or page cannot satisfy target-bound seed proof.
+            return challenge_route == requested_route
         if requested_scope and challenge_scope:
             return requested_scope == challenge_scope
         return challenge_route == requested_route

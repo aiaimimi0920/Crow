@@ -431,75 +431,21 @@ def fetch_detail_with_browser(seed: dict[str, Any], *, cdp_endpoint: str) -> tup
 
 
 def _fetch_detail_with_browser_attached(seed: dict[str, Any], *, cdp_endpoint: str) -> tuple[str, str, int, str]:
-    from playwright.sync_api import sync_playwright
-    from src.collection.adapters.taobao_auth_target import canonical_auth_target
-    from tools.browser_cdp_session import held_cdp_session
+    from tools.detail_browser_attached import capture_attached_detail
 
-    detail_url = seed.get("url")
-    if not detail_url:
-        raise RuntimeError("seed missing detail url")
-    with sync_playwright() as p:
-        browser = connect_browser_over_cdp(p, cdp_endpoint)
-        try:
-            if not browser.contexts:
-                raise RuntimeError("attached browser has no contexts")
-            context = browser.contexts[0]
-            existing_target_challenge = False
-            # Preserve login tabs. Old challenges, including other stages, are
-            # not proof that this target is blocked with the current cookies.
-            for existing_page in getattr(context, "pages", []):
-                existing_url = str(getattr(existing_page, "url", "") or "")
-                try:
-                    existing_hostname = str(urlparse(existing_url).hostname or "").lower()
-                except ValueError:
-                    existing_hostname = ""
-                is_taobao_page = existing_hostname == "taobao.com" or existing_hostname.endswith(
-                    ".taobao.com"
-                )
-                if not (
-                    is_taobao_page
-                    or _is_taobao_login_target_url(existing_url)
-                    or is_challenge_page("", existing_url)
-                ):
-                    continue
-                try:
-                    existing_html = str(existing_page.content() or "")
-                except Exception:
-                    existing_html = ""
-                if _is_taobao_login_target_url(existing_url) or is_login_page(existing_html, existing_url):
-                    raise DetailChallengeError("existing browser detail page", existing_url)
-                if is_challenge_page(existing_html, existing_url):
-                    try:
-                        existing_target_challenge |= (
-                            canonical_auth_target("detail", existing_url)
-                            == canonical_auth_target("detail", str(detail_url))
-                        )
-                    except (ValueError, TypeError):
-                        pass
-            page = context.new_page()
-            preserve_challenge_page = False
-            try:
-                with held_cdp_session(context, page) as session:
-                    configure_browser_identity_before_navigation(
-                        context,
-                        page,
-                        cdp_endpoint=cdp_endpoint,
-                        cdp_session=session,
-                    )
-                    response = page.goto(detail_url, wait_until="domcontentloaded", timeout=90000)
-                    html = _wait_for_detail_ready(page)
-                final_url = page.url
-                if response and response.status >= 400:
-                    raise RuntimeError(f"browser detail request returned HTTP {response.status}")
-                if is_challenge_page(html, final_url):
-                    preserve_challenge_page = not existing_target_challenge
-                    raise DetailChallengeError("browser detail request", final_url)
-                return html, final_url, len(html.encode("utf-8")), "browser_navigation"
-            finally:
-                if not preserve_challenge_page:
-                    page.close()
-        finally:
-            detach_attached_cdp_browser(browser)
+    # Resolve callbacks here to preserve both implementation and facade seams.
+    return capture_attached_detail(
+        seed,
+        cdp_endpoint=cdp_endpoint,
+        connect_browser=connect_browser_over_cdp,
+        detach_browser=detach_attached_cdp_browser,
+        is_login_target=_is_taobao_login_target_url,
+        is_challenge=is_challenge_page,
+        is_login=is_login_page,
+        challenge_error=DetailChallengeError,
+        configure_page=configure_browser_identity_before_navigation,
+        wait_for_detail=_wait_for_detail_ready,
+    )
 
 def fetch_detail_html(
     http: requests.Session,

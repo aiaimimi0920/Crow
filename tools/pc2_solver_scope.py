@@ -98,9 +98,27 @@ def close_challenge_pages_for_scope(
 
 
 def compact_active_challenge_pages(
-    cdp_endpoint: str, solver_status: object
+    cdp_endpoint: str, solver_status: object, expected_node_id: str | None = None
 ) -> dict[str, object]:
-    """Keep at most one active challenge page for each independent scope."""
+    """Compact only scopes whose current request belongs to this browser node."""
+    owned_targets = {}
+    for scope, scoped_status in _solver_scope_statuses(solver_status).items():
+        if scope not in {"seed", "detail"} or not isinstance(scoped_status, dict):
+            continue
+        if not str(scoped_status.get("challenge_id") or "").strip():
+            continue
+        target_url = solver_request_target_url(scoped_status.get("last_request"))
+        if target_url and node_owns_last_request(
+            scoped_status, cdp_endpoint, expected_node_id
+        ):
+            owned_targets[scope] = target_url
+    if not owned_targets:
+        return {
+            "attempted": False,
+            "closed": 0,
+            "scopes": {},
+            "reason": "no_owned_challenge",
+        }
     try:
         tabs = fetch_json(f"{cdp_endpoint.rstrip('/')}/json/list", timeout=5)
     except Exception as exc:  # noqa: BLE001 -- preserve the notification/probe failure envelope
@@ -115,14 +133,7 @@ def compact_active_challenge_pages(
 
     results = {}
     total_closed = 0
-    for scope, scoped_status in _solver_scope_statuses(solver_status).items():
-        if scope not in {"seed", "detail"} or not isinstance(scoped_status, dict):
-            continue
-        if not str(scoped_status.get("challenge_id") or "").strip():
-            continue
-        target_url = solver_request_target_url(scoped_status.get("last_request"))
-        if not target_url:
-            continue
+    for scope, target_url in owned_targets.items():
         solver = _create_scope_solver(cdp_endpoint=cdp_endpoint, target_url=target_url)
         pruning = solver._prune_duplicate_challenge_tabs(tabs)
         results[scope] = pruning

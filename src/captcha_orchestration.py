@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import random
 
+from .captcha_verification import ready_target_matches
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,6 +149,25 @@ class CaptchaOrchestrationMixin:
                         )
                     if not slider_info:
                         challenge_summary = self._refresh_challenge_summary({})
+                        if (
+                            not local_mock_target
+                            and challenge_summary.get("readyState") == "loading"
+                            and not challenge_summary.get("hasSlider")
+                        ):
+                            challenge_summary = self._wait_for_loading_document(
+                                challenge_summary
+                            )
+                            if (
+                                not challenge_summary.get("probeFailed")
+                                and challenge_summary.get("hasSlider")
+                                and ready_target_matches(
+                                    challenge_summary, self.target_url
+                                )
+                            ):
+                                slider_info = self._find_slider(
+                                    max_retries=1, retry_delay=0
+                                )
+                    if not slider_info:
                         if challenge_summary.get("probeFailed"):
                             self._preflight_retryable_failure()
                             return finish(False)
@@ -176,6 +197,10 @@ class CaptchaOrchestrationMixin:
                                     self.ws = None
                                 continue
                             challenge_summary = self._refresh_challenge_summary(challenge_summary)
+                            if not local_mock_target:
+                                challenge_summary = self._wait_for_loading_document(
+                                    challenge_summary
+                                )
                             if challenge_summary.get("probeFailed"):
                                 self._preflight_retryable_failure()
                                 return finish(False)

@@ -43,8 +43,8 @@ class CaptchaPreflightMixin:
                 var title = doc.title || '';
                 var href = (doc.location && doc.location.href) ? String(doc.location.href) : '';
                 var readyState = doc.readyState || '';
-                var hasSlider = hasVisibleMatch(doc, __PREFLIGHT_SLIDER_SELECTOR__);
-                var hasChallengeWidget = hasVisibleMatch(doc, __VERIFY_CHALLENGE_SELECTOR__);
+                var hasSlider = hasActiveVerificationMatch(doc, __PREFLIGHT_SLIDER_SELECTOR__);
+                var hasChallengeWidget = hasActiveVerificationMatch(doc, __VERIFY_CHALLENGE_SELECTOR__);
                 var lowerHref = href.toLowerCase();
                 var urlHost = '', urlPath = '';
                 try {

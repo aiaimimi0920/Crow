@@ -14,11 +14,28 @@ const fs = require('fs'), vm = require('vm');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 function element(spec) {
     return {...spec, offsetParent: spec.hidden || spec.fixed ? null : {},
-        ownerDocument: {defaultView: {getComputedStyle: () => ({display: spec.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1', position: spec.fixed ? 'fixed' : 'static'})}},
+        ownerDocument: {defaultView: {getComputedStyle: node => ({display: node.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1', position: node.fixed ? 'fixed' : 'static', ...node.style})}},
         getBoundingClientRect: () => ({left: 5, top: 8, width: 100, height: 20, ...spec.rect})};
 }
 function doc(spec) {
     const nodes = (spec.nodes || []).map(element);
+    const matches = (node, query) => query.split(',').some(s => (node.selectors || []).includes(s.trim()));
+    nodes.forEach(node => {
+        node.parentElement = Number.isInteger(node.parent) ? nodes[node.parent] : null;
+        node.matches = query => matches(node, query);
+        node.closest = query => {
+            for (let current = node; current; current = current.parentElement) {
+                if (matches(current, query)) return current;
+            }
+            return null;
+        };
+        node.querySelectorAll = query => nodes.filter(candidate => {
+            for (let parent = candidate.parentElement; parent; parent = parent.parentElement) {
+                if (parent === node) return matches(candidate, query);
+            }
+            return false;
+        });
+    });
     const frames = (spec.frames || []).map(frame => {
         const node = element(frame);
         Object.defineProperty(node, 'contentDocument', {get() {
@@ -27,7 +44,6 @@ function doc(spec) {
         }});
         return node;
     });
-    const matches = (node, query) => query.split(',').some(s => (node.selectors || []).includes(s.trim()));
     return {
         body: {innerText: spec.text || '', className: spec.className || ''},
         title: spec.title || '', location: {href: spec.url || ''}, readyState: spec.readyState || 'complete',

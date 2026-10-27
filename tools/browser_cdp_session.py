@@ -27,4 +27,7 @@ def held_cdp_session(context: Any, page: Any) -> Iterator[Any]:
     try:
         yield session
     finally:
+        from tools.capture_progress import mark_capture_stage
+
+        mark_capture_stage("page_session_detach")
         detach_cdp_session(session)

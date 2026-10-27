@@ -88,8 +88,11 @@ class CaptchaNCRetryMixin:
     def _nc_widget_rect(self):
         js_script = """
         (function() {
-            var el = document.querySelector(__NC_WIDGET_SELECTOR__);
-            if (!el || el.offsetParent === null) return null;
+            var el = firstVisibleMatch(document, __NC_WIDGET_SELECTOR__, function(node) {
+                var r = node.getBoundingClientRect();
+                return r.width >= 8 && r.height >= 8;
+            });
+            if (!el) return null;
             var r = el.getBoundingClientRect();
             if (r.width < 8 || r.height < 8) return null;
             return {x: r.left, y: r.top, width: r.width, height: r.height,
@@ -105,7 +108,7 @@ class CaptchaNCRetryMixin:
         js_script = """
         (function() {
             function visibleRect(el, frameOffsetX, frameOffsetY, selector, context) {
-                if (!el || el.offsetParent === null) return null;
+                if (!verificationElementVisible(el)) return null;
                 var rect = el.getBoundingClientRect();
                 if (rect.width < 8 || rect.height < 8) return null;
                 return {
@@ -118,23 +121,28 @@ class CaptchaNCRetryMixin:
                 };
             }
 
+            function eligible(node) {
+                var r = node.getBoundingClientRect();
+                return r.width >= 8 && r.height >= 8;
+            }
+
             function scan(doc, frameOffsetX, frameOffsetY, context) {
                 var result = {
                     widget: null,
                     retryText: null,
                     slider: null
                 };
-                var widget = doc.querySelector(__NC_WIDGET_SELECTOR__);
+                var widget = firstVisibleMatch(doc, __NC_WIDGET_SELECTOR__, eligible);
                 result.widget = visibleRect(widget, frameOffsetX, frameOffsetY, __NC_WIDGET_SELECTOR__, context);
-                var slider = doc.querySelector(__NC_HANDLE_SELECTOR__);
+                var slider = firstVisibleMatch(doc, __NC_HANDLE_SELECTOR__, eligible);
                 result.slider = visibleRect(slider, frameOffsetX, frameOffsetY, __NC_HANDLE_SELECTOR__, context);
-                var errorWidget = doc.querySelector(__NC_ERROR_SELECTOR__);
+                var errorWidget = firstVisibleMatch(doc, __NC_ERROR_SELECTOR__, eligible);
                 result.retryText = visibleRect(errorWidget, frameOffsetX, frameOffsetY, __NC_ERROR_SELECTOR__, context);
 
                 var allNodes = doc.querySelectorAll('div, span, p, button, a');
                 for (var i = 0; !result.retryText && i < allNodes.length; i++) {
                     var node = allNodes[i];
-                    if (!node || node.offsetParent === null) continue;
+                    if (!verificationElementVisible(node)) continue;
                     var text = (node.innerText || node.textContent || '').trim();
                     if (!text) continue;
                     if (

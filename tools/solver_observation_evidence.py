@@ -11,6 +11,7 @@ KINDS = {
     "local_solver_diagnostic",
     "auth_completion_challenge_resolved",
     "auth_complete_result",
+    "auth_complete_retry_pending",
     "auth_complete_confirmed",
     "solver_cooldown_started",
     "solver_cooldown_elapsed",
@@ -103,7 +104,14 @@ def project_line(line, container_id):
             value = event.get(key)
             if type(value) in (int, float) and -100000 < value < 100000:
                 out[key] = value
-        for key in ("success", "slider_gone", "challenge_gone", "has_error"):
+        for key in (
+            "success",
+            "slider_gone",
+            "challenge_gone",
+            "has_error",
+            "error_text",
+            "error_widget",
+        ):
             if type(event.get(key)) is bool:
                 out[key] = event[key]
     if kind == "auth_completion_challenge_resolved":
@@ -147,6 +155,27 @@ def project_line(line, container_id):
         snapshot = snapshot if isinstance(snapshot, dict) else {}
         detail = snapshot.get("result") or {}
         detail = detail if isinstance(detail, dict) else {}
+        status = snapshot.get("status")
+        out["snapshot_status"] = (
+            status
+            if isinstance(status, str)
+            and status
+            in {"pending", "running", "busy", "completed", "failed", "skipped"}
+            else "unknown"
+        )
+        reason = detail.get("reason") or snapshot.get("reason")
+        out["snapshot_reason"] = (
+            reason
+            if isinstance(reason, str)
+            and reason
+            in {
+                "cookie_snapshot_candidate_unhealthy",
+                "refresh_already_running",
+                "snapshot_worker_start_failed",
+                "disabled_by_request",
+            }
+            else ("other" if reason else None)
+        )
         health = detail.get("health") or {}
         health = health if isinstance(health, dict) else {}
         out["snapshot_refreshed"] = (
@@ -234,19 +263,35 @@ def summarize(events):
             ]
             if key and key not in pending and len(candidates) == 1:
                 pending[key] = candidates[0]
-        if kind.startswith("auth_complete") and event.get("confirmed"):
+        if kind.startswith("auth_complete"):
             key = event.get("completion_hash")
             linked = pending.get(key)
-            if event.get("automatic_source"):
-                automatic_auth.add(key or event["id"])
-            if (
+            matching = bool(
                 linked
-                and event.get("automatic_source")
                 and linked["scope"] == event["scope"]
                 and linked["container_id"] == event["container_id"]
-            ):
+            )
+            if not event.get("confirmed"):
+                if (
+                    matching
+                    and not linked["auth_confirmed"]
+                    and (
+                        kind == "auth_complete_result" or event.get("automatic_source")
+                    )
+                ):
+                    for field in ("snapshot_status", "snapshot_reason"):
+                        if field in event:
+                            linked["last_pending_" + field] = event[field]
+                continue
+            if event.get("automatic_source"):
+                automatic_auth.add(key or event["id"])
+            if matching and event.get("automatic_source"):
+                if not linked["auth_confirmed"]:
+                    linked["auth_confirmed_at"] = event["at"]
+                    elapsed = event["epoch"] - timestamp(linked["ended_at"])
+                    if elapsed >= 0:
+                        linked["auth_confirmation_seconds"] = round(elapsed, 3)
                 linked["auth_confirmed"] = True
-                linked["auth_confirmed_at"] = event["at"]
                 linked["bound_health_verified"] |= event.get(
                     "bound_health_verified", False
                 )
@@ -268,5 +313,8 @@ def summarize(events):
         automatic_auth_confirmations=len(automatic_auth),
         incomplete=sum(not a["completed"] for a in attempts),
         unlinked_auth_confirmations=len(unlinked_auth),
+        local_success_without_auth_confirmation=sum(
+            a["automatic_local_success"] and not a["auth_confirmed"] for a in attempts
+        ),
     )
     return {"counts": counts, "attempts": attempts}

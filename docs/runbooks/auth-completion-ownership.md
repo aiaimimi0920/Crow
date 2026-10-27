@@ -12,10 +12,15 @@
 - 忙碌不代表新的验证码失败，也不允许跳过健康检查。旧 worker 退出后，可重新提交原请求；新的 challenge generation 仍必须重新校验。
 - 同一请求的幂等重放、已确认 receipt，以及人工暂停和 challenge 状态的原有保护不变。
 
+## 健康检查的 HTTP 会话归属
+
+一次健康检查拥有一个 HTTP Session，批内样本复用该会话，整次检查结束后关闭。正常返回、探测失败、会话创建后的初始化异常和取消均执行释放；不关闭外部调用者的会话，也不改变认证判定、请求数量、超时或重试策略。资源释放修复不能代替健康证明，也不能据此认定历史认证失败的根因。
+
 ## 回归入口
 
 - `tools/test/test_auth_snapshot_request_ownership.py`：跨请求、跨 scope、跨 generation 的隔离，真实线程的完成发布/退出窗口，以及同请求缓存复用。
 - `tools/test/test_auth_cookie_snapshot_scheduler.py`：single-flight、请求副本和启动边界。
 - `tools/test/test_solver_scope_runtime.py`：状态发布、完成事务、幂等回执与新挑战并发。
+- `tools/test/test_auth_cookie_health_resources.py`：健康检查自有会话的批内复用、正常/异常/取消释放及原有失败判定。
 
 这些检查使用合成状态和隔离文件，不执行第三方验证码，不读取真实 Cookie 或浏览器 profile。

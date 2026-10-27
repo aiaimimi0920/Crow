@@ -6,7 +6,6 @@ import contextlib
 import ipaddress
 from collections.abc import Iterable
 
-
 AllowedNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 DEFAULT_ALLOWED_CLIENT_CIDRS = ("127.0.0.0/8", "::1/128")
 
@@ -20,8 +19,7 @@ def parse_allowed_client_cidrs(values: Iterable[str]) -> tuple[AllowedNetwork, .
                 networks.append(ipaddress.ip_network(normalized, strict=False))
     if not networks:
         networks = [
-            ipaddress.ip_network(value)
-            for value in DEFAULT_ALLOWED_CLIENT_CIDRS
+            ipaddress.ip_network(value) for value in DEFAULT_ALLOWED_CLIENT_CIDRS
         ]
     return tuple(networks)
 
@@ -55,7 +53,41 @@ def rewrite_http_host_header(header: bytes, upstream_authority: str) -> bytes:
     return b"\r\n".join(lines)
 
 
-async def copy_stream(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+def close_http_response_header(header: bytes) -> bytes:
+    """A one-request Host relay must not advertise a reusable HTTP connection."""
+    lines = header.split(b"\r\n")
+    preserved = [
+        line
+        for line in lines[1:]
+        if line
+        and line.partition(b":")[0].lower() not in {b"connection", b"keep-alive"}
+    ]
+    return b"\r\n".join([lines[0], *preserved, b"Connection: close", b"", b""])
+
+
+async def copy_http_response(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
+    # Preserve framing and payload bytes; only the final HTTP header changes.
+    # Chromium can keep a socket open even when its request says close.
+    while True:
+        try:
+            header = await reader.readuntil(b"\r\n\r\n")
+        except asyncio.IncompleteReadError:
+            return
+        status = header.split(b"\r\n", 1)[0].split()[1:2]
+        interim = bool(status and status[0].isdigit() and 100 <= int(status[0]) < 200)
+        upgraded = status == [b"101"]
+        writer.write(header if interim else close_http_response_header(header))
+        await writer.drain()
+        if not interim or upgraded:
+            break
+    await copy_stream(reader, writer)
+
+
+async def copy_stream(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
     try:
         while data := await reader.read(65536):
             writer.write(data)
@@ -95,9 +127,14 @@ async def relay_connection(
         upstream_writer.write(rewrite_http_host_header(header, authority))
         await upstream_writer.drain()
 
+        upgrade = any(
+            line.partition(b":")[0].lower() == b"upgrade"
+            for line in header.split(b"\r\n")[1:]
+        )
+        copy_response = copy_stream if upgrade else copy_http_response
         tasks = {
             asyncio.create_task(copy_stream(client_reader, upstream_writer)),
-            asyncio.create_task(copy_stream(upstream_reader, client_writer)),
+            asyncio.create_task(copy_response(upstream_reader, client_writer)),
         }
         _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:

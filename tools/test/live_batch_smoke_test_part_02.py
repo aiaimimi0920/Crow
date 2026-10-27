@@ -139,6 +139,7 @@ def test_connect_browser_over_cdp_raises_after_bounded_reconnects(monkeypatch) -
 
 def test_resolve_playwright_cdp_endpoint_ignores_host_proxy_env(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
+    closed: list[bool] = []
 
     class _Response:
         def raise_for_status(self) -> None:
@@ -151,10 +152,15 @@ def test_resolve_playwright_cdp_endpoint_ignores_host_proxy_env(monkeypatch) -> 
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.headers: dict[str, str] = {}
 
         def get(self, url: str, *, timeout: float):
+            assert self.headers["Connection"] == "close"
             calls.append({"url": url, "timeout": timeout, "trust_env": self.trust_env})
             return _Response()
+
+        def close(self) -> None:
+            closed.append(True)
 
     monkeypatch.setattr(
         live_batch_smoke.requests,
@@ -166,6 +172,7 @@ def test_resolve_playwright_cdp_endpoint_ignores_host_proxy_env(monkeypatch) -> 
     endpoint = live_batch_smoke.resolve_playwright_cdp_endpoint("http://192.168.15.104:9224")
 
     assert endpoint == "ws://192.168.15.104:9224/devtools/browser/browser-2"
+    assert closed == [True]
     assert calls == [
         {
             "url": "http://192.168.15.104:9224/json/version",

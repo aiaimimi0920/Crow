@@ -135,6 +135,8 @@ def run_detail_worker_once(
         _write_runtime_summary(config.output_dir, summary)
         return summary
     except Exception as exc:
+        from tools.capture_failure_diagnostics import capture_failure_summary
+
         is_challenge_error = _is_detail_challenge_error(exc)
         is_transient_dns = _is_transient_dns_error(exc)
         is_cdp_unreachable = isinstance(exc, CdpEndpointUnavailableError)
@@ -202,6 +204,9 @@ def run_detail_worker_once(
             summary["pause_override"] = "resolved_open_detail_page"
         if preserve_retry_budget:
             summary["retry_budget_preserved"] = True
+        capture_failure = capture_failure_summary(exc)
+        if capture_failure is not None:
+            summary["capture_failure"] = capture_failure
         if is_cdp_unreachable:
             summary["cdp_health"] = _build_cdp_unreachable_health(
                 config,

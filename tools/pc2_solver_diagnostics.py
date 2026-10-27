@@ -58,6 +58,7 @@ _PATTERNS = (
         (
             rf"\[SOLVER\] (?:\[SOLVER\] )?Verification: success=(?P<success>{_BOOL}), sliderGone=(?P<slider_gone>{_BOOL}), "
             rf"challengeGone=(?P<challenge_gone>{_BOOL}), hasError=(?P<has_error>{_BOOL})"
+            rf"(?:, errorText=(?P<error_text>{_BOOL}), errorWidget=(?P<error_widget>{_BOOL}))?"
         ),
     ),
     (
@@ -108,6 +109,8 @@ _BOOLEANS = {
     "slider_gone",
     "challenge_gone",
     "has_error",
+    "error_text",
+    "error_widget",
     "retryable",
 }
 _FIXED = {
@@ -129,6 +132,8 @@ def diagnostic_event(message: str) -> dict[str, object] | None:
             continue
         event: dict[str, object] = {"kind": "local_solver_diagnostic", "phase": phase}
         for key, value in match.groupdict().items():
+            if value is None:
+                continue
             if key in _BOOLEANS:
                 event[key] = None if value == "None" else value == "True"
             elif key in _ENUMS:

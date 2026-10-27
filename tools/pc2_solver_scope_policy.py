@@ -121,8 +121,10 @@ def node_owns_last_request(
     if not isinstance(last_request, dict):
         return False
     node_id = str(last_request.get("node_id") or "").strip().lower()
-    if expected_node_id and node_id == expected_node_id.strip().lower():
-        return True
+    expected = str(expected_node_id or "").strip().lower()
+    if node_id and expected:
+        # A shared loopback address must not override an explicit remote owner.
+        return node_id == expected
     reported_cdp = str(last_request.get("cdp_endpoint") or "").strip()
     return bool(
         reported_cdp and cdp_endpoint_matches_local(reported_cdp, local_cdp_endpoint)

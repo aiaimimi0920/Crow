@@ -29,6 +29,14 @@ def test_old_challenge_is_revalidated_without_touching_operator_page(
         url = old_url
 
         def content(self):
+            pytest.fail("existing DOM reads must use a bounded public API")
+
+        def locator(self, selector):
+            assert selector == "html"
+            return self
+
+        def inner_html(self, *, timeout):
+            assert timeout == 5000
             return "x5secdata=old"
 
         def bring_to_front(self):

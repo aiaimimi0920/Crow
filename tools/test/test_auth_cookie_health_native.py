@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,7 +42,7 @@ def test_failed_sample_does_not_prevent_another_healthy_sample(monkeypatch):
     first = "https://sf.taobao.com/list/first"
     second = "https://sf.taobao.com/list/second"
     observed = []
-    session = object()
+    session = SimpleNamespace(close=lambda: None)
     monkeypatch.setattr(
         auth_cookie_health, "build_session_from_playwright_cookies", lambda _: session
     )

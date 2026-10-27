@@ -60,6 +60,11 @@ function verificationElementVisible(node) {
     var style = view && view.getComputedStyle ? view.getComputedStyle(node) : null;
     if (style && (style.display === 'none' || style.visibility === 'hidden' ||
         style.visibility === 'collapse' || parseFloat(style.opacity) === 0)) return false;
+    // Opacity is not inherited: a transparent group can contain opacity=1 children.
+    for (var parent = node.parentElement; parent; parent = parent.parentElement) {
+        var parentStyle = view && view.getComputedStyle ? view.getComputedStyle(parent) : null;
+        if (parentStyle && parseFloat(parentStyle.opacity) === 0) return false;
+    }
     var rect = node.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 &&
         (node.offsetParent !== null || !!(style && style.position === 'fixed'));
@@ -68,6 +73,36 @@ function hasVisibleMatch(doc, selector) {
     var nodes = doc.querySelectorAll(selector);
     for (var n = 0; n < nodes.length; n++) {
         if (verificationElementVisible(nodes[n])) return true;
+    }
+    return false;
+}
+function firstVisibleMatch(root, selector, accept) {
+    var nodes = root.querySelectorAll(selector);
+    for (var n = 0; n < nodes.length; n++) {
+        var node = nodes[n];
+        if (verificationElementVisible(node) && (!accept || accept(node))) return node;
+    }
+    return null;
+}
+function completedNCContainer(node) {
+    var container = node.closest('.nc-container');
+    if (!verificationElementVisible(container) || !container.matches('.nc-container.nc-success')) return null;
+    var handles = __NC_HANDLE_SELECTOR__ + ', .slider-btn, .icon-slide-arrow';
+    if (container.matches(handles) || container.matches(__NC_ERROR_SELECTOR__) ||
+        hasVisibleMatch(container, handles) || hasVisibleMatch(container, __NC_ERROR_SELECTOR__)) return null;
+    return container;
+}
+function hasCompletedNCWidget(doc) {
+    var containers = doc.querySelectorAll('.nc-container.nc-success');
+    for (var n = 0; n < containers.length; n++) {
+        if (completedNCContainer(containers[n])) return true;
+    }
+    return false;
+}
+function hasActiveVerificationMatch(doc, selector) {
+    var nodes = doc.querySelectorAll(selector);
+    for (var n = 0; n < nodes.length; n++) {
+        if (verificationElementVisible(nodes[n]) && !completedNCContainer(nodes[n])) return true;
     }
     return false;
 }
@@ -93,6 +128,7 @@ function visitAccessibleDocuments(visitor, visibleOnly) {
 
 def eval_in_all_frames(expression: str) -> str:
     """Bind selectors and expose a visitor; the caller chooses first-match or merge."""
+    script = "(function() {\n" + _FRAME_VISITOR + "\nreturn (" + expression + ");\n})()"
     for name, selector in SELECTOR_GROUPS.items():
-        expression = expression.replace(f"__{name}_SELECTOR__", json.dumps(selector))
-    return "(function() {\n" + _FRAME_VISITOR + "\nreturn (" + expression + ");\n})()"
+        script = script.replace(f"__{name}_SELECTOR__", json.dumps(selector))
+    return script

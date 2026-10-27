@@ -119,7 +119,9 @@ def local_solver_loop(
                 log_event({"kind": "status_error", "error": solver_status["error"]})
                 time.sleep(poll_seconds)
                 continue
-            compaction = compact_active_challenge_pages(cdp_endpoint, solver_status)
+            compaction = compact_active_challenge_pages(
+                cdp_endpoint, solver_status, expected_node_id
+            )
             if compaction.get("closed"):
                 log_event(
                     {

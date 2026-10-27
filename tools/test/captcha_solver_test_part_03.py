@@ -81,8 +81,11 @@ def test_connect_tab_prefers_exact_detail_route_over_cached_scope_target() -> No
     assert closed == ["stale-detail"]
     assert connected == ["ws://127.0.0.1:9223/devtools/page/requested-detail"]
 
-def test_connect_tab_prunes_title_only_challenge_duplicates_and_refreshes_tabs() -> None:
-    target_url = "https://sf.taobao.com/list/50025969__2.htm?page=7&__captcha_solver_bg=1"
+
+def test_connect_tab_prunes_title_only_challenge_duplicates_and_refreshes_tabs() -> (
+    None
+):
+    target_url = "https://sf.taobao.com/list/50025969__2.htm?page=7&st_param=1&__captcha_solver_bg=1"
     solver = captcha_solver.CaptchaSolver(port=9223, target_url=target_url)
     duplicate = {
         "id": "seed-duplicate",
@@ -117,18 +120,25 @@ def test_connect_tab_prunes_title_only_challenge_duplicates_and_refreshes_tabs()
     def fake_get_json(_endpoint):
         nonlocal list_calls
         list_calls += 1
-        return [kept, duplicate, detail, normal] if list_calls == 1 else [kept, detail, normal]
+        return (
+            [kept, duplicate, detail, normal]
+            if list_calls == 1
+            else [kept, detail, normal]
+        )
 
     closed: list[str] = []
     connected: list[str] = []
     solver._get_json = fake_get_json
     solver._close_cdp_target = lambda target_id: closed.append(target_id) or True
-    solver._connect_to_target = lambda target_ws, _title: connected.append(target_ws) or True
+    solver._connect_to_target = lambda target_ws, _title: (
+        connected.append(target_ws) or True
+    )
 
     assert solver.connect_tab() is True
     assert closed == ["seed-duplicate"]
     assert list_calls >= 2
     assert connected == ["ws://127.0.0.1:9223/devtools/page/seed-kept"]
+
 
 def test_nc_error_widget_contract_recognizes_english_refresh_failure() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
@@ -143,7 +153,8 @@ def test_nc_error_widget_contract_recognizes_english_refresh_failure() -> None:
     assert solver._page_challenge_summary()["explicitFailure"] is True
     assert "please refresh page and try again" in expressions[0]
     assert ".errloading" in expressions[0]
-    assert "var hasSlider = hasVisibleMatch(doc," in expressions[0]
+    assert "var hasSlider = hasActiveVerificationMatch(doc," in expressions[0]
+    assert "var visibleErrorWidget = hasVisibleMatch(doc," in expressions[0]
 
     expressions.clear()
     solver._nc_retry_targets()

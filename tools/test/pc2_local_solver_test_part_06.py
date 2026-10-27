@@ -168,13 +168,15 @@ def test_compact_active_challenge_pages_keeps_one_page_per_scope(monkeypatch) ->
                 "seed": {
                     "challenge_id": "seed-challenge",
                     "last_request": {
-                        "target_url": "https://sf.taobao.com/list/50025969__2.htm"
+                        "target_url": "https://sf.taobao.com/list/50025969__2.htm",
+                        "cdp_endpoint": "http://127.0.0.1:9223",
                     },
                 },
                 "detail": {
                     "challenge_id": "detail-challenge",
                     "last_request": {
-                        "target_url": "https://sf-item.taobao.com/sf_item/570192626894.htm"
+                        "target_url": "https://sf-item.taobao.com/sf_item/570192626894.htm",
+                        "cdp_endpoint": "http://127.0.0.1:9223",
                     },
                 },
             }

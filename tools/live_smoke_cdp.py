@@ -130,9 +130,26 @@ def _cdp_endpoint_healthy_for_reconnect(cdp_endpoint: str) -> bool:
         return False
     return bool(resolve_playwright_cdp_endpoint(cdp_endpoint))
 
-def connect_browser_over_cdp(playwright: Any, cdp_endpoint: str, *, timeout_ms: int = DEFAULT_CDP_CONNECT_TIMEOUT_MS) -> Any:
+def connect_browser_over_cdp(
+    playwright: Any,
+    cdp_endpoint: str,
+    *,
+    timeout_ms: int = DEFAULT_CDP_CONNECT_TIMEOUT_MS,
+) -> Any:
+    from tools.capture_budget import (
+        CaptureBudgetExceeded,
+        bounded_connect_timeout,
+        wait_for_cdp_retry,
+    )
+
     attempts = _cdp_reconnect_attempts()
     backoff = _cdp_reconnect_backoff_seconds()
+    try:
+        bounded_connect_timeout(timeout_ms)
+    except CaptureBudgetExceeded as error:
+        _raise_cdp_endpoint_unavailable(
+            cdp_endpoint, "connect_over_cdp_capture_budget", error
+        )
     try:
         compaction = compact_cdp_page_targets_if_needed(cdp_endpoint)
     except EnvironmentAliasConflict:
@@ -140,26 +157,45 @@ def connect_browser_over_cdp(playwright: Any, cdp_endpoint: str, *, timeout_ms: 
     except Exception as error:
         _raise_cdp_endpoint_unavailable(cdp_endpoint, "compact_cdp_page_targets", error)
     if compaction.get("triggered"):
-        print(json.dumps({"event": "cdp_page_target_compaction", **compaction}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {"event": "cdp_page_target_compaction", **compaction},
+                ensure_ascii=False,
+            )
+        )
     last_error: BaseException | None = None
     for attempt in range(1, attempts + 1):
-        if attempt > 1 and not _cdp_endpoint_healthy_for_reconnect(cdp_endpoint):
-            last_error = RuntimeError(f"CDP health check failed before reconnect attempt {attempt}")
-            if attempt < attempts and backoff > 0:
-                time.sleep(backoff * attempt)
-            continue
         try:
+            bounded_connect_timeout(timeout_ms)
+            if attempt > 1 and not _cdp_endpoint_healthy_for_reconnect(cdp_endpoint):
+                last_error = RuntimeError(
+                    f"CDP health check failed before reconnect attempt {attempt}"
+                )
+                if attempt < attempts and backoff > 0:
+                    wait_for_cdp_retry(backoff * attempt)
+                continue
             resolved_endpoint = resolve_playwright_cdp_endpoint(cdp_endpoint)
-            return playwright.chromium.connect_over_cdp(resolved_endpoint, timeout=timeout_ms)
+            return playwright.chromium.connect_over_cdp(
+                resolved_endpoint, timeout=bounded_connect_timeout(timeout_ms)
+            )
         except EnvironmentAliasConflict:
             raise
+        except CaptureBudgetExceeded as error:
+            last_error = error
+            break
         except Exception as error:
             last_error = error
         if attempt < attempts and backoff > 0:
-            time.sleep(backoff * attempt)
+            try:
+                wait_for_cdp_retry(backoff * attempt)
+            except CaptureBudgetExceeded as error:
+                last_error = error
+                break
     _raise_cdp_endpoint_unavailable(
         cdp_endpoint,
-        "connect_over_cdp_bounded_reconnect",
+        "connect_over_cdp_capture_budget"
+        if isinstance(last_error, CaptureBudgetExceeded)
+        else "connect_over_cdp_bounded_reconnect",
         last_error or RuntimeError("CDP connection failed without an explicit error"),
     )
 

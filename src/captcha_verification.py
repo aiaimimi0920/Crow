@@ -32,6 +32,21 @@ def ready_target_matches(evidence, target_url):
     )
 
 
+def retry_failure_is_terminal(summary, target_url):
+    """A complete, bound retry widget needs action, not more success polling."""
+    return (
+        summary.get("readyState") == "complete"
+        and ready_target_matches(summary, target_url)
+        and summary.get("probeFailed", False) is False
+        and summary.get("authenticatedPage") is False
+        and summary.get("explicitFailure") is True
+        and summary.get("retryableFailure") is True
+        and summary.get("hasSlider") is False
+        and summary.get("hasChallengeWidget") is True
+        and summary.get("loginRequired") is False
+    )
+
+
 def _payload_authenticated(html, summary, target_url):
     if not html or summary.get("readyState") not in {"interactive", "complete"}:
         return False

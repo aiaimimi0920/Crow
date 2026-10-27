@@ -211,7 +211,10 @@ def test_no_slider_handoff_requires_fresh_terminal_evidence(
         solver, "_preflight_current_challenge", lambda: {"connected": True}
     )
     monkeypatch.setattr(solver, "_find_slider", lambda **kwargs: None)
-    monkeypatch.setattr(solver, "_page_challenge_summary", lambda: next(responses))
+    monkeypatch.setattr(
+        solver, "_page_challenge_summary", lambda: next(responses, summaries[-1])
+    )
+    monkeypatch.setattr(solver, "_wait_interruptibly", lambda _seconds: None)
     monkeypatch.setattr(solver, "_reset_failed_nc_challenge", lambda: False)
     monkeypatch.setattr(solver, "_bring_to_front", lambda: None)
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)

@@ -1,5 +1,9 @@
 """Cookie snapshot health aggregation independent of tool facades."""
 
+from contextlib import closing
+
+from requests import Session
+
 from src.cdp_cookie_transport import resolve_cdp_user_agent
 from src.collection.adapters.taobao_detail_auth import probe_detail_page
 from src.collection.adapters.taobao_health import classify_taobao_health
@@ -16,7 +20,24 @@ def probe_cookie_snapshot_health(
     cdp_endpoint: str = "",
     detail_target_url: str = "",
 ) -> dict[str, object]:
-    session = build_session_from_playwright_cookies(cookies)
+    with closing(build_session_from_playwright_cookies(cookies)) as session:
+        return _probe_with_session(
+            session,
+            cookies,
+            sample_urls,
+            cdp_endpoint=cdp_endpoint,
+            detail_target_url=detail_target_url,
+        )
+
+
+def _probe_with_session(
+    session: Session,
+    cookies: list[dict[str, object]],
+    sample_urls: list[str],
+    *,
+    cdp_endpoint: str,
+    detail_target_url: str,
+) -> dict[str, object]:
     user_agent = resolve_cdp_user_agent(cdp_endpoint)
     if detail_target_url:
         try:

@@ -81,7 +81,8 @@ def test_connect_tab_reuses_existing_login_target_and_bootstraps_websocket(monke
     assert "Runtime.evaluate" in sent_methods
     assert solver.last_failure_reason is None
 
-def test_manual_challenge_reuse_is_scoped_to_list_or_detail() -> None:
+
+def test_manual_challenge_reuse_binds_seed_and_preserves_detail() -> None:
     solver = captcha_solver.CaptchaSolver(
         port=9223,
         target_url=(
@@ -90,19 +91,35 @@ def test_manual_challenge_reuse_is_scoped_to_list_or_detail() -> None:
         ),
     )
 
-    assert solver._manual_challenge_matches_requested_target(
-        "https://sf.taobao.com//list/50025969__2.htm/_____tmd_____/punish?x5step=1"
-    ) is True
-    assert solver._manual_challenge_matches_requested_target(
-        "https://sf.taobao.com//list/50025970__2.htm/_____tmd_____/punish?x5step=1"
-    ) is True
+    assert (
+        solver._manual_challenge_matches_requested_target(
+            "https://sf.taobao.com//list/50025969__2.htm/_____tmd_____/punish?x5step=1"
+        )
+        is False
+    )
+    assert (
+        solver._manual_challenge_matches_requested_target(
+            "https://sf.taobao.com//list/50025970__2.htm/_____tmd_____/punish?x5step=1"
+        )
+        is False
+    )
+    assert (
+        solver._manual_challenge_matches_requested_target(
+            "https://sf.taobao.com/list/50025969__2.htm/_____tmd_____/punish"
+            "?page=4&st_param=5&location_code=110114&auction_start_seg=-1&x5step=1"
+        )
+        is True
+    )
     detail_solver = captcha_solver.CaptchaSolver(
         port=9223,
         target_url="https://sf-item.taobao.com/sf_item/601294677898.htm",
     )
-    assert detail_solver._manual_challenge_matches_requested_target(
-        "https://sf.taobao.com//list/50025970__2.htm/_____tmd_____/punish?x5step=1"
-    ) is False
+    assert (
+        detail_solver._manual_challenge_matches_requested_target(
+            "https://sf.taobao.com//list/50025970__2.htm/_____tmd_____/punish?x5step=1"
+        )
+        is False
+    )
     assert solver._solver_target_route(
         "https://sf-item.taobao.com/sf_item/601294677898.htm?source=a"
     ) != solver._solver_target_route(
@@ -113,6 +130,7 @@ def test_manual_challenge_reuse_is_scoped_to_list_or_detail() -> None:
     ) == solver._solver_target_route(
         "https://sf-item.taobao.com//sf_item/601294677898.htm/_____tmd_____/punish?x5step=1"
     )
+
 
 def test_destination_recovery_normalizes_duplicate_path_slashes() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
