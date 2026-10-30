@@ -387,7 +387,11 @@ def test_pending_confirmation_is_processed_before_another_solver_run(
     patch_loop_dependency(
         monkeypatch,
         "_retry_pending_auth_confirmation",
-        lambda _api: {"pending": True, "attempted": False, "confirmed": False},
+        lambda _api, **_kwargs: {
+            "pending": True,
+            "attempted": False,
+            "confirmed": False,
+        },
     )
     patch_loop_dependency(
         monkeypatch,
@@ -420,7 +424,11 @@ def test_confirmed_auth_completion_reloads_status_before_solver_decision(
     patch_loop_dependency(
         monkeypatch,
         "_retry_pending_auth_confirmation",
-        lambda _api: {"pending": False, "attempted": True, "confirmed": True},
+        lambda _api, **_kwargs: {
+            "pending": False,
+            "attempted": True,
+            "confirmed": True,
+        },
     )
     patch_loop_dependency(
         monkeypatch,
@@ -455,7 +463,7 @@ def test_confirmed_auth_completion_suppresses_immediate_periodic_cdp_probe(
     patch_loop_dependency(
         monkeypatch,
         "_retry_pending_auth_confirmation",
-        lambda _api: next(confirmation_results),
+        lambda _api, **_kwargs: next(confirmation_results),
     )
     patch_loop_dependency(
         monkeypatch,

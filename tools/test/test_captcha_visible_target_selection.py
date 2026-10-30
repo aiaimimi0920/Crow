@@ -59,7 +59,14 @@ def test_track_rect_uses_visible_handle_offsets_not_hidden_first_handle():
             "nodes": [
                 node(".nc_scale", 100, offsetWidth=310),
                 node(".btn_slide", 1, hidden=True, offsetLeft=200, offsetWidth=1),
-                node(".btn_slide", 100, offsetLeft=3, offsetWidth=30),
+                node(
+                    ".btn_slide",
+                    100,
+                    parent=0,
+                    offsetParentIndex=0,
+                    offsetLeft=3,
+                    offsetWidth=30,
+                ),
             ]
         }
     )

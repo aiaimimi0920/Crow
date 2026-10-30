@@ -239,7 +239,7 @@ def test_solver_returns_false_when_official_challenge_explicitly_rejects_drag(mo
     assert solver.solve() is False
     assert calls == {"connect": 1, "drag": 1, "reload": 0}
 
-def test_challenge_failure_diagnostic_keeps_error_code_and_removes_url_query() -> None:
+def test_challenge_failure_diagnostic_removes_opaque_code_and_page_context() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
 
     diagnostic = solver._challenge_failure_diagnostic(
@@ -252,9 +252,10 @@ def test_challenge_failure_diagnostic_keeps_error_code_and_removes_url_query() -
         }
     )
 
-    assert "code=error:TJiA4d/Vx6urd" in diagnostic
-    assert "title=Captcha intercept" in diagnostic
-    assert "path=https://sf.taobao.com/list/1.htm" in diagnostic
+    assert "code=other codeKind=opaque" in diagnostic
+    assert "TJiA4d" not in diagnostic
+    assert "Captcha intercept" not in diagnostic
+    assert "https://" not in diagnostic
     assert "x5secdata" not in diagnostic
     assert "secret" not in diagnostic
     assert "must not be logged" not in diagnostic

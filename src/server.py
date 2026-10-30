@@ -259,12 +259,16 @@ def _solver_force_unlock_flag_exists():
     return _solver_scopes().manual_flag_exists()
 
 
+def _solver_global_manual_pause_active():
+    return _solver_scopes().global_manual_pause_active()
+
+
 def _collection_effectively_paused():
     return _solver_scopes().effectively_paused()
 
 
 def _collection_scope_effectively_paused(scope):
-    if _solver_force_unlock_flag_exists():
+    if _solver_global_manual_pause_active():
         return True
     return _solver_scopes().scope_effectively_paused(scope, check_manual_flag=False)
 

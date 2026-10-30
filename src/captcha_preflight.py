@@ -4,14 +4,15 @@ import logging
 import re
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit
 
 from src.project_environment import getenv as project_getenv
 
 from .captcha_budget import SolveStopped
 from .captcha_context import LOCAL_MOCK_VERIFY_MODES
 from .captcha_dom import eval_in_all_frames
-from .captcha_verification import finalize_page_summary
+from .captcha_target_diagnostics import log_target_binding
+from .captcha_verification import finalize_page_summary, ready_target_matches
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class CaptchaPreflightMixin:
         except Exception:
             pass
 
-    def _page_challenge_summary(self):
+    def _page_challenge_summary(self, *, deadline=None):
         js_script = """
         (function() {
             function scan(doc) {
@@ -128,10 +129,15 @@ class CaptchaPreflightMixin:
             return summary;
         })()
         """
-        ret = self._send_cdp("Runtime.evaluate", {
+        params = {
             "expression": eval_in_all_frames(js_script),
             "returnByValue": True
-        })
+        }
+        ret = (
+            self._send_cdp("Runtime.evaluate", params)
+            if deadline is None
+            else self._send_cdp("Runtime.evaluate", params, deadline=deadline)
+        )
         if ret and "result" in ret and ret["result"].get("value"):
             return finalize_page_summary(ret["result"]["value"], getattr(self, "target_url", None))
         return {
@@ -163,9 +169,13 @@ class CaptchaPreflightMixin:
             pass
         self.ws = None
 
-    def _refresh_challenge_summary(self, fallback):
+    def _refresh_challenge_summary(self, fallback, *, deadline=None):
         try:
-            refreshed = self._page_challenge_summary()
+            refreshed = (
+                self._page_challenge_summary()
+                if deadline is None
+                else self._page_challenge_summary(deadline=deadline)
+            )
         except Exception as error:
             logger.warning("[SOLVER] Challenge summary refresh failed: %s", error)
             return {**(fallback if isinstance(fallback, dict) else {}), "probeFailed": True}
@@ -174,20 +184,30 @@ class CaptchaPreflightMixin:
         return refreshed
 
     def _challenge_failure_diagnostic(self, summary):
-        """Return bounded, query-free NC failure context for runtime logs."""
+        """Reuse the snapshot without emitting page text, URLs or opaque codes."""
         payload = summary if isinstance(summary, dict) else {}
-        title = re.sub(r"\s+", " ", str(payload.get("title") or "")).strip()[:100]
-        class_name = re.sub(r"\s+", " ", str(payload.get("className") or "")).strip()[:120]
-        error_code = re.sub(r"[^a-zA-Z0-9_:/-]", "", str(payload.get("errorCode") or ""))[:80]
-        href = str(payload.get("href") or "").strip()
-        try:
-            parsed = urlsplit(href)
-            safe_href = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))[:220]
-        except ValueError:
-            safe_href = ""
+        raw_code = payload.get("errorCode")
+        error_code, code_kind = "other", "invalid"
+        if raw_code is None or raw_code == "":
+            error_code, code_kind = "none", "absent"
+        elif isinstance(raw_code, str):
+            if re.fullmatch(r"error:[0-9]{1,6}", raw_code):
+                error_code, code_kind = raw_code, "numeric"
+            elif re.fullmatch(r"error:[a-zA-Z0-9/_-]{1,64}", raw_code):
+                code_kind = "opaque"
+        ready_state = payload.get("readyState")
+        if not isinstance(ready_state, str) or ready_state not in {
+            "loading",
+            "interactive",
+            "complete",
+        }:
+            ready_state = "unknown"
+        target_ready = ready_state != "unknown" and ready_target_matches(
+            payload, getattr(self, "target_url", None)
+        )
         return (
-            f"code={error_code or 'none'} title={title or 'none'} "
-            f"class={class_name or 'none'} path={safe_href or 'none'} "
+            f"code={error_code} codeKind={code_kind} ready={ready_state} "
+            f"targetReady={target_ready} probeFailed={bool(payload.get('probeFailed'))} "
             f"retryable={bool(payload.get('retryableFailure'))}"
         )
 
@@ -221,6 +241,7 @@ class CaptchaPreflightMixin:
             "manual_required": False,
             "has_slider": False,
             "already_authenticated": False,
+            "retryable_failure": True,
         }
 
     def _wait_for_loading_document(self, summary):
@@ -239,7 +260,16 @@ class CaptchaPreflightMixin:
             if remaining <= 0:
                 break
             self._wait_interruptibly(min(0.25, remaining))
-            summary = self._refresh_challenge_summary(summary)
+            if self._stop_if_cancelled():
+                raise SolveStopped(self.last_failure_reason or "cancelled")
+            if time.monotonic() >= deadline:
+                break
+            refreshed = self._refresh_challenge_summary(summary, deadline=deadline)
+            if self._stop_if_cancelled():
+                raise SolveStopped(self.last_failure_reason or "cancelled")
+            if time.monotonic() >= deadline:
+                break
+            summary = refreshed
         return summary
 
     def _preflight_current_challenge(self):
@@ -259,6 +289,15 @@ class CaptchaPreflightMixin:
             challenge_summary = {"probeFailed": True}
 
         challenge_summary = self._wait_for_loading_document(challenge_summary)
+        from .captcha_navigation_receipt import navigation_binding_fields
+
+        log_target_binding(
+            logger,
+            "preflight",
+            challenge_summary,
+            self.target_url,
+            navigation=navigation_binding_fields(self, challenge_summary),
+        )
         has_slider = bool(challenge_summary.get("hasSlider"))
         if challenge_summary.get("probeFailed"):
             return self._preflight_retryable_failure()
@@ -288,15 +327,22 @@ class CaptchaPreflightMixin:
             # login-recovery window first only delays the retry by two minutes.
             if challenge_summary.get("explicitFailure"):
                 logger.info("[SOLVER] Failed NC widget detected; trying retry-click immediately.")
-                if self._reset_failed_nc_challenge():
-                    challenge_summary = self._refresh_challenge_summary(challenge_summary)
-                    if challenge_summary.get("probeFailed"):
-                        return self._preflight_retryable_failure()
-                    has_slider = bool(challenge_summary.get("hasSlider"))
-                    if challenge_summary.get("authenticatedPage"):
-                        return self._preflight_already_authenticated()
-                    if has_slider:
-                        logger.info("[SOLVER] Slider restored after immediate NC retry-click.")
+                self._reset_failed_nc_challenge()
+                if self._stop_if_cancelled():
+                    return self._preflight_retryable_failure()
+                # False also covers an uncertain replacement document. Inspect it
+                # before authorizing another click or the slower login fallback.
+                challenge_summary = self._refresh_challenge_summary(challenge_summary)
+                challenge_summary = self._wait_for_loading_document(challenge_summary)
+                if challenge_summary.get("probeFailed"):
+                    return self._preflight_retryable_failure()
+                has_slider = bool(challenge_summary.get("hasSlider"))
+                if not has_slider and challenge_summary.get("readyState") == "loading":
+                    return self._preflight_retryable_failure("challenge_loading")
+                if challenge_summary.get("authenticatedPage"):
+                    return self._preflight_already_authenticated()
+                if has_slider:
+                    logger.info("[SOLVER] Slider restored after immediate NC retry-click.")
 
             if not has_slider:
                 logger.warning("[SOLVER] Unsupported hard block detected; waiting to see if the session recovers.")
@@ -308,6 +354,8 @@ class CaptchaPreflightMixin:
                 has_slider = bool(challenge_summary.get("hasSlider"))
                 if challenge_summary.get("authenticatedPage"):
                     return self._preflight_already_authenticated()
+                if not has_slider and challenge_summary.get("readyState") == "loading":
+                    return self._preflight_retryable_failure("challenge_loading")
                 if has_slider:
                     logger.info("[SOLVER] Slider appeared after hard-block wait; continuing with drag solver.")
 

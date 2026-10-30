@@ -52,6 +52,11 @@ def bounded_connect_timeout(timeout_ms):
     return bounded_capture_timeout(timeout_ms)
 
 
+def bounded_http_timeout(timeout_seconds):
+    remaining = _remaining_seconds()
+    return timeout_seconds if remaining is None else min(timeout_seconds, remaining)
+
+
 def wait_for_cdp_retry(seconds):
     remaining = _remaining_seconds()
     if remaining is not None and seconds >= remaining:

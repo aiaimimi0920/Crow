@@ -19,14 +19,14 @@ def _collection_pause_state(api_base_url: str) -> dict[str, Any]:
         payload = fetch_json(endpoint, timeout=5)
     except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         return {
-            "paused": False,
+            "paused": True,
             "reason": "status_unavailable",
             "error": safe_exception_text(exc),
         }
 
     if not isinstance(payload, dict):
         return {
-            "paused": False,
+            "paused": True,
             "reason": "status_unavailable",
             "error": "non_object_status",
         }
@@ -300,7 +300,12 @@ def _detail_challenge_should_break_batch(
 ) -> bool:
     if result.get("decision") != "detail_item_retryable_failure":
         return False
-    if result.get("reason") == "detail_cdp_unreachable":
+    if result.get("reason") in {
+        "detail_cdp_unreachable",
+        "detail_browser_proxy_unavailable",
+        "detail_navigation_connection_closed",
+        "detail_navigation_timed_out",
+    }:
         return True
     return result.get("reason") in {
         "detail_challenge_page",

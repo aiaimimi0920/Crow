@@ -38,4 +38,8 @@ def test_child_exit_publishes_failure_and_closes_result_pipe(monkeypatch, discon
         pipe, "http://127.0.0.1:1", "https://example.invalid/", 1, None, 0
     )
     assert pipe.closed
-    assert pipe.result == {"success": False, "error": "SystemExit(75)"}
+    assert pipe.result == {
+        "success": False,
+        "failure_reason": "execution_unavailable",
+        "error": "SystemExit(75)",
+    }

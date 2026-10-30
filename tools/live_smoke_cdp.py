@@ -141,6 +141,7 @@ def connect_browser_over_cdp(
         bounded_connect_timeout,
         wait_for_cdp_retry,
     )
+    from tools.cdp_reconnect_health import CdpReconnectHealthUnavailable
 
     attempts = _cdp_reconnect_attempts()
     backoff = _cdp_reconnect_backoff_seconds()
@@ -168,7 +169,7 @@ def connect_browser_over_cdp(
         try:
             bounded_connect_timeout(timeout_ms)
             if attempt > 1 and not _cdp_endpoint_healthy_for_reconnect(cdp_endpoint):
-                last_error = RuntimeError(
+                last_error = CdpReconnectHealthUnavailable(
                     f"CDP health check failed before reconnect attempt {attempt}"
                 )
                 if attempt < attempts and backoff > 0:

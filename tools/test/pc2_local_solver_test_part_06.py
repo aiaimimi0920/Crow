@@ -386,7 +386,11 @@ def test_confirmed_cooldown_resume_suppresses_immediate_periodic_cdp_probe(
     patch_loop_dependency(
         monkeypatch,
         "_retry_pending_auth_confirmation",
-        lambda _api: {"pending": False, "attempted": False, "confirmed": False},
+        lambda _api, **_kwargs: {
+            "pending": False,
+            "attempted": False,
+            "confirmed": False,
+        },
     )
     patch_loop_dependency(
         monkeypatch,

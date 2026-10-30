@@ -36,12 +36,17 @@ class SolverStatusReader:
     retry_interval: Callable[[], int]
     max_runtime: Callable[[], int]
     cookie_status: Callable[[], dict[str, object]]
+    global_manual_pause_active: Callable[[], bool] | None = None
 
     __all__: ClassVar[tuple[str, ...]] = ("_captcha_solver_runtime_status",)
 
     def _captcha_solver_runtime_status(
         self, now: float | None = None
     ) -> dict[str, object]:
+        with self.runtime().lock:
+            return self._read_locked(now)
+
+    def _read_locked(self, now: float | None) -> dict[str, object]:
         current_time = self.clock() if now is None else now
         with self.runtime().lock:
             execution = self.runtime().solver.snapshot()
@@ -135,6 +140,11 @@ class SolverStatusReader:
             "node_solver_expected": bool(delegated_to_node and not manual_only),
             "real_taobao_auto_solver_enabled": self.auto_enabled(),
             "force_unlock_flag_exists": force_unlock_flag_exists,
+            "global_manual_pause_active": (
+                self.global_manual_pause_active()
+                if self.global_manual_pause_active is not None
+                else force_unlock_flag_exists
+            ),
             "paused": bool(
                 self.paused()
                 or any(status.get("paused") for status in scope_statuses.values())

@@ -35,7 +35,10 @@ def test_fetch_browser_navigation_list_page_preserves_challenge_target_for_solve
     assert closed_targets == []
 
 def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypatch) -> None:
+    from playwright.sync_api import Error
+
     fake_sync_api = types.ModuleType("playwright.sync_api")
+    fake_sync_api.Error = Error
     events: list[str] = []
 
     class FakePlaywrightContext:
@@ -139,7 +142,10 @@ def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypat
 def test_fetch_detail_with_browser_preserves_existing_login_without_opening_another_page(
     monkeypatch,
 ) -> None:
+    from playwright.sync_api import Error
+
     fake_sync_api = types.ModuleType("playwright.sync_api")
+    fake_sync_api.Error = Error
 
     class FakePlaywrightContext:
         def __enter__(self):

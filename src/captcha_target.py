@@ -5,21 +5,29 @@ import logging
 import re
 import threading
 import time
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
 from src.project_environment import getenv as project_getenv
 
+from .captcha_budget import SolveStopped
 from .captcha_context import DEFAULT_CDP_PAGE_TARGET_LIMIT
+from .captcha_deferral import TargetNavigationUnconfirmed
+from .captcha_navigation_flow import begin_navigation_trace
+from .captcha_navigation_receipt import NavigationReceipt, accepted_navigation_reply
 from .captcha_pointer_backend import OSPointerBackend
-from .collection.adapters.taobao_auth_target import SEED_IDENTITY_QUERY_KEYS
+from .captcha_target_lifecycle import CaptchaTargetLifecycleMixin
+from .collection.adapters.taobao_auth_target import (
+    SEED_IDENTITY_QUERY_KEYS,
+    canonical_auth_target,
+)
 from .collection.adapters.taobao_solver_target import _split_web_target_url
 
 logger = logging.getLogger(__name__)
 
 
-class CaptchaTargetMixin:
+class CaptchaTargetMixin(CaptchaTargetLifecycleMixin):
     def __init__(self, port=9222, target_url=None, cdp_endpoint=None, cancel_checker=None,
                  *, pointer_backend: OSPointerBackend | None = None):
         self._pointer_backend_override = pointer_backend
@@ -44,6 +52,8 @@ class CaptchaTargetMixin:
         self._uinput_handle = None
         self._uinput_ecodes = None
         self._opened_target_ids = set()
+        self._navigation_receipt = None
+        self._navigation_binding_reads = 0
         self.last_failure_reason = None
         self._last_mock_terminal_state = None
         self.cancel_checker = cancel_checker
@@ -88,10 +98,22 @@ class CaptchaTargetMixin:
             x, y = getattr(self, "_cdp_mouse_position", (0, 0))
             if callable(getattr(self.ws, "settimeout", None)):
                 self.ws.settimeout(0.1)
-            self.ws.send(json.dumps({"id": self.message_id, "method": "Input.dispatchMouseEvent",
-                                    "params": {"type": "mouseReleased", "x": x, "y": y,
-                                               "button": "left", "buttons": 0, "clickCount": 1}}))
+            payload = json.dumps(
+                {
+                    "id": self.message_id,
+                    "method": "Input.dispatchMouseEvent",
+                    "params": {
+                        "type": "mouseReleased",
+                        "x": x,
+                        "y": y,
+                        "button": "left",
+                        "buttons": 0,
+                        "clickCount": 1,
+                    },
+                }
+            )
             self.message_id += 1
+            self.ws.send(payload)
         except Exception:
             pass
         finally:
@@ -115,6 +137,7 @@ class CaptchaTargetMixin:
         if target_id:
             if target_id != self.target_id:
                 self._target_activation_verified = False
+                self._navigation_receipt = None
             self.target_id = target_id
         if target_ws_url:
             self.target_ws_url = target_ws_url
@@ -127,7 +150,16 @@ class CaptchaTargetMixin:
             timeout = self._bounded_io_timeout(timeout)
             try:
                 resp = requests.get(f"{self.cdp_endpoint}/json/{endpoint}", timeout=timeout)
-                return resp.json()
+                status = getattr(resp, "status_code", 200)
+                if not 200 <= status < 300:
+                    raise ValueError(f"CDP endpoint returned HTTP {status}")
+                payload = resp.json()
+                if endpoint == "list" and (
+                    not isinstance(payload, list)
+                    or any(not isinstance(tab, dict) for tab in payload)
+                ):
+                    raise ValueError("CDP target directory is not an object array")
+                return payload
             except Exception as error:
                 last_error = error
         if last_error is not None:
@@ -154,6 +186,7 @@ class CaptchaTargetMixin:
         self.target_id = None
         self.target_ws_url = None
         self.current_target_url = None
+        self._navigation_receipt = None
         self._linux_window_id = None
 
     @staticmethod
@@ -209,30 +242,6 @@ class CaptchaTargetMixin:
             "安全验证",
         }
 
-    def _close_cdp_target(self, target_id):
-        target_id = str(target_id or "").strip()
-        if not target_id:
-            return False
-        try:
-            requests.get(
-                f"{self.cdp_endpoint}/json/close/{quote(target_id, safe='')}",
-                timeout=5,
-            )
-            return True
-        except Exception as error:
-            logger.warning("[SOLVER] Failed to close CDP target %s: %s", target_id, error)
-            return False
-
-    def _open_keepalive_tab(self):
-        try:
-            response = requests.put(f"{self.cdp_endpoint}/json/new?about:blank", timeout=5)
-            payload = response.json()
-            if isinstance(payload, dict):
-                return str(payload.get("id") or "").strip() or None
-        except Exception as error:
-            logger.warning("[SOLVER] Failed to open keepalive tab before page compaction: %s", error)
-        return None
-
     def _compact_cdp_pages_if_needed(self, tabs=None, reserve_for_new_page=False):
         if tabs is None:
             tabs = self._get_json("list")
@@ -250,23 +259,37 @@ class CaptchaTargetMixin:
         if page_count < trigger_count:
             return {"triggered": False, "page_count": page_count, "closed": 0}
 
+        # The shared directory includes captures and manual recovery pages.
+        # Reusing a page or recognizing its URL does not grant creation ownership.
+        owned_pages = [
+            tab
+            for tab in page_targets
+            if str(tab.get("id") or "").strip() in self._opened_target_ids
+        ]
+        if not owned_pages:
+            logger.info("[SOLVER] CDP page limit reached; preserving unowned pages.")
+            return {"triggered": False, "page_count": page_count, "closed": 0}
+
         logger.info(
             f"[SOLVER] CDP page target count reached {page_count}; "
-            "closing stale page targets before retrying current task."
+            "closing only solver-owned page targets before retrying current task."
         )
-        keepalive_target_id = self._open_keepalive_tab()
-        preserve_target_id = keepalive_target_id or str(page_targets[0].get("id") or "").strip()
-        self._reset_current_target()
+        keepalive_target_id = None
+        preserve_target_id = None
+        if len(owned_pages) == page_count:
+            keepalive_target_id = self._open_keepalive_tab()
+            if not keepalive_target_id:
+                preserve_target_id = str(owned_pages[0].get("id") or "").strip()
         closed = 0
-        for tab in page_targets:
-            target_id = tab.get("id")
-            if str(target_id or "").strip() == preserve_target_id:
+        for tab in owned_pages:
+            target_id = str(tab.get("id") or "").strip()
+            if target_id == preserve_target_id:
                 continue
             if self._close_cdp_target(target_id):
                 closed += 1
-                self._opened_target_ids.discard(str(target_id or ""))
-        self.target_id = None
-        self.target_ws_url = None
+                self._opened_target_ids.discard(target_id)
+                if self.target_id == target_id:
+                    self._reset_current_target()
         summary = {"triggered": True, "page_count": page_count, "closed": closed}
         if keepalive_target_id:
             summary["keepalive_target_id"] = keepalive_target_id
@@ -274,42 +297,13 @@ class CaptchaTargetMixin:
             summary["preserved_target_id"] = preserve_target_id
         return summary
 
-    def _close_owned_target_tabs(self):
-        budget = getattr(self, "_solve_budget", None)
-        if budget is not None and budget.stopped(self._cancel_requested):
-            # Keep tabs for manual recovery rather than extend an expired run with cleanup I/O.
-            return 0
-        owned_target_ids = [target_id for target_id in self._opened_target_ids if target_id]
-        if not owned_target_ids:
-            return 0
-        if self.ws:
-            try:
-                self.ws.close()
-            except Exception:
-                pass
-            self.ws = None
-
-        closed = 0
-        current_target_id = self.target_id
-        for target_id in owned_target_ids:
-            if self._close_cdp_target(target_id):
-                closed += 1
-            self._opened_target_ids.discard(target_id)
-        if current_target_id in owned_target_ids:
-            self.target_id = None
-            self.target_ws_url = None
-            self.current_target_url = None
-        return closed
-
     def _prune_duplicate_challenge_tabs(self, tabs):
         """Keep only the active punish target before a solve attempt.
 
-        Each collection scope owns one active challenge at a time. Failed
-        requests and cooldown recovery can leave punish pages for older item
-        routes in the shared browser profile; those pages may compete for the
-        same challenge/session state. Preserve one page for the requested scope
-        and close only duplicate pages in that scope. Login, normal auction
-        pages, and the other collection scope remain untouched.
+        Preserve one challenge for the requested identity, not the whole scope.
+        Seed identity includes the list route and its four job query parameters;
+        detail identity is the canonical item. Other jobs, nonmatching identities,
+        login pages and normal auction pages remain untouched.
         """
         if not isinstance(tabs, list):
             return {"closed": 0, "kept": None}
@@ -331,7 +325,10 @@ class CaptchaTargetMixin:
             if not target_id or not tab.get("webSocketDebuggerUrl"):
                 continue
             candidate_scope = self._solver_target_scope(tab_url)
-            if requested_scope:
+            if requested_scope in {"seed", "detail"}:
+                if not self._manual_challenge_matches_requested_target(tab_url):
+                    continue
+            elif requested_scope:
                 if candidate_scope != requested_scope:
                     continue
             elif self._solver_target_route(tab_url) != requested_route:
@@ -457,6 +454,13 @@ class CaptchaTargetMixin:
         if not challenge_route:
             return False
         challenge_scope = self._solver_target_scope(value)
+        if requested_scope == "detail":
+            try:
+                return canonical_auth_target("detail", value) == canonical_auth_target(
+                    "detail", self.target_url
+                )
+            except (ValueError, TypeError, AttributeError):
+                return False
         if requested_scope == "seed":
             # A different region or page cannot satisfy target-bound seed proof.
             return challenge_route == requested_route
@@ -492,6 +496,8 @@ class CaptchaTargetMixin:
         )
 
     def _prepare_opened_target_before_navigation(self, payload, target_url):
+        self._navigation_receipt = None
+        self._navigation_binding_reads = 0
         if not isinstance(payload, dict):
             return False
         target_ws = str(payload.get("webSocketDebuggerUrl") or "").strip()
@@ -499,13 +505,32 @@ class CaptchaTargetMixin:
             return False
         if not self._connect_to_target(target_ws, "new solver target"):
             return False
-        navigation = self._send_cdp("Page.navigate", {"url": target_url})
-        if navigation is None:
-            logger.warning("[SOLVER] Identity-first target navigation failed.")
-            return False
+        begin_navigation_trace(self, payload, target_url)
+        try:
+            navigation = self._send_cdp("Page.navigate", {"url": target_url})
+        except SolveStopped:
+            raise
+        except Exception:  # noqa: BLE001 -- uncertain navigation must not be replayed
+            navigation = None
+        if not accepted_navigation_reply(navigation):
+            if self._stop_if_cancelled():
+                raise SolveStopped(self.last_failure_reason)
+            logger.warning(
+                "[SOLVER] Target navigation unconfirmed; deferring without replay."
+            )
+            raise TargetNavigationUnconfirmed() from None
+        self._navigation_receipt = NavigationReceipt(
+            str(payload.get("id") or ""),
+            target_url,
+            navigation["frameId"],
+            navigation.get("loaderId"),
+        )
+        self._navigation_binding_reads = 0
         payload["url"] = target_url
         self.current_target_url = target_url
-        logger.info("[SOLVER] Opened target with browser identity installed before navigation.")
+        logger.info(
+            "[SOLVER] Opened target with browser identity installed before navigation."
+        )
         return True
 
 

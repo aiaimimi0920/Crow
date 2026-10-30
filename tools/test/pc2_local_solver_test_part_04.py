@@ -31,7 +31,7 @@ def test_paused_api_trigger_falls_back_to_active_seed_request_route(
     }
     patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
     patch_loop_dependency(
-        monkeypatch, "_retry_pending_auth_confirmation", lambda _api: {}
+        monkeypatch, "_retry_pending_auth_confirmation", lambda _api, **_kwargs: {}
     )
     patch_loop_dependency(
         monkeypatch, "_retry_pending_collection_resume", lambda _api: {}
@@ -83,6 +83,7 @@ def test_paused_api_trigger_falls_back_to_active_seed_request_route(
             "max_attempts": pc2_local_solver.DEFAULT_MAX_ATTEMPTS,
             "probe_target": challenge_target,
             "drag_profile_offset": 0,
+            "failure_details": {},
         }
     ]
 
@@ -98,7 +99,7 @@ def test_paused_api_trigger_passes_existing_hard_block_target(monkeypatch) -> No
 
     patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
     patch_loop_dependency(
-        monkeypatch, "_retry_pending_auth_confirmation", lambda _api: {}
+        monkeypatch, "_retry_pending_auth_confirmation", lambda _api, **_kwargs: {}
     )
     patch_loop_dependency(
         monkeypatch, "_retry_pending_collection_resume", lambda _api: {}

@@ -40,7 +40,10 @@ def capture_reply(capture, request):
         return {"kind": "configuration", "message": str(error)}
     # Private protocol boundary: never serialize an unknown exception's raw text.
     except Exception as error:  # noqa: BLE001
-        return {"kind": "error", "diagnostic": capture_error_diagnostic(error)}
+        return {
+            "kind": "error",
+            "diagnostic": capture_error_diagnostic(error, include_frames=True),
+        }
 
 
 def main():

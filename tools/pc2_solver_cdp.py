@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from importlib import import_module
 from typing import Protocol, cast
 from urllib.parse import parse_qsl, urlsplit
@@ -9,6 +10,7 @@ from src.collection.adapters.taobao_solver_target import _split_web_target_url
 from tools.internal_api_http import fetch_json
 from tools.pc2_solver_scope_policy import (
     _challenge_scope_for_url,
+    canonical_manual_challenge_target,
     solver_request_target_url,
     solver_request_target_urls,
 )
@@ -19,6 +21,8 @@ class ProbeSocket(Protocol):
     def send(self, payload: str) -> object: ...
 
     def recv(self) -> str | bytes: ...
+
+    def settimeout(self, timeout: float) -> object: ...
 
 
 class ProbeSolver(Protocol):
@@ -74,6 +78,9 @@ def _challenge_target_matches_request(
     candidate = solver._solver_target_route(tab_url)
     if requested == candidate:
         return True
+    if _challenge_scope_for_url(target_url) == "detail":
+        identity = canonical_manual_challenge_target(target_url)
+        return bool(identity and identity == canonical_manual_challenge_target(tab_url))
     if _challenge_scope_for_url(
         target_url
     ) != "seed" or not solver._is_manual_challenge_url(tab_url):
@@ -252,6 +259,7 @@ def check_cdp_browser_for_authenticated_target(
             return None
         normalized_target = solver._normalize_target_url(target_url)
         requested_route = solver._solver_target_route(target_url)
+        requested_scope = _challenge_scope_for_url(target_url)
         page_tabs = []
         exact_tabs = []
         route_tabs = []
@@ -265,17 +273,17 @@ def check_cdp_browser_for_authenticated_target(
             normalized_tab = solver._normalize_target_url(tab_url)
             if normalized_tab == normalized_target:
                 exact_tabs.append(tab)
-            elif (
-                requested_route
-                and solver._solver_target_route(tab_url) == requested_route
+            elif requested_route and (
+                solver._solver_target_route(tab_url) == requested_route
+                or (
+                    requested_scope == "detail"
+                    and _challenge_target_matches_request(solver, target_url, tab_url)
+                )
             ):
                 route_tabs.append(tab)
         scoped_tabs = exact_tabs + route_tabs
         # Auction completion requires this target, not another tab's session.
-        if (
-            _challenge_scope_for_url(target_url) in {"seed", "detail"}
-            and not scoped_tabs
-        ):
+        if requested_scope in {"seed", "detail"} and not scoped_tabs:
             return None
         target_scoped = bool(scoped_tabs)
         candidates = scoped_tabs or page_tabs
@@ -343,10 +351,23 @@ def check_cdp_browser_for_slider(
         challenge_tabs = []
         page_tabs = []
         other_tabs = []
+        solver = (
+            _create_probe_solver(cdp_endpoint=cdp_endpoint, target_url=target_url)
+            if target_url
+            else None
+        )
+        requested_route = solver._solver_target_route(target_url) if solver else None
         for tab in tabs:
             if not isinstance(tab, dict) or not tab.get("webSocketDebuggerUrl"):
                 continue
             url = str(tab.get("url") or "")
+            # Inline sliders and iframe targets need the same binding as redirects.
+            if (
+                solver is not None
+                and requested_route
+                and not _challenge_target_matches_request(solver, target_url, url)
+            ):
+                continue
             try:
                 path = urlsplit(url).path.lower()
             except ValueError:
@@ -362,23 +383,7 @@ def check_cdp_browser_for_slider(
             elif tab.get("type") == "iframe":
                 other_tabs.append(tab)
 
-        requested_route = None
-        if target_url:
-            solver = _create_probe_solver(
-                cdp_endpoint=cdp_endpoint, target_url=target_url
-            )
-            requested_route = solver._solver_target_route(target_url)
-            if requested_route:
-                challenge_tabs = [
-                    tab
-                    for tab in challenge_tabs
-                    if _challenge_target_matches_request(
-                        solver, target_url, tab.get("url")
-                    )
-                ]
-        challenge_tab_ids = {
-            str(tab.get("id") or "").strip() for tab in challenge_tabs
-        }
+        challenge_tab_ids = {str(tab.get("id") or "").strip() for tab in challenge_tabs}
         for target in challenge_tabs + page_tabs + other_tabs:
             ws_url = str(target.get("webSocketDebuggerUrl") or "").strip()
             ws = None
@@ -395,12 +400,25 @@ def check_cdp_browser_for_slider(
                     socket: ProbeSocket = ws,
                 ) -> object:
                     nonlocal send_id
+                    deadline = time.monotonic() + 5
+
+                    def prepare_io() -> None:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise TimeoutError("CDP probe command deadline")
+                        socket.settimeout(remaining)
+
                     send_id += 1
                     mid = send_id
                     msg = {"id": mid, "method": method, "params": params or {}}
+                    prepare_io()
                     socket.send(json.dumps(msg))
                     while True:
-                        resp = json.loads(socket.recv())
+                        prepare_io()
+                        raw = socket.recv()
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("CDP probe command deadline")
+                        resp = json.loads(raw)
                         if resp.get("id") == mid:
                             return resp.get("result")
 
@@ -420,7 +438,7 @@ def check_cdp_browser_for_slider(
                                 "awaitPromise": True,
                             },
                         )
-                    except Exception:  # noqa: BLE001 - probing must stay best-effort
+                    except Exception:  # noqa: BLE001,S110 -- best-effort foregrounding
                         pass
 
                 _send("Runtime.enable")

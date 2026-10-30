@@ -73,7 +73,7 @@ def test_slider_probe_closes_failed_socket_before_trying_next_target(monkeypatch
             self.closed = False
 
         def settimeout(self, timeout):
-            assert timeout == 5
+            assert 0 < timeout <= 5
 
         def send(self, payload):
             self.message = json.loads(payload)

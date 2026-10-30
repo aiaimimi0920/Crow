@@ -33,6 +33,7 @@ class AuthRecoveryHost(Protocol):
     SOLVER_DETAIL_PROGRESS_GRACE_SECONDS: float
     SOLVER_DETAIL_PROGRESS_GRACE_MIN_ITEMS: int
     _solver_force_unlock_flag_exists: Callable[[], bool]
+    _solver_global_manual_pause_active: Callable[[], bool]
     _solver_manual_flag_request: Callable[[], dict[str, object]]
     _solver_scope_runtime_status: ScopeStatus
     _challenge_scope_for_request: Callable[[object], str | None]
@@ -70,6 +71,7 @@ def bind_auth_recovery(
         runtime=lambda: host.RUNTIME,
         clock=lambda: host.time.time(),
         flag_exists=lambda: host._solver_force_unlock_flag_exists(),
+        global_manual_pause_active=lambda: host._solver_global_manual_pause_active(),
         flag_request=lambda: host._solver_manual_flag_request(),
         scope_status=lambda scope, **kwargs: host._solver_scope_runtime_status(
             scope, **kwargs

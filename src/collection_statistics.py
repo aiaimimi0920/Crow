@@ -87,8 +87,8 @@ class StatisticsCache:
         with self.lock:
             if self.owner is owner and self._generation == generation:
                 self.error = error
-                if self.background_refresh:
-                    self.attempted = self.clock()
+                # Slow successful and failed reads both get a full cooldown.
+                self.attempted = self.clock()
                 if values is not None:
                     self.values = values
                     self.sampled = self.clock()

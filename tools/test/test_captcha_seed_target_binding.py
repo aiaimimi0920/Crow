@@ -156,9 +156,10 @@ def test_login_page_still_uses_existing_manual_authentication_path():
     "target",
     (None, "https://sf-item.taobao.com/sf_item/123.htm?__captcha_solver_bg=1"),
 )
-def test_non_seed_cached_discovery_contract_is_unchanged(target):
+def test_generic_or_bound_detail_cache_remains_usable(target):
     solver, actions = selection(None)
     solver.target_url = target
+    solver.current_target_url = target
     solver.target_ws_url = "ws://fixture/cached"
     assert solver.connect_tab() is True
     assert actions["connected"] == ["ws://fixture/cached"]

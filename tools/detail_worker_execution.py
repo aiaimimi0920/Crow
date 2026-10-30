@@ -135,17 +135,26 @@ def run_detail_worker_once(
         _write_runtime_summary(config.output_dir, summary)
         return summary
     except Exception as exc:
-        from tools.capture_failure_diagnostics import capture_failure_summary
+        from tools.capture_failure_diagnostics import (
+            capture_failure_summary,
+            is_capture_navigation_connection_closed,
+            is_capture_navigation_timed_out,
+            is_capture_proxy_unavailable,
+        )
 
         is_challenge_error = _is_detail_challenge_error(exc)
         is_transient_dns = _is_transient_dns_error(exc)
         is_cdp_unreachable = isinstance(exc, CdpEndpointUnavailableError)
+        is_proxy_unavailable = is_capture_proxy_unavailable(exc)
+        is_navigation_closed = is_capture_navigation_connection_closed(exc)
+        is_navigation_timed_out = is_capture_navigation_timed_out(exc)
         preserve_retry_budget = (
             _challenge_retry_budget_preserved(
                 is_challenge_error=is_challenge_error,
                 is_transient_dns=is_transient_dns,
             )
             or is_cdp_unreachable
+            or is_proxy_unavailable
         )
         captcha_solver_report: dict[str, Any] | None = None
         if (
@@ -192,6 +201,12 @@ def run_detail_worker_once(
                 if is_transient_dns
                 else "detail_cdp_unreachable"
                 if is_cdp_unreachable
+                else "detail_browser_proxy_unavailable"
+                if is_proxy_unavailable
+                else "detail_navigation_connection_closed"
+                if is_navigation_closed
+                else "detail_navigation_timed_out"
+                if is_navigation_timed_out
                 else "exception"
             ),
             "item_id": item_id,

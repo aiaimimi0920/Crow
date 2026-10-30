@@ -3,6 +3,8 @@ import sys
 import time
 import types
 
+import pytest
+
 from src import captcha_solver
 from tools.test.captcha_solver_test_context import set_solver_platform
 
@@ -118,14 +120,19 @@ def test_os_drag_track_produces_monotonic_eased_steps(monkeypatch) -> None:
     assert all(left < right for left, right in zip(fracs, fracs[1:], strict=False))
     assert all(0.006 <= dwell <= 0.09 for dwell in dwells)
 
-def test_os_drag_release_plan_releases_at_target(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("platform_name", "peak_bounds"),
+    [("nt", (400.0, 401.2)), ("posix", (402.0, 405.0))],
+)
+def test_os_drag_release_plan_releases_at_target(monkeypatch, platform_name, peak_bounds) -> None:
+    set_solver_platform(monkeypatch, platform_name)
     solver = captcha_solver.CaptchaSolver(port=9223)
     monkeypatch.setattr(random, "uniform", lambda start, end: (start + end) / 2)
     profile = solver._os_drag_profile()
 
     peak_x, settle_xs, release_x = solver._os_drag_release_plan(100.0, 300.0, profile)
 
-    assert 400.0 <= peak_x <= 401.2
+    assert peak_bounds[0] <= peak_x <= peak_bounds[1]
     assert release_x == 400.0
     assert settle_xs
     assert settle_xs[-1] == release_x

@@ -185,6 +185,32 @@ def canonical_manual_challenge_target(value: object) -> str:
     return urlunsplit((parsed.scheme or "https", parsed.netloc, path or "/", "", ""))
 
 
+def _solver_request_is_resolved(solver_status: object) -> bool:
+    """A completed request is history, not authority to retry an old browser page."""
+    if not isinstance(solver_status, dict):
+        return False
+    if (
+        solver_status.get("last_status") not in ("manual_auth_completed", "solved")
+        or solver_status.get("paused") is not False
+        or solver_status.get("manual_required") is not False
+        or solver_status.get("running") is not False
+        or solver_status.get("force_reset_required") is True
+        or solver_status.get("force_unlock_flag_exists") is True
+        or str(solver_status.get("challenge_id") or "").strip()
+    ):
+        return False
+    return not any(
+        isinstance(scoped, dict)
+        and (
+            str(scoped.get("challenge_id") or "").strip()
+            or scoped.get("paused") is True
+            or scoped.get("manual_required") is True
+            or scoped.get("running") is True
+        )
+        for scoped in _solver_scope_statuses(solver_status).values()
+    )
+
+
 def node_solver_execution_block_reason(
     solver_status: object,
     local_cdp_endpoint: str,
@@ -193,13 +219,31 @@ def node_solver_execution_block_reason(
     """Fail closed unless this node is the sole eligible challenge executor."""
     if not isinstance(solver_status, dict) or solver_status.get("error"):
         return "status_unavailable"
+    if operator_pause_active(solver_status):
+        return "operator_paused"
     if solver_status_requires_manual_only(solver_status):
         return "manual_only"
     if solver_status.get("running") is True:
         return "nas_solver_running"
     if not node_owns_last_request(solver_status, local_cdp_endpoint, expected_node_id):
         return "request_owned_elsewhere"
+    if _solver_request_is_resolved(solver_status):
+        return "request_already_resolved"
     return None
+
+
+def operator_pause_active(solver_status: object) -> bool:
+    """Challenge pauses are work; an explicit operator pause is a control gate."""
+    return bool(
+        isinstance(solver_status, dict)
+        and (
+            solver_status.get("operator_paused") is True
+            or (
+                solver_status.get("paused") is True
+                and solver_status.get("pause_reason") == "operator"
+            )
+        )
+    )
 
 
 __all__ = (
@@ -210,6 +254,7 @@ __all__ = (
     "manual_challenge_registration_needed",
     "node_owns_last_request",
     "node_solver_execution_block_reason",
+    "operator_pause_active",
     "select_solver_scope_status",
     "solver_request_target_url",
     "solver_request_target_urls",

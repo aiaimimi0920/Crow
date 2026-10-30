@@ -47,6 +47,7 @@ def _probe_with_session(
                 session=session,
                 timeout=15,
                 user_agent=user_agent,
+                allow_same_detail_redirect=True,
             )
         except Exception as error:  # noqa: BLE001 - fail closed without exposing response tokens
             detail = {

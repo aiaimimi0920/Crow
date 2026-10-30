@@ -1,5 +1,5 @@
+import inspect
 import json
-from pathlib import Path
 
 import pytest
 
@@ -66,7 +66,9 @@ def test_ack_io_failure_does_not_resume_automation(paths, monkeypatch):
 
 
 def test_loop_gate_precedes_startup_and_every_browser_control_action():
-    source = (Path(__file__).resolve().parents[1] / "pc2_solver_loop.py").read_text(encoding="utf-8")
+    from tools import pc2_solver_loop
+
+    source = inspect.getsource(pc2_solver_loop.local_solver_loop)
     body = source[source.index("def local_solver_loop("):]
     assert body.index("while hold_manual_window(") < body.index("prepare_solver_browser(")
     loop = body[body.index("while True:"):]

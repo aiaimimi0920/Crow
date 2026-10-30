@@ -383,7 +383,7 @@ def test_paused_api_trigger_probes_and_passes_existing_slider_target(
 
     patch_loop_dependency(monkeypatch, "check_cdp_healthy", lambda _endpoint: True)
     patch_loop_dependency(
-        monkeypatch, "_retry_pending_auth_confirmation", lambda _api: {}
+        monkeypatch, "_retry_pending_auth_confirmation", lambda _api, **_kwargs: {}
     )
     patch_loop_dependency(
         monkeypatch, "_retry_pending_collection_resume", lambda _api: {}

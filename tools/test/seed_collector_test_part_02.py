@@ -73,6 +73,7 @@ def test_run_seed_collector_once_reports_challenge_and_observes_manual_pause(
     assert solver_flags == [True]
 
 def test_run_seed_collector_once_marks_browser_payload_missing_page_retryable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(seed_collector, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
 
     class _BrowserShellProbe:
@@ -139,6 +140,7 @@ def test_run_seed_collector_once_marks_browser_payload_missing_page_retryable(tm
     assert retry["page"] == 1
 
 def test_run_seed_collector_once_treats_punish_final_url_shell_as_challenge(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(seed_collector, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
 
     monkeypatch.setattr(
@@ -223,6 +225,7 @@ def test_run_seed_collector_once_pauses_and_requeues_when_cdp_endpoint_is_unreac
     assert retry["page"] == 1
 
 def test_run_seed_collector_once_passes_solver_enabled_to_fetch(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(seed_collector, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     solver_flags: list[bool] = []
 

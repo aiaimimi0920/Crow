@@ -25,6 +25,10 @@ from tools.pc2_solver_fallback import (
     _retry_node_solver_blocked_report,
     _retry_pending_collection_resume,
 )
+from tools.pc2_solver_maintenance import (
+    bind_pending_navigation,
+    pending_navigation_probe,
+)
 from tools.pc2_solver_retry_state import _reset_fallback_state
 from tools.pc2_solver_scope import close_challenge_pages_for_scope, notify_force_reset
 from tools.pc2_solver_scope_policy import (
@@ -101,7 +105,11 @@ def process_pending_control_actions(
             )
             raise SystemExit(75)
 
-    pending_confirmation = _retry_pending_auth_confirmation(api_base_url)
+    pending_confirmation = _retry_pending_auth_confirmation(
+        api_base_url,
+        cdp_endpoint=cdp_endpoint,
+        expected_node_id=expected_node_id,
+    )
     if pending_confirmation.get("confirmed"):
         last_auth_confirmed_at = time.time()
         log_event(
@@ -270,6 +278,8 @@ def recover_stale_pause(
     requested_target_urls: list[str],
     expected_node_id: str | None,
     last_auth_confirmed_at: float,
+    *,
+    last_probe_target: dict[str, object] | None = None,
 ) -> ControlResult:
     result: ControlResult = {
         "handled": True,
@@ -313,8 +323,23 @@ def recover_stale_pause(
         and target_url
         and node_owns_last_request(solver_status, cdp_endpoint, expected_node_id)
     ):
-        rebuild = rebuild_missing_challenge_target(cdp_endpoint, target_url)
-        result["last_probe_target"] = rebuild.get("probe_target")
+        pending_navigation = (
+            last_probe_target
+            if pending_navigation_probe(last_probe_target)
+            and last_probe_target.get("_challenge_id") == solver_status["challenge_id"]
+            else None
+        )
+        rebuild = (
+            rebuild_missing_challenge_target(
+                cdp_endpoint, target_url, pending_target=pending_navigation
+            )
+            if pending_navigation
+            else rebuild_missing_challenge_target(cdp_endpoint, target_url)
+        )
+        probe = rebuild.get("probe_target")
+        result["last_probe_target"] = bind_pending_navigation(
+            probe, solver_status["challenge_id"]
+        )
         result["reset_probe_counter"] = True
         log_event(
             {

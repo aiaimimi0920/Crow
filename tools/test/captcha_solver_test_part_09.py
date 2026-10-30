@@ -89,8 +89,8 @@ def test_prune_challenge_tabs_keeps_only_requested_target_route() -> None:
 
     result = solver._prune_duplicate_challenge_tabs(tabs)
 
-    assert result == {"closed": 2, "kept": "keep"}
-    assert closed == ["duplicate", "other-route"]
+    assert result == {"closed": 1, "kept": "keep"}
+    assert closed == ["duplicate"]
 
 def test_map_css_to_screen_allows_zero_distance_for_clicks() -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)

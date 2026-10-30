@@ -35,12 +35,15 @@ from tools.pc2_solver_loop_control import (
     retry_blocked_report,
 )
 from tools.pc2_solver_loop_failure import (
+    log_solver_cooldown_active,
     log_solver_cooldown_started,
     record_failed_attempt,
 )
 from tools.pc2_solver_loop_probe import prepare_solver_browser, probe_requested_targets
+from tools.pc2_solver_maintenance import pending_navigation_probe
 from tools.pc2_solver_manual_handoff import (
     attempt_or_manual_handoff,
+    report_execution_block,
     retry_terminal_manual_report,
 )
 from tools.pc2_solver_manual_window import hold_manual_window
@@ -61,9 +64,11 @@ from tools.pc2_solver_scope import (
     notify_manual_challenge,
 )
 from tools.pc2_solver_scope_policy import (
+    _solver_request_is_resolved,
     manual_challenge_registration_needed,
     node_owns_last_request,
     node_solver_execution_block_reason,
+    operator_pause_active,
     select_solver_scope_status,
     solver_request_target_urls,
     solver_status_requires_manual_only,
@@ -74,6 +79,7 @@ from tools.pc2_solver_transport import (
     read_solver_status,
     write_solver_heartbeat,
 )
+from tools.pc2_solver_work_selection import select_solver_work_status
 
 
 def local_solver_loop(
@@ -119,6 +125,15 @@ def local_solver_loop(
                 log_event({"kind": "status_error", "error": solver_status["error"]})
                 time.sleep(poll_seconds)
                 continue
+            if operator_pause_active(solver_status):
+                log_event(
+                    {
+                        "kind": "local_solver_execution_blocked",
+                        "reason": "operator_paused",
+                    }
+                )
+                time.sleep(poll_seconds)
+                continue
             compaction = compact_active_challenge_pages(
                 cdp_endpoint, solver_status, expected_node_id
             )
@@ -137,9 +152,11 @@ def local_solver_loop(
                 expected_node_id,
             )
             fallback_state = _load_fallback_state()
-            solver_status = select_solver_scope_status(
+            solver_status = select_solver_work_status(
                 solver_status,
-                preferred_challenge_id=fallback_state.get("challenge_id"),
+                fallback_state,
+                cdp_endpoint,
+                expected_node_id,
             )
             paused = bool(solver_status.get("paused"))
             running = bool(solver_status.get("running"))
@@ -215,16 +232,7 @@ def local_solver_loop(
             )
             if _solver_cooldown_active(fallback_state):
                 _save_fallback_state(fallback_state)
-                log_event(
-                    {
-                        "kind": "solver_cooldown_active",
-                        "until": fallback_state.get("solver_cooldown_until"),
-                        "reason": fallback_state.get("solver_cooldown_reason"),
-                        "consecutive_failures": fallback_state.get(
-                            "consecutive_failures", 0
-                        ),
-                    }
-                )
+                log_solver_cooldown_active(fallback_state)
                 time.sleep(poll_seconds)
                 continue
             cooldown_until = float(fallback_state.get("solver_cooldown_until") or 0)
@@ -314,7 +322,8 @@ def local_solver_loop(
                     paused=paused,
                 )
                 cdp_trigger = bool(probe_target)
-                last_probe_target = probe_target
+                if probe_target or not pending_navigation_probe(last_probe_target):
+                    last_probe_target = probe_target
 
             if api_trigger and not cdp_trigger:
                 recovery = recover_stale_pause(
@@ -324,6 +333,7 @@ def local_solver_loop(
                     requested_target_urls,
                     expected_node_id,
                     last_auth_confirmed_at,
+                    last_probe_target=last_probe_target,
                 )
                 last_probe_target = recovery["last_probe_target"]
                 last_auth_confirmed_at = recovery["last_auth_confirmed_at"]
@@ -346,6 +356,7 @@ def local_solver_loop(
                 and not cdp_trigger
                 and not manual_required
                 and not post_auth_probe_grace
+                and not _solver_request_is_resolved(solver_status)
                 and probe_counter >= _probe_interval
             ):
                 probe_counter = 0
@@ -376,32 +387,16 @@ def local_solver_loop(
                 expected_node_id,
             )
             if execution_block_reason:
-                if (
-                    execution_block_reason == "manual_only"
-                    and manual_challenge_registration_needed(latest_solver_status)
-                ):
-                    manual_report = notify_manual_challenge(
+                report_execution_block(
+                    execution_block_reason,
+                    latest_solver_status,
+                    partial(
+                        notify_manual_challenge,
                         api_base_url,
                         latest_solver_status,
                         expected_node_id,
-                    )
-                    report_solver = manual_report.get("captcha_solver")
-                    log_event(
-                        {
-                            "kind": "manual_challenge_reported",
-                            "status": manual_report.get("status"),
-                            "ok": manual_report.get("ok"),
-                            "error": manual_report.get("error"),
-                            "challenge_id": report_solver.get("challenge_id")
-                            if isinstance(report_solver, dict)
-                            else None,
-                        }
-                    )
-                log_event(
-                    {
-                        "kind": "local_solver_execution_blocked",
-                        "reason": execution_block_reason,
-                    }
+                    ),
+                    log_event,
                 )
                 time.sleep(poll_seconds)
                 continue
@@ -456,6 +451,7 @@ def local_solver_loop(
                 challenge_id=fallback_state.get("challenge_id"),
                 attempt=scheduled_attempt,
             )
+            failure_details: dict[str, object] = {}
             success = attempt_or_manual_handoff(
                 partial(
                     run_solver_local_with_deadline,
@@ -464,6 +460,7 @@ def local_solver_loop(
                     max_attempts=max_attempts,
                     probe_target=probe_target,
                     drag_profile_offset=drag_profile_offset,
+                    failure_details=failure_details,
                 ),
                 fallback_state,
                 solver_status,
@@ -499,7 +496,13 @@ def local_solver_loop(
                     probe_counter = 0
             else:
                 last_probe_target = record_failed_attempt(
-                    api_base_url, cdp_endpoint, target_url, probe_target
+                    api_base_url,
+                    cdp_endpoint,
+                    target_url,
+                    probe_target,
+                    failure_reason=failure_details.get("failure_reason"),
+                    solver_status=solver_status,
+                    expected_node_id=expected_node_id,
                 )
         except Exception as exc:  # noqa: BLE001 -- daemon reports a failed poll and retries
             log_event(

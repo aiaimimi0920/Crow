@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
-import time
 from urllib.parse import parse_qs, quote, urlsplit
 
 import requests
@@ -11,7 +9,11 @@ import websocket
 
 from src.project_environment import getenv as project_getenv
 
+from .captcha_budget import SolveStopped
+from .captcha_cdp_command import CaptchaCDPCommandMixin
 from .captcha_context import browser_identity_init_script, build_user_agent_override
+from .captcha_deferral import TargetNavigationUnconfirmed
+from .captcha_navigation_receipt import NavigationReceipt
 from .collection.adapters.taobao_solver_target import _is_taobao_target, _split_web_target_url
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ def _has_solver_url_flag(value, name):
     return parse_qs(query, keep_blank_values=True).get(name) == ["1"]
 
 
-class CaptchaCDPMixin:
+class CaptchaCDPMixin(CaptchaCDPCommandMixin):
     def _open_target_tab(self):
         target_url = self._normalize_target_url(self.target_url)
         if not target_url:
@@ -42,26 +44,50 @@ class CaptchaCDPMixin:
                         f"{self.cdp_endpoint}/json/new?{quote(opened_url, safe='/:%-._~')}",
                         timeout=timeout,
                     )
+                    status = getattr(response, "status_code", 200)
+                    if not 200 <= status < 300:
+                        last_error = f"HTTP {status}"
+                        continue
                     payload = response.json()
                 else:
                     payload = opened_target
-                if isinstance(payload, dict):
-                    self._remember_target_tab(payload)
-                    target_id = str(payload.get("id") or "").strip()
-                    if target_id:
-                        # A slow navigation must not create another renderer
-                        # for each preparation retry of this owned target.
-                        opened_target = payload
-                        self._opened_target_ids.add(target_id)
-                    if identity_first and not self._prepare_opened_target_before_navigation(
-                        payload,
-                        target_url,
-                    ):
-                        last_error = RuntimeError("identity-first target preparation failed")
+                if (
+                    not isinstance(payload, dict)
+                    or not isinstance(payload.get("id"), str)
+                    or not payload["id"].strip()
+                    or payload.get("type", "page") != "page"
+                ):
+                    last_error = "invalid target metadata"
+                    continue
+                # Remember ownership before validating attachment metadata. Never
+                # create a second renderer to repair a known target's response.
+                opened_target = payload
+                self._opened_target_ids.add(payload["id"].strip())
+                if self._stop_if_cancelled():
+                    # The create already completed; retain its ownership record,
+                    # but do not attach or navigate after cancellation/expiry.
+                    raise SolveStopped(self.last_failure_reason)
+                target_ws = payload.get("webSocketDebuggerUrl")
+                if not isinstance(target_ws, str) or not target_ws.startswith(
+                    ("ws://", "wss://")
+                ):
+                    last_error = "invalid target websocket metadata"
+                    break
+                self._remember_target_tab(payload)
+                if identity_first:
+                    prepared = self._prepare_opened_target_before_navigation(
+                        payload, target_url
+                    )
+                    if self._stop_if_cancelled():
+                        raise SolveStopped(self.last_failure_reason)
+                    if not prepared:
+                        last_error = "identity-first target preparation failed"
                         continue
-                    return payload
+                return payload
+            except (SolveStopped, TargetNavigationUnconfirmed):
+                raise
             except Exception as error:
-                last_error = error
+                last_error = type(error).__name__
         if last_error is not None:
             logger.warning("[SOLVER] Failed to open target tab: %s", last_error)
         return None
@@ -177,64 +203,53 @@ class CaptchaCDPMixin:
             logger.warning("[SOLVER] WS Connection failed: %s", e)
             return False
 
-    def _send_cdp(self, method, params=None):
-        if not self.ws: return None
+    def _connect_opened_target(self, payload):
+        """Reuse only this freshly opened target's identity-first connection."""
         if self._stop_if_cancelled():
-            return None
+            raise SolveStopped(self.last_failure_reason)
+        target_ws = payload.get("webSocketDebuggerUrl")
+        receipt = self._navigation_receipt
+        if (
+            isinstance(receipt, NavigationReceipt)
+            and receipt.target_id == payload.get("id") == self.target_id
+            and receipt.target_id in self._opened_target_ids
+            and receipt.target_url == self._normalize_target_url(self.target_url)
+            and self.target_ws_url == self._rewrite_ws_url(target_ws)
+            and getattr(self.ws, "connected", None) is True
+        ):
+            # This is transport reuse, not proof of document/authentication binding.
+            logger.info("[SOLVER] Reusing prepared target connection.")
+            return True
+        return self._connect_to_target(target_ws, str(payload.get("title") or ""))
 
-        msg = {
-            "id": self.message_id,
-            "method": method,
-            "params": params or {}
-        }
+    def _validate_cached_target_binding(self, tabs):
+        if not self.target_ws_url:
+            return
+        cached_url = self.current_target_url if tabs is None else None
+        for tab in tabs if isinstance(tabs, list) else []:
+            if isinstance(tab, dict) and tab.get("id") == self.target_id:
+                cached_url = tab.get("url")
+                self._remember_target_tab(tab)
+                break
+        if not cached_url or not self._manual_challenge_matches_requested_target(
+            cached_url
+        ):
+            self._reset_current_target()
 
-        try:
-            if getattr(self, "_solve_budget", None) is not None:
-                self.ws.settimeout(self._bounded_io_timeout(5))
-            self.ws.send(json.dumps(msg))
-            self.message_id += 1
-            start_time = time.time()
-            timeout_seconds = 12 if "captureScreenshot" in method else 5
-            while time.time() - start_time < timeout_seconds:
-                if self._stop_if_cancelled():
-                    return None
-                try:
-                    if getattr(self, "_solve_budget", None) is not None:
-                        self.ws.settimeout(self._bounded_io_timeout(timeout_seconds))
-                    res = self.ws.recv()
-                    res_json = json.loads(res)
-                    if res_json.get("id") == msg["id"]:
-                        if "error" in res_json:
-                            logger.error("[SOLVER] CDP Error method=%s error=%s", method, res_json["error"])
-                            return None
-                        return res_json.get("result")
-                except websocket.WebSocketTimeoutException:
-                    logger.warning("[SOLVER] Timeout waiting for %s", method)
-                    return None
-                except Exception as e:
-                    logger.warning("[SOLVER] Error receiving response method=%s: %s", method, e)
-                    return None
-        except Exception as e:
-            logger.error("[SOLVER] CDP Send Error method=%s: %s", method, e)
-            return None
-
-        return None
+    def _target_directory_refresh_failed(self):
+        if not self._stop_if_cancelled():
+            self.last_failure_reason = "cdp_unavailable"
+        self._close_solver_ws()
+        logger.warning("[SOLVER] Target directory refresh unavailable; deferring discovery.")
+        return False
 
     def connect_tab(self):
         """Connect to the background worker tab using explicit URL parameters."""
         tabs = self._get_json("list")
-        seed_target = self._solver_target_scope(self.target_url) == "seed"
-        if seed_target and self.target_ws_url:
-            cached_url = self.current_target_url if tabs is None else None
-            for tab in tabs if isinstance(tabs, list) else []:
-                if isinstance(tab, dict) and tab.get("id") == self.target_id:
-                    cached_url = tab.get("url")
-                    self._remember_target_tab(tab)
-                    break
-            if not cached_url or not self._manual_challenge_matches_requested_target(
-                cached_url
-            ):
-                self._reset_current_target()
+        requested_scope = self._solver_target_scope(self.target_url)
+        bound_target = requested_scope in {"seed", "detail"}
+        if bound_target:
+            self._validate_cached_target_binding(tabs)
         if tabs is None:
             if self.target_ws_url:
                 logger.info("[SOLVER] CDP target list unavailable; reusing cached target websocket.")
@@ -248,12 +263,18 @@ class CaptchaCDPMixin:
             pruning = self._prune_duplicate_challenge_tabs(tabs)
             if pruning.get("closed"):
                 refreshed_tabs = self._get_json("list")
-                if isinstance(refreshed_tabs, list):
-                    tabs = refreshed_tabs
-            logger.info("[SOLVER] Reusing cached target websocket.")
-            if self._connect_to_target(self.target_ws_url, "cached solver target"):
-                return True
-            logger.warning("[SOLVER] Cached target websocket failed; falling back to CDP discovery.")
+                if refreshed_tabs is None:
+                    return self._target_directory_refresh_failed()
+                tabs = refreshed_tabs
+                if bound_target:
+                    self._validate_cached_target_binding(tabs)
+            if self.target_ws_url:
+                logger.info("[SOLVER] Reusing cached target websocket.")
+                if self._connect_to_target(self.target_ws_url, "cached solver target"):
+                    return True
+                logger.warning(
+                    "[SOLVER] Cached target websocket failed; falling back to CDP discovery."
+                )
 
         compaction = self._compact_cdp_pages_if_needed(
             tabs,
@@ -262,7 +283,7 @@ class CaptchaCDPMixin:
         if compaction.get("triggered"):
             tabs = self._get_json("list")
             if tabs is None:
-                tabs = []
+                return self._target_directory_refresh_failed()
 
         if not tabs:
             normalized_target_url = self._normalize_target_url(self.target_url)
@@ -273,22 +294,21 @@ class CaptchaCDPMixin:
             if not isinstance(opened_target, dict):
                 logger.warning("[SOLVER] No Chrome/Edge debug sessions found on port %s.", self.port)
                 return False
-            target_ws = opened_target.get("webSocketDebuggerUrl")
-            target_title = str(opened_target.get("title") or "")
             logger.info("[SOLVER] Opened requested solver target: %s", normalized_target_url)
-            return self._connect_to_target(target_ws, target_title)
+            return self._connect_opened_target(opened_target)
 
         pruning = self._prune_duplicate_challenge_tabs(tabs)
         kept_challenge_target_id = str(pruning.get("kept") or "").strip()
         if pruning.get("closed") or self.target_id:
             refreshed_tabs = self._get_json("list")
-            if isinstance(refreshed_tabs, list):
-                tabs = refreshed_tabs
+            if refreshed_tabs is None:
+                return self._target_directory_refresh_failed()
+            tabs = refreshed_tabs
 
         target_ws = None
         target_title = ""
         normalized_target_url = self._normalize_target_url(self.target_url)
-        if seed_target:
+        if bound_target:
             tabs = [
                 tab
                 for tab in tabs
@@ -300,8 +320,12 @@ class CaptchaCDPMixin:
         if normalized_target_url:
             for tab in tabs:
                 url = self._normalize_target_url(tab.get("url", ""))
-                same_seed = seed_target and self._solver_target_scope(url) == "seed"
-                if url == normalized_target_url or same_seed:
+                same_identity = (
+                    bound_target
+                    and self._manual_challenge_matches_requested_target(url)
+                    and not self._is_login_url(url)
+                )
+                if url == normalized_target_url or same_identity:
                     self._remember_target_tab(tab)
                     target_ws = tab.get("webSocketDebuggerUrl")
                     target_title = tab.get("title", "")
@@ -342,12 +366,22 @@ class CaptchaCDPMixin:
                     self.target_ws_url = None
                 compaction = self._compact_cdp_pages_if_needed(tabs, reserve_for_new_page=True)
                 if compaction.get("triggered"):
-                    tabs = self._get_json("list") or []
+                    tabs = self._get_json("list")
+                    if tabs is None:
+                        return self._target_directory_refresh_failed()
+                    if bound_target:
+                        tabs = [
+                            tab
+                            for tab in tabs
+                            if isinstance(tab, dict)
+                            and self._manual_challenge_matches_requested_target(
+                                tab.get("url")
+                            )
+                        ]
                 opened_target = self._open_target_tab()
                 if isinstance(opened_target, dict):
-                    target_ws = opened_target.get("webSocketDebuggerUrl")
-                    target_title = str(opened_target.get("title") or "")
                     logger.info("[SOLVER] Opened requested solver target: %s", normalized_target_url)
+                    return self._connect_opened_target(opened_target)
 
         # Priority 1: 100% targeted background worker currently solving
         if not target_ws:

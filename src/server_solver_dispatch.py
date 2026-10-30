@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
-from src.project_environment import getenv as project_getenv
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, BinaryIO, ClassVar
 from urllib.parse import urlparse
 from urllib.request import Request
+
+from src.project_environment import getenv as project_getenv
 
 if TYPE_CHECKING:
     from .runtime_state import RuntimeState
@@ -28,6 +30,7 @@ class SolverDispatch:
     submit: Callable[..., object]
     normalize_scope: Callable[[object], str | None]
     scope_flag_path: Callable[[str], str]
+    scope_state_path: Callable[[str], Path]
     flag_path: Callable[[], str]
     infer_scope: Callable[[dict[str, str]], str | None]
     scope_status: Callable[[str], Mapping[str, object]]
@@ -98,6 +101,9 @@ class SolverDispatch:
             if normalized_scope
             else self.flag_path(),
             scope=normalized_scope,
+            mirror_path=self.flag_path() if normalized_scope else None,
+            scope_flag_path=self.scope_flag_path,
+            scope_state_path=self.scope_state_path,
         )
 
     def _solver_manual_flag_scope(self) -> str | None:

@@ -13,13 +13,13 @@ def test_connect_tab_keeps_other_collection_scope_challenge_open() -> None:
         {
             "id": "detail-slider",
             "type": "page",
-            "url": "https://sf-item.taobao.com/sf_item/111.htm/_____tmd_____/punish?x5secdata=a",
+            "url": "https://sf-item.taobao.com/sf_item/570192626894.htm/_____tmd_____/punish?x5secdata=a",
             "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/detail-slider",
         },
         {
             "id": "detail-duplicate",
             "type": "page",
-            "url": "https://sf-item.taobao.com/sf_item/222.htm/_____tmd_____/punish?x5secdata=b",
+            "url": "https://sf-item.taobao.com/sf_item/570192626894.htm/_____tmd_____/punish?x5secdata=b",
             "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/detail-duplicate",
         },
         {
@@ -64,21 +64,14 @@ def test_connect_tab_prefers_exact_detail_route_over_cached_scope_target() -> No
         "url": "https://sf.taobao.com/list/50025969__2.htm/_____tmd_____/punish",
         "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/seed-challenge",
     }
-    list_calls = 0
-
-    def fake_get_json(_endpoint):
-        nonlocal list_calls
-        list_calls += 1
-        return [stale, requested, seed] if list_calls == 1 else [requested, seed]
-
     closed: list[str] = []
     connected: list[str] = []
-    solver._get_json = fake_get_json
+    solver._get_json = lambda _endpoint: [stale, requested, seed]
     solver._close_cdp_target = lambda target_id: closed.append(target_id) or True
     solver._connect_to_target = lambda target_ws, _title: connected.append(target_ws) or True
 
     assert solver.connect_tab() is True
-    assert closed == ["stale-detail"]
+    assert closed == []
     assert connected == ["ws://127.0.0.1:9223/devtools/page/requested-detail"]
 
 
@@ -91,8 +84,14 @@ def test_connect_tab_prunes_title_only_challenge_duplicates_and_refreshes_tabs()
         "id": "seed-duplicate",
         "type": "page",
         "title": "CAPTCHA Verification",
-        "url": "https://sf.taobao.com/list/50025969__2.htm?page=7&st_param=5",
+        "url": "https://sf.taobao.com/list/50025969__2.htm?page=7&st_param=1&x5step=2",
         "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/seed-duplicate",
+    }
+    foreign = {
+        **duplicate,
+        "id": "seed-other-sort",
+        "url": "https://sf.taobao.com/list/50025969__2.htm?page=7&st_param=5",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/seed-other-sort",
     }
     kept = {
         "id": "seed-kept",
@@ -121,9 +120,9 @@ def test_connect_tab_prunes_title_only_challenge_duplicates_and_refreshes_tabs()
         nonlocal list_calls
         list_calls += 1
         return (
-            [kept, duplicate, detail, normal]
+            [kept, duplicate, foreign, detail, normal]
             if list_calls == 1
-            else [kept, detail, normal]
+            else [kept, foreign, detail, normal]
         )
 
     closed: list[str] = []

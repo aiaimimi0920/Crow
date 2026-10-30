@@ -16,6 +16,7 @@ from .captcha_pointer_backend import (
     UInputPointerBackend,
     Win32PointerBackend,
 )
+from .captcha_slider_geometry import SliderEndpointReached
 from .captcha_x11_pointer import recover_xwayland_left_button
 
 logger = logging.getLogger(__name__)
@@ -331,12 +332,7 @@ class CaptchaOSInputMixin:
 
     def _do_drag_os(self, start_x, start_y, distance, slider_info=None, profile_variant_index=0):
         probe = OSPointerTarget(self, slider_info, start_x, start_y)
-        try:
-            return self._do_drag_os_target(
-                start_x, start_y, distance, slider_info, profile_variant_index, probe
-            )
-        finally:
-            probe.close()
+        return probe.run_drag(start_x, start_y, distance, slider_info, profile_variant_index)
 
     def _do_drag_os_target(self, start_x, start_y, distance, slider_info, profile_variant_index, probe):
         """OS-level mouse drag. CDP Input events are rejected by Aliyun NC (error:TJiA4d/Vx6urd)."""
@@ -378,9 +374,15 @@ class CaptchaOSInputMixin:
                 return None
             start_x, start_y = probe.point
             slider_info = {**slider_info, **probe.rect}
-            track_width = self._get_track_width()
+            if getattr(probe, "geometry_bound", False):
+                slider_info["track_rect"] = probe.track_rect
+            track_width, track_rect = self._slider_track_geometry(slider_info)
             slider_info["track_width"] = track_width
-            distance = self._remaining_drag_distance(slider_info, self._get_track_rect(), track_width)
+            distance = self._remaining_drag_distance(slider_info, track_rect, track_width)
+        if distance == 0:
+            # The focused snapshot may have advanced since the initial lookup.
+            # Stop before mapping/moving the pointer; never fall back to CDP.
+            raise SliderEndpointReached
         mapped = None
         mapping_attempts = 3 if isinstance(slider_info, dict) else 1
         for mapping_attempt in range(1, mapping_attempts + 1):

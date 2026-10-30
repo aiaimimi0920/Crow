@@ -35,9 +35,10 @@ def bind_runtime_delegates(host: ModuleType) -> None:
         "_solver_force_unlock_flag_path": scopes.manual_flag_path,
         "_solver_scope_manual_flag_path": scopes.manual_flag_path,
         "_solver_force_unlock_flag_exists": scopes.manual_flag_exists,
+        "_solver_global_manual_pause_active": scopes.global_manual_pause_active,
         "_collection_effectively_paused": scopes.effectively_paused,
         "_collection_scope_effectively_paused": lambda scope: (
-            scopes.manual_flag_exists()
+            scopes.global_manual_pause_active()
             or scopes.scope_effectively_paused(scope, check_manual_flag=False)
         ),
         "_set_collection_pause_state": scopes.set_pause,

@@ -9,7 +9,13 @@ import time
 
 from src.project_environment import getenv as project_getenv
 
+from .captcha_budget import SolveStopped
+
 logger = logging.getLogger(__name__)
+
+
+def _x11_mapping_unavailable(check):
+    logger.warning("[SOLVER] X11 screen mapping unavailable check=%s", check)
 
 
 class CaptchaOSWindowsMixin:
@@ -255,11 +261,21 @@ class CaptchaOSWindowsMixin:
             "uses_render_widget": bool(render_windows),
         }
 
+    def _run_linux_window_command(self, command, **options):
+        timeout = self._bounded_io_timeout(3)
+        try:
+            return subprocess.run(
+                command, check=False, capture_output=True, text=True,
+                timeout=timeout, **options,
+            )
+        finally:
+            if self._stop_if_cancelled():
+                raise SolveStopped(self.last_failure_reason or "cancelled")
+
     def _linux_window_has_focus(self, window_id):
         try:
-            result = subprocess.run(
-                ["xdotool", "getwindowfocus"], check=False,
-                capture_output=True, text=True, timeout=3,
+            result = self._run_linux_window_command(
+                ["xdotool", "getwindowfocus"],
             )
             return result.returncode == 0 and result.stdout.strip() == window_id
         except (OSError, subprocess.SubprocessError):
@@ -269,24 +285,24 @@ class CaptchaOSWindowsMixin:
         if self._linux_window_has_focus(window_id):
             return True
         try:
-            result = subprocess.run(
-                ["xdotool", "windowactivate", "--sync", window_id], check=False,
-                capture_output=True, text=True, timeout=3,
+            self._run_linux_window_command(
+                ["xdotool", "windowactivate", "--sync", window_id],
             )
-            if result.returncode == 0 and self._linux_window_has_focus(window_id):
-                return True
         except (OSError, subprocess.SubprocessError):
             pass
+        # The native focus may already have changed despite a lost EWMH ack.
+        if self._linux_window_has_focus(window_id):
+            return True
         # Xwayland may leave _NET_ACTIVE_WINDOW on the compositor's focus proxy.
         # Verify native X11 input focus instead of treating EWMH timeout as final.
         try:
             for command in (["xdotool", "windowraise", window_id],
                             ["xdotool", "windowfocus", "--sync", window_id]):
-                result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=3)
+                result = self._run_linux_window_command(command)
                 if result.returncode != 0:
-                    return False
+                    break
         except (OSError, subprocess.SubprocessError):
-            return False
+            pass
         return self._linux_window_has_focus(window_id)
 
     def _focus_linux_window(self):
@@ -300,12 +316,8 @@ class CaptchaOSWindowsMixin:
         window_ids = []
         for window_class in ("chromium", "google-chrome", "microsoft-edge"):
             try:
-                result = subprocess.run(
+                result = self._run_linux_window_command(
                     ["xdotool", "search", "--onlyvisible", "--class", window_class],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
                 )
             except (FileNotFoundError, subprocess.SubprocessError) as error:
                 logger.warning("[SOLVER] Linux window search failed: %s", error)
@@ -324,7 +336,7 @@ class CaptchaOSWindowsMixin:
                         f"focusing Linux window id={window_id}"
                     )
                     continue
-                time.sleep(0.35)
+                self._wait_interruptibly(0.35)
                 if not self._linux_window_has_focus(window_id):
                     logger.warning("[SOLVER] Linux input focus changed before drag id=%s", window_id)
                     continue
@@ -352,12 +364,8 @@ class CaptchaOSWindowsMixin:
         if os.name == "nt" or not str(self._linux_window_id or "").isdigit():
             return None
         try:
-            result = subprocess.run(
+            result = self._run_linux_window_command(
                 ["xwininfo", "-id", str(self._linux_window_id), "-stats"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
                 env={**os.environ, "LC_ALL": "C"},
             )
         except (OSError, subprocess.SubprocessError):
@@ -387,7 +395,7 @@ class CaptchaOSWindowsMixin:
         if os.name == "nt" or not str(self._linux_window_id or "").isdigit():
             return None
         try:
-            result = subprocess.run(
+            result = self._run_linux_window_command(
                 [
                     "xprop",
                     "-id",
@@ -395,10 +403,6 @@ class CaptchaOSWindowsMixin:
                     "_NET_FRAME_EXTENTS",
                     "_GTK_FRAME_EXTENTS",
                 ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
             )
         except (FileNotFoundError, subprocess.SubprocessError):
             return None
@@ -420,14 +424,18 @@ class CaptchaOSWindowsMixin:
 
     def _css_to_x11_window_screen(self, start_x, start_y, distance):
         """Map CSS through the exact focused X11 window when GPU screenshots are opaque."""
-        if os.name == "nt" or not self._target_activation_verified:
+        if os.name == "nt":
             return None
+        if not self._target_activation_verified:
+            return _x11_mapping_unavailable("activation_unverified")
         geometry = self._linux_window_geometry()
         frame_extents = self._linux_window_frame_extents()
         metrics = self._window_metrics()
         bounds = self._browser_window_bounds()
-        if not geometry or not isinstance(metrics, dict) or not isinstance(bounds, dict):
-            return None
+        if not geometry:
+            return _x11_mapping_unavailable("native_geometry_unavailable")
+        if not isinstance(metrics, dict) or not isinstance(bounds, dict):
+            return _x11_mapping_unavailable("cdp_geometry_unavailable")
         try:
             dpr = float(metrics.get("dpr") or 1) or 1.0
             inner_w = float(metrics.get("innerWidth") or 0)
@@ -439,9 +447,9 @@ class CaptchaOSWindowsMixin:
             bound_width = float(bounds.get("width") or 0) * dpr
             bound_height = float(bounds.get("height") or 0) * dpr
         except (TypeError, ValueError):
-            return None
+            return _x11_mapping_unavailable("geometry_invalid")
         if min(inner_w, inner_h, outer_w, outer_h, bound_width, bound_height) <= 0:
-            return None
+            return _x11_mapping_unavailable("geometry_invalid")
         position_delta = math.hypot(geometry["x"] - bound_left, geometry["y"] - bound_top)
         size_delta = max(
             abs(geometry["width"] - bound_width),
@@ -452,11 +460,11 @@ class CaptchaOSWindowsMixin:
                 f"[SOLVER] X11/CDP window geometry mismatch "
                 f"position_delta={position_delta:.0f}px size_delta={size_delta:.0f}px."
             )
-            return None
+            return _x11_mapping_unavailable("geometry_mismatch")
         scale_x = geometry["width"] / outer_w
         scale_y = geometry["height"] / outer_h
         if abs(scale_x - scale_y) > 0.08:
-            return None
+            return _x11_mapping_unavailable("nonuniform_scale")
         chrome_left = max(0.0, (outer_w - inner_w) * scale_x / 2.0)
         # outerHeight-innerHeight includes the bottom client-side decoration on
         # GNOME/Xwayland. Only the top frame and browser UI precede clientY=0.

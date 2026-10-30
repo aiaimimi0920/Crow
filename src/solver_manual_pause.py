@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
+from uuid import uuid4
+
+from .archive_json_io import write_json
+from .solver_manual_flags import global_manual_pause_active
 
 if TYPE_CHECKING:
     from .runtime_state import RuntimeState
@@ -24,22 +28,46 @@ def write_manual_flag(
     runtime: RuntimeState,
     path: str,
     scope: str | None,
+    mirror_path: str | None = None,
+    scope_flag_path: Callable[[str], str] | None = None,
+    scope_state_path: Callable[[str], Path] | None = None,
 ) -> str | None:
+    with runtime.lock:
+        recovery = runtime.recovery.snapshot()
+        state = runtime.control.scope_snapshot(scope) if scope else {}
+        payload = {
+            "manual_required": True,
+            "manual_only": bool(state.get("manual_only", recovery.manual_only)),
+            "scope": scope,
+            "created_at_epoch": created_at_epoch,
+            "last_request": dict(state.get("last_request", recovery.last_request)),
+            "message": "Delete this file to force resume the queue after manual solving",
+        }
+        if not scope or not mirror_path or not scope_flag_path or not scope_state_path:
+            return _publish(path, payload)
+        # Capture existing global intent before replacing the scoped counterpart.
+        preserve_global = global_manual_pause_active(
+            mirror_path, scope_flag_path, scope_state_path
+        )
+        payload.update(
+            flag_kind="scoped_manual_v1",
+            owner_scope=scope,
+            challenge_id=state.get("challenge_id"),
+            publication_id=uuid4().hex,
+        )
+        error = _publish(path, payload)
+        if preserve_global:
+            return error
+        mirror_error = _publish(
+            mirror_path, dict(payload, flag_kind="scoped_manual_mirror_v1")
+        )
+        return error or mirror_error
+
+
+def _publish(path: str, payload: Mapping[str, object]) -> str | None:
     try:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as flag_file:
-            json.dump(
-                {
-                    "manual_required": True,
-                    "manual_only": bool(runtime.recovery.snapshot().manual_only),
-                    "scope": scope,
-                    "created_at_epoch": created_at_epoch,
-                    "last_request": dict(runtime.recovery.snapshot().last_request),
-                    "message": "Delete this file to force resume the queue after manual solving",
-                },
-                flag_file,
-                ensure_ascii=False,
-            )
+        write_json(path, payload)
     except Exception as error:  # noqa: BLE001 - preserve flag publication error contract
         return repr(error)
     return None
@@ -61,8 +89,7 @@ def mark_manual_required(
         runtime.recovery.require_manual(clock(), manual_only=bool(manual_only))
         if solver_running:
             cancel()
-    if scope:
-        with runtime.lock:
+        if scope:
             state = runtime.control.scope_snapshot(scope)
             state.update(
                 paused=True,
@@ -72,11 +99,9 @@ def mark_manual_required(
                 last_status="manual_required",
                 last_failure_reason="manual_required",
             )
-        persist_scope(scope, state)
-    set_pause(True, "manual_required", scope=scope)
-    error = write_flag(runtime.recovery.snapshot().required_epoch, scope=scope)
-    if scope:
-        # The scoped flag is authoritative; retain the legacy operator mirror too.
-        legacy_error = write_flag(runtime.recovery.snapshot().required_epoch)
-        return error or legacy_error
-    return error
+            persist_error = persist_scope(scope, state)
+        else:
+            persist_error = None
+        set_pause(True, "manual_required", scope=scope)
+        error = write_flag(runtime.recovery.snapshot().required_epoch, scope=scope)
+        return persist_error or error

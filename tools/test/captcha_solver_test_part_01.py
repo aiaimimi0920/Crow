@@ -266,6 +266,7 @@ def test_connect_tab_opens_requested_target_when_missing(monkeypatch) -> None:
         requested.append(("PUT", url, timeout))
         return FakeResponse(
             {
+                "id": "new-target",
                 "url": target_url,
                 "title": "target solver page",
                 "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/page/new-target",
@@ -374,8 +375,9 @@ def test_taobao_target_installs_identity_before_navigation(monkeypatch) -> None:
     solver._connect_to_target = (
         lambda target_ws, title: connected.append((target_ws, title)) or True
     )
-    solver._send_cdp = (
-        lambda method, params=None: commands.append((method, params or {})) or {}
+    solver._send_cdp = lambda method, params=None: (
+        commands.append((method, params or {}))
+        or {"frameId": "frame", "loaderId": "loader"}
     )
     payload = {
         "id": "target-1",

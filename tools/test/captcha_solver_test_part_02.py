@@ -56,6 +56,7 @@ def test_compact_cdp_pages_keeps_browser_alive_at_threshold(monkeypatch) -> None
     solver.ws = FakeWebSocket()
     solver.target_id = "page-3"
     solver.target_ws_url = "ws://cached-target"
+    solver._opened_target_ids.update(tab["id"] for tab in page_targets)
 
     summary = solver._compact_cdp_pages_if_needed()
 
@@ -171,6 +172,7 @@ def test_connect_tab_compacts_accumulated_pages_then_reopens_current_target(monk
         cdp_endpoint="http://host.docker.internal:9223",
     )
 
+    solver._opened_target_ids.update(tab["id"] for tab in current_targets)
     assert solver.connect_tab() is True
     assert len([url for _method, url, _timeout in requested if "/json/close/page-" in url]) == 12
     assert (
@@ -245,6 +247,7 @@ def test_connect_tab_reserves_space_before_opening_twelfth_page(monkeypatch) -> 
         cdp_endpoint="http://host.docker.internal:9223",
     )
 
+    solver._opened_target_ids.update(tab["id"] for tab in current_targets)
     assert solver.connect_tab() is True
     assert len([url for _method, url, _timeout in requested if "/json/close/page-" in url]) == 11
     assert any(method == "PUT" and "/json/new?" in url for method, url, _timeout in requested)

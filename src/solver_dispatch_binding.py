@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Executor
 from contextlib import AbstractContextManager
+from pathlib import Path
 from threading import Event
 from typing import BinaryIO, Protocol
 
@@ -34,6 +35,7 @@ class SolverDispatchHost(Protocol):
     urlopen: Callable[..., AbstractContextManager[BinaryIO]]
     _normalize_challenge_scope: Callable[[object], str | None]
     _solver_scope_manual_flag_path: Callable[[str], str]
+    _solver_scope_state_path: Callable[[str], Path]
     _solver_force_unlock_flag_path: Callable[[], str]
     _challenge_scope_for_request: Callable[[dict[str, str]], str | None]
     _solver_scope_runtime_status: Callable[[str], Mapping[str, object]]
@@ -72,6 +74,7 @@ def bind_solver_dispatch(host: SolverDispatchHost) -> SolverDispatch:
         submit=lambda *args: host.executor.submit(*args),
         normalize_scope=lambda scope: host._normalize_challenge_scope(scope),
         scope_flag_path=lambda scope: host._solver_scope_manual_flag_path(scope),
+        scope_state_path=lambda scope: host._solver_scope_state_path(scope),
         flag_path=lambda: host._solver_force_unlock_flag_path(),
         infer_scope=lambda request: host._challenge_scope_for_request(request),
         scope_status=lambda scope: host._solver_scope_runtime_status(scope),

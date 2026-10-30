@@ -43,10 +43,10 @@ def _collection_pause_state(api_base_url: str) -> dict[str, Any]:
     try:
         payload = fetch_json(endpoint, timeout=5)
     except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return {"paused": False, "reason": "status_unavailable", "error": safe_exception_text(exc)}
+        return {"paused": True, "reason": "status_unavailable", "error": safe_exception_text(exc)}
 
     if not isinstance(payload, dict):
-        return {"paused": False, "reason": "status_unavailable", "error": "non_object_status"}
+        return {"paused": True, "reason": "status_unavailable", "error": "non_object_status"}
 
     return _normalize_collection_pause_state(payload, scope="seed")
 

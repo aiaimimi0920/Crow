@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
 import random
+import uuid
 
+from .captcha_cdp_command import cdp_connection_is_closed
 from .captcha_dom import eval_in_all_frames
+from .captcha_slider_geometry import geometry_expression
 from .captcha_verification import ready_target_matches, retry_failure_is_terminal
 
 logger = logging.getLogger(__name__)
@@ -14,70 +16,63 @@ class CaptchaSliderMixin:
     def _remaining_drag_distance(self, slider_info, track_rect, track_width):
         remaining = None
         if isinstance(track_rect, dict):
-            track_right = float(track_rect.get("left") or 0) + float(track_rect.get("width") or 0)
-            slider_right = float(slider_info.get("x") or 0) + float(slider_info.get("width") or 0)
+            track_right = float(track_rect.get("left") or 0) + float(
+                track_rect.get("width") or 0
+            )
+            slider_right = float(slider_info.get("x") or 0) + float(
+                slider_info.get("width") or 0
+            )
             candidate = track_right - slider_right
             # Border/rounding can leave the handle up to 2px past the endpoint.
             # This is known terminal geometry, not missing geometry: never
             # replace it with another full-track drag.
             if -2 <= candidate <= track_width + slider_info["width"]:
                 remaining = max(0, candidate)
-            track_offset_width = float(track_rect.get("offsetWidth") or track_width)
-            handle_offset_width = float(track_rect.get("handleOffsetWidth") or slider_info["width"])
+            track_offset_width = float(track_rect.get("offsetWidth") or 0)
+            handle_offset_width = float(track_rect.get("handleOffsetWidth") or 0)
             current_handle_left = track_rect.get("handleOffsetLeft")
-            if current_handle_left is not None:
-                offset_remaining = track_offset_width - handle_offset_width - float(current_handle_left)
-                if -2 <= offset_remaining <= track_width + slider_info["width"]:
+            if (
+                track_offset_width > 0
+                and handle_offset_width > 0
+                and current_handle_left is not None
+            ):
+                # offset* values are layout pixels; mouse input uses viewport
+                # CSS pixels, including the track's element/ancestor scaling.
+                css_scale = float(track_rect.get("width") or 0) / track_offset_width
+                offset_remaining = (
+                    track_offset_width
+                    - handle_offset_width
+                    - float(current_handle_left)
+                ) * css_scale
+                if (
+                    css_scale > 0
+                    and -2 <= offset_remaining <= track_width + slider_info["width"]
+                ):
                     remaining = max(0, offset_remaining)
+        if remaining == 0:
+            return 0
         if remaining is None:
             remaining = track_width - slider_info["width"] + 2
         return max(1, min(remaining, 1000))
 
     def _find_slider_once(self):
         """Run one slider lookup pass and return slider info dict or None."""
-        selectors_js = json.dumps(self.SLIDER_SELECTORS)
-
-        js_script = f"""
-        (function() {{
-            var selectors = {selectors_js};
-
-            function tryFind(doc, frameOffsetX, frameOffsetY, context) {{
-                for (var i = 0; i < selectors.length; i++) {{
-                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
-                        var r = node.getBoundingClientRect();
-                        return r.width > 5 && r.height > 5;
-                    }});
-                    if (el) {{
-                        var rect = el.getBoundingClientRect();
-                        if (rect.width > 5 && rect.height > 5) {{
-                            return {{
-                                found: true,
-                                x: rect.left + frameOffsetX,
-                                y: rect.top + frameOffsetY,
-                                width: rect.width,
-                                height: rect.height,
-                                selector: selectors[i],
-                                context: context
-                            }};
-                        }}
-                    }}
-                }}
-                return null;
-            }}
-
-            return visitAccessibleDocuments(tryFind, true);
-        }})()
-        """
-        ret = self._send_cdp("Runtime.evaluate", {
-            "expression": eval_in_all_frames(js_script),
-            "returnByValue": True
-        })
-
-        if ret and "result" in ret and ret["result"].get("value"):
-            slider_info = ret["result"]["value"]
-            if slider_info.get("found"):
-                return slider_info
+        value = self._read_slider_geometry(
+            binding_key="__crow_slider_" + uuid.uuid4().hex
+        )
+        if isinstance(value, dict) and value.get("found"):
+            return value
         return None
+
+    def _read_slider_geometry(self, *, binding_key=None):
+        expression = geometry_expression(
+            self.SLIDER_SELECTORS, self.TRACK_SELECTORS, binding_key=binding_key
+        )
+        ret = self._send_cdp(
+            "Runtime.evaluate",
+            {"expression": eval_in_all_frames(expression), "returnByValue": True},
+        )
+        return (ret or {}).get("result", {}).get("value")
 
     def _find_slider(self, max_retries=15, retry_delay=1):
         """Find slider element using multiple selectors. Returns slider info dict or None."""
@@ -96,42 +91,25 @@ class CaptchaSliderMixin:
 
         return None
 
+    def _confirm_missing_slider(self, summary):
+        """Confirm a newly visible, bound slider once, without restarting navigation."""
+        if summary.get("readyState") == "loading" and not summary.get("hasSlider"):
+            summary = self._wait_for_loading_document(summary)
+        slider = None
+        if (
+            not summary.get("probeFailed")
+            and summary.get("hasSlider")
+            and ready_target_matches(summary, self.target_url)
+        ):
+            slider = self._find_slider(max_retries=1, retry_delay=0)
+        return slider, summary
+
     def _get_track_width(self):
         """Dynamically get the slider track width using multiple selectors."""
-        track_selectors_js = json.dumps(self.TRACK_SELECTORS)
-
-        js_script = f"""
-        (function() {{
-            var selectors = {track_selectors_js};
-
-            function tryFind(doc) {{
-                for (var i = 0; i < selectors.length; i++) {{
-                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
-                        return node.getBoundingClientRect().width > 50;
-                    }});
-                    if (el) {{
-                        var rect = el.getBoundingClientRect();
-                        if (rect.width > 50) {{
-                            return {{ width: rect.width, selector: selectors[i] }};
-                        }}
-                    }}
-                }}
-                return null;
-            }}
-
-            return visitAccessibleDocuments(tryFind, true);
-        }})()
-        """
-
-        ret = self._send_cdp("Runtime.evaluate", {
-            "expression": eval_in_all_frames(js_script),
-            "returnByValue": True
-        })
-
-        if ret and "result" in ret and ret["result"].get("value"):
-            info = ret["result"]["value"]
-            logger.info("[SOLVER] Track width: %spx selector=%s", info["width"], info["selector"])
-            return info["width"]
+        rect = self._get_track_rect()
+        if rect:
+            logger.info("[SOLVER] Track width: %spx", rect["width"])
+            return rect["width"]
 
         # Fallback: try to get from viewport if track not found
         logger.warning("[SOLVER] Could not detect track width; using fallback 340px")
@@ -139,45 +117,18 @@ class CaptchaSliderMixin:
 
     def _get_track_rect(self):
         """Return the live track rectangle so drag distance follows the current handle position."""
-        track_selectors_js = json.dumps(self.TRACK_SELECTORS)
-        js_script = f"""
-        (function() {{
-            var selectors = {track_selectors_js};
-            function find(doc) {{
-                for (var i = 0; i < selectors.length; i++) {{
-                    var el = firstVisibleMatch(doc, selectors[i], function(node) {{
-                        var r = node.getBoundingClientRect();
-                        return r.width > 50 && r.height > 5;
-                    }});
-                    if (!el) continue;
-                    var rect = el.getBoundingClientRect();
-                    if (rect.width > 50 && rect.height > 5) {{
-                        var handle = firstVisibleMatch(doc, __NC_HANDLE_SELECTOR__);
-                        return {{
-                            left: rect.left,
-                            top: rect.top,
-                            width: rect.width,
-                            height: rect.height,
-                            offsetWidth: el.offsetWidth,
-                            handleOffsetLeft: handle ? handle.offsetLeft : null,
-                            handleOffsetWidth: handle ? handle.offsetWidth : null
-                        }};
-                    }}
-                }}
-                return null;
-            }}
-            return visitAccessibleDocuments(find, true);
-        }})()
-        """
-        ret = self._send_cdp("Runtime.evaluate", {
-            "expression": eval_in_all_frames(js_script),
-            "returnByValue": True,
-        })
-        if ret and "result" in ret and ret["result"].get("value"):
-            value = ret["result"]["value"]
-            if isinstance(value, dict) and float(value.get("width") or 0) > 50:
-                return value
+        geometry = self._read_slider_geometry()
+        value = geometry.get("track_rect") if isinstance(geometry, dict) else None
+        if isinstance(value, dict) and float(value.get("width") or 0) > 50:
+            return value
         return None
+
+    def _slider_track_geometry(self, slider_info):
+        if "track_rect" in slider_info:
+            rect = slider_info["track_rect"]
+            return (rect["width"] if rect else 340), rect
+        # Legacy injected/local callers have not supplied an atomic DOM snapshot.
+        return self._get_track_width(), self._get_track_rect()
 
     def _verify_success(self):
         """Check if captcha was solved."""
@@ -332,8 +283,28 @@ class CaptchaSliderMixin:
 
         return False
 
+    def _verify_slider_endpoint(self):
+        """No remaining travel permits verification only, never another gesture."""
+        logger.info(
+            "[SOLVER] Slider endpoint reached; verifying without further input."
+        )
+        if self._wait_for_verification_success():
+            self.last_failure_reason = None
+            self._close_solver_ws()
+            return True
+        if self.last_failure_reason != "manual_required":
+            self._preflight_retryable_failure("slider_endpoint_unconfirmed")
+        return False
+
     def _wait_for_verification_success(self, max_checks=6):
         """Poll verification briefly because challenge UI teardown can lag behind the drag."""
+        def transport_closed():
+            if not cdp_connection_is_closed(self):
+                return False
+            if not self._stop_if_cancelled():
+                self.last_failure_reason = "cdp_unavailable"
+            return True
+
         checks = max(int(max_checks or 0), 1)
         local_mock_target = self._is_local_mock_slider_target()
         local_mock_mode = self._local_mock_verification_mode()
@@ -342,12 +313,22 @@ class CaptchaSliderMixin:
             checks = max(checks, 10)
         retry_failure_samples = 0
         for check_index in range(checks):
-            if self._stop_if_cancelled():
+            if self._stop_if_cancelled() or transport_closed():
                 return False
             if self._verify_success():
                 return True
+            if transport_closed():
+                return False
             if not local_mock_target:
+                if check_index == 0:
+                    # Read existing explicit success early, but keep failure and
+                    # payload sampling behind the original settling interval.
+                    self._wait_interruptibly(random.uniform(1.8, 2.4))
+                    if self._stop_if_cancelled() or transport_closed():
+                        return False
                 challenge_summary = self._page_challenge_summary()
+                if transport_closed():
+                    return False
                 if challenge_summary.get("authenticatedPage"):
                     logger.info("[SOLVER] Auction page became accessible after drag; treating as solved.")
                     return True

@@ -5,6 +5,7 @@ def test_run_detail_worker_once_ignores_challenge_suppressed_after_recent_detail
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
 
@@ -100,6 +101,7 @@ def test_recent_force_reset_stops_detail_batch_and_honors_retry_after(tmp_path: 
     ) == 142
 
 def test_run_detail_worker_once_raw_only_rejects_login_artifact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
     solver_reports: list[tuple[str, str, str]] = []

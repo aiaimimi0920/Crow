@@ -1,9 +1,11 @@
 """Native PC2 status and heartbeat boundaries without starting a solver."""
 
 import json
+import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -26,6 +28,8 @@ _IMPORT_MODULES = (
     "tools.pc2_solver_loop_probe",
     "tools.pc2_solver_loop_failure",
     "tools.pc2_solver_loop",
+    "tools.pc2_solver_maintenance",
+    "tools.pc2_solver_target_recovery",
 )
 
 
@@ -51,6 +55,9 @@ def test_transport_import_does_not_initialize_solver(
 
 
 def _probe_transport_import(module_name, tmp_path):
+    # The child intentionally runs outside the checkout, so pytest's sys.path
+    # is not inherited. Preserve an isolated candidate's existing /app fallback.
+    roots = [str(Path(__file__).resolve().parents[2]), os.environ.get("PYTHONPATH", "")]
     return subprocess.run(
         [
             sys.executable,
@@ -64,6 +71,7 @@ def _probe_transport_import(module_name, tmp_path):
                 "{'tools.pc2_solver_scope', 'tools.pc2_solver_auth', "
                 "'tools.pc2_solver_fallback', 'tools.pc2_solver_auth_pending', "
                 "'tools.pc2_solver_cdp', 'tools.pc2_solver_execution', "
+                "'tools.pc2_solver_maintenance', 'tools.pc2_solver_target_recovery', "
                 "'tools.pc2_solver_loop_control', 'tools.pc2_solver_loop_probe', "
                 "'tools.pc2_solver_loop_failure', 'tools.pc2_solver_loop'} else set(); "
                 "loaded = forbidden.intersection(sys.modules); "
@@ -71,6 +79,7 @@ def _probe_transport_import(module_name, tmp_path):
             ),
         ],
         cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, roots))},
         capture_output=True,
         text=True,
         timeout=20,

@@ -47,7 +47,7 @@ def save_reference_state(state):
     temporary.replace(path)
 
 
-def record_failed_drags(endpoint, failures):
+def record_failed_drags(endpoint, failures, *, allow_open=True):
     try:
         challenge_id = _load_fallback_state().get("challenge_id")
         if not challenge_id:
@@ -64,7 +64,7 @@ def record_failed_drags(endpoint, failures):
         if state.get("tabs_ready"):
             state["post_open_failures"] = int(state.get("post_open_failures", 0)) + 1
         save_reference_state(state)
-        if count < 3:
+        if count < 3 or not allow_open:
             return
         for domain, url in SITES:
             # Re-read after every creation; retries never knowingly duplicate a tab.

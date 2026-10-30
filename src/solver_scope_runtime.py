@@ -196,6 +196,14 @@ class SolverScopeRuntime:
         except Exception:
             return False
 
+    def global_manual_pause_active(self) -> bool:
+        from src.solver_manual_flags import global_manual_pause_active
+
+        with self.runtime.lock:
+            return global_manual_pause_active(
+                self.manual_flag_path(), self.manual_flag_path, self.state_path
+            )
+
     def transient_pause_active(self) -> bool:
         with self.runtime.lock:
             control = self.runtime.control.snapshot()
@@ -218,7 +226,7 @@ class SolverScopeRuntime:
     def scope_effectively_paused(
         self, scope: str, *, check_manual_flag: bool = True
     ) -> bool:
-        if check_manual_flag and self.manual_flag_exists():
+        if check_manual_flag and self.global_manual_pause_active():
             return True
         normalized = _normalize_challenge_scope(scope)
         if normalized not in CHALLENGE_SCOPES:

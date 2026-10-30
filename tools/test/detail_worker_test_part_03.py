@@ -246,7 +246,7 @@ def test_collection_pause_state_returns_status_unavailable_for_non_object_payloa
     pause_state = detail_worker._collection_pause_state("http://192.168.15.200:8001/api")
 
     assert pause_state == {
-        "paused": False,
+        "paused": True,
         "reason": "status_unavailable",
         "error": "non_object_status",
     }

@@ -334,6 +334,7 @@ def test_seed_collector_metadata_reaches_detail_worker_and_live_target_uses_deta
     assert captured[0]["target_url"] == "https://sf-item.taobao.com/sf_item/4001.htm"
 
 def test_run_detail_worker_once_raw_only_rejects_challenge_artifact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
     solver_reports: list[tuple[str, str, str]] = []

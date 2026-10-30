@@ -205,6 +205,7 @@ class RepositoryDetailClaimMixin:
                 select(CollectionSeedOccurrence)
                 .where(CollectionSeedOccurrence.item_id == claimed_item_id)
                 .order_by(CollectionSeedOccurrence.seen_at.asc(), CollectionSeedOccurrence.id.asc())
+                .limit(1)
             ).first()
             if occurrence is not None:
                 claimed_payload.setdefault("source_page_url", occurrence.source_page_url)

@@ -45,6 +45,7 @@ def test_run_detail_worker_once_retries_initial_status_unavailable_before_claimi
     assert repo.seed_queue_counts()["seed_item_pending_detail"] == 1
 
 def test_run_detail_worker_once_reports_solver_when_detail_challenge_appears(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
     reports: list[tuple[str, str, str]] = []
@@ -89,6 +90,7 @@ def test_run_detail_worker_once_reports_solver_when_detail_challenge_appears(tmp
     ]
 
 def test_run_detail_worker_once_prefers_enabled_solver_over_manual_reporting(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
     reports: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -134,6 +136,7 @@ def test_run_detail_worker_once_prefers_enabled_solver_over_manual_reporting(tmp
     ]
 
 def test_run_detail_worker_once_records_report_failure_when_captcha_report_raises(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
 
@@ -171,6 +174,7 @@ def test_run_detail_worker_once_does_not_report_when_solver_and_manual_reporting
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
 
@@ -254,6 +258,7 @@ def test_llm_preflight_retries_transient_chat_failure_and_recovers(tmp_path: Pat
 def test_run_detail_worker_once_preserves_retry_budget_when_detail_challenge_appears(
     tmp_path: Path, monkeypatch
 ) -> None:
+    monkeypatch.setattr(detail_worker, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     _seed_one_item(repo)
 

@@ -1,9 +1,10 @@
-"""Respect report retry floors before checking scoped authentication recovery."""
+"""Bounded recovery checks without bypassing challenge or operator backoff."""
 
 import math
 import time
 
 from tools import worker_lifecycle
+from tools.cdp_reconnect_health import batch_has_cdp_outage, cdp_metadata_recovered
 from tools.detail_worker_context import DetailWorkerConfig
 from tools.detail_worker_pause_state import (
     collection_scope_statuses,
@@ -12,12 +13,13 @@ from tools.detail_worker_pause_state import (
 from tools.internal_api_http import fetch_json
 
 
-def _receipt(started, seconds, polls, exit_reason, report_floor=0):
+def _receipt(started, seconds, polls, exit_reason, report_floor=0, cdp_polls=0):
     return {
         "requested_wait_seconds": seconds,
         "actual_wait_seconds": round(max(0.0, time.monotonic() - started), 3),
         "status_poll_count": polls,
         "wait_exit": exit_reason,
+        **({"cdp_poll_count": cdp_polls} if cdp_polls else {}),
         **({"report_backoff_seconds": report_floor} if report_floor else {}),
     }
 
@@ -62,7 +64,7 @@ def _suppressed_report_retry_floor(result):
 def wait_after_detail_batch(
     config: DetailWorkerConfig, result: dict, seconds: float
 ) -> dict:
-    started, polls = time.monotonic(), 0
+    started, polls, cdp_polls = time.monotonic(), 0, 0
     challenge_wait = any(
         isinstance(item, dict)
         and (
@@ -72,7 +74,17 @@ def wait_after_detail_batch(
         )
         for item in result.get("results") or []
     )
-    if config.analysis_only or not config.api_base_url or not challenge_wait:
+    endpoint = str(getattr(config, "cdp_endpoint", "") or "")
+    cdp_wait = (
+        not challenge_wait
+        and endpoint.startswith(("http://", "https://"))
+        and batch_has_cdp_outage(result)
+    )
+    if (
+        config.analysis_only
+        or not config.api_base_url
+        or not (challenge_wait or cdp_wait)
+    ):
         worker_lifecycle.wait(seconds)
         return _receipt(started, seconds, polls, "wait_returned")
 
@@ -81,22 +93,39 @@ def wait_after_detail_batch(
     if effective_seconds <= 30:
         worker_lifecycle.wait(effective_seconds)
         return _receipt(started, seconds, polls, "wait_returned", report_floor)
-    deadline = time.monotonic() + effective_seconds
+    deadline = started + effective_seconds
     earliest_wake = started + report_floor
     while worker_lifecycle.checkpoint("detail_auth_backoff"):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return _receipt(started, seconds, polls, "deadline_elapsed", report_floor)
-        worker_lifecycle.wait(min(remaining, 30))
+            return _receipt(
+                started, seconds, polls, "deadline_elapsed", report_floor, cdp_polls
+            )
+        until_floor = earliest_wake - time.monotonic()
+        worker_lifecycle.wait(
+            min(remaining, 30, until_floor) if until_floor > 0 else min(remaining, 30)
+        )
         if not worker_lifecycle.checkpoint("detail_auth_backoff"):
-            return _receipt(started, seconds, polls, "stopping", report_floor)
+            return _receipt(
+                started, seconds, polls, "stopping", report_floor, cdp_polls
+            )
         # Suppression can leave the scope clear throughout; that is not new recovery.
         if time.monotonic() < earliest_wake:
             continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            continue
         try:
             polls += 1
-            status = fetch_json(config.api_base_url.rstrip("/") + "/status", timeout=5)
+            status = fetch_json(
+                config.api_base_url.rstrip("/") + "/status",
+                timeout=min(5, remaining),
+            )
         except (OSError, ValueError, TimeoutError):
+            continue
+        if not worker_lifecycle.checkpoint("detail_auth_backoff"):
+            break
+        if time.monotonic() >= deadline:
             continue
         if not isinstance(status, dict):
             continue
@@ -119,11 +148,33 @@ def wait_after_detail_batch(
             and detail.get("manual_required") is False
             and not detail.get("challenge_id")
         ):
+            if cdp_wait:
+                if not worker_lifecycle.checkpoint("detail_auth_backoff"):
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    continue
+                cdp_polls += 1
+                if not cdp_metadata_recovered(
+                    endpoint, timeout_seconds=min(5, remaining)
+                ):
+                    continue
+                if not worker_lifecycle.checkpoint("detail_auth_backoff"):
+                    return _receipt(
+                        started, seconds, polls, "stopping", report_floor, cdp_polls
+                    )
+                if time.monotonic() >= deadline:
+                    continue
             return _receipt(
                 started,
                 seconds,
                 polls,
-                "report_backoff_elapsed" if report_floor else "detail_resumed",
+                "cdp_resumed"
+                if cdp_wait
+                else "report_backoff_elapsed"
+                if report_floor
+                else "detail_resumed",
                 report_floor,
+                cdp_polls,
             )
-    return _receipt(started, seconds, polls, "stopping", report_floor)
+    return _receipt(started, seconds, polls, "stopping", report_floor, cdp_polls)

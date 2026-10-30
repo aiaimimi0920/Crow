@@ -59,11 +59,17 @@ class PollSolver(CaptchaSliderMixin):
         self.on_wait()
 
 
+def assert_live_waits(solver, intervals):
+    assert len(solver.waits) == intervals + 1
+    assert 1.8 <= solver.waits[0] <= 2.4
+    assert all(0.6 <= seconds <= 1.1 for seconds in solver.waits[1:])
+
+
 def test_confirmed_retry_state_returns_to_existing_retry_policy_after_two_samples():
     solver = PollSolver([failed_summary()])
     assert solver._wait_for_verification_success() is False
     assert solver.verifications == solver.summary_reads == 2
-    assert len(solver.waits) == 1
+    assert_live_waits(solver, 1)
     assert solver.last_failure_reason == "unchanged"
 
 
@@ -91,7 +97,7 @@ def test_incomplete_transient_or_foreign_failure_keeps_original_poll_budget(chan
     solver = PollSolver([failed_summary(**changes)])
     assert solver._wait_for_verification_success() is False
     assert solver.verifications == solver.summary_reads == 6
-    assert len(solver.waits) == 5
+    assert_live_waits(solver, 5)
 
 
 @pytest.mark.parametrize(
@@ -101,7 +107,7 @@ def test_unconfirmed_sample_breaks_consecutive_failure_evidence(gap):
     solver = PollSolver([failed_summary(), gap, failed_summary(), failed_summary()])
     assert solver._wait_for_verification_success() is False
     assert solver.verifications == 4
-    assert len(solver.waits) == 3
+    assert_live_waits(solver, 3)
 
 
 def test_explicit_success_wins_before_second_failure_sample():
@@ -127,7 +133,7 @@ def test_local_mock_keeps_its_original_terminal_and_wait_contract():
 
 def test_cancel_between_failure_samples_never_starts_second_probe():
     solver = PollSolver([failed_summary()])
-    solver.on_wait = lambda: setattr(solver, "cancelled", True)
+    solver.on_wait = lambda: setattr(solver, "cancelled", len(solver.waits) > 1)
     assert solver._wait_for_verification_success() is False
     assert solver.verifications == solver.summary_reads == 1
 
@@ -136,7 +142,8 @@ def test_deadline_during_failure_wait_is_not_swallowed():
     solver = PollSolver([failed_summary()])
 
     def expire():
-        raise SolveStopped("deadline_exceeded")
+        if len(solver.waits) > 1:
+            raise SolveStopped("deadline_exceeded")
 
     solver.on_wait = expire
     with pytest.raises(SolveStopped, match="deadline_exceeded"):
@@ -149,7 +156,7 @@ def test_short_budget_never_adds_a_probe_to_confirm_failure(max_checks):
     solver = PollSolver([failed_summary()])
     assert solver._wait_for_verification_success(max_checks=max_checks) is False
     assert solver.verifications == 1
-    assert solver.waits == []
+    assert_live_waits(solver, 0)
 
 
 def test_consecutive_counter_is_local_to_each_verification_wait():
@@ -235,5 +242,5 @@ def test_current_cdp_expressions_produce_the_required_terminal_evidence(monkeypa
     monkeypatch.setattr(solver, "_stop_if_cancelled", lambda: False, raising=False)
     monkeypatch.setattr(solver, "_wait_interruptibly", waits.append, raising=False)
     assert solver._wait_for_verification_success() is False
-    assert len(waits) == 1
+    assert len(waits) == 2 and 1.8 <= waits[0] <= 2.4 and 0.6 <= waits[1] <= 1.1
     assert evaluations == ["Runtime.evaluate"] * 4

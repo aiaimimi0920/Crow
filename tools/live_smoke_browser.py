@@ -476,12 +476,13 @@ def fetch_detail_html(
         timeout=60,
         allow_redirects=True,
     )
-    response.raise_for_status()
     html = response.text
+    # HTTP status alone is not a challenge, but must not hide positive evidence.
     if is_challenge_page(html, response.url):
         if not detail_browser_fallback_enabled():
             raise DetailChallengeError("HTTP detail request", response.url)
         return fetch_detail_with_browser(seed, cdp_endpoint=cdp_endpoint)
+    response.raise_for_status()
     return html, response.url, len(response.content), "http_cookie"
 
 __all__ = (

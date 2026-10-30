@@ -20,6 +20,7 @@ def risk_aliases(item: dict[str, Any]) -> None:
 
 def build_description_audit(html: str, item_dir: Path) -> dict[str, Any]:
     from src import llm_helper
+    from tools.description_capture import fetch_description_with_deadline
 
     audit: dict[str, Any] = {
         "area_sqm": None,
@@ -27,7 +28,7 @@ def build_description_audit(html: str, item_dir: Path) -> dict[str, Any]:
         "has_area_marker": False,
         "text_path": None,
     }
-    desc_text = llm_helper.fetch_description_data_text(html)
+    desc_text = fetch_description_with_deadline(html)
     if not desc_text:
         return audit
     desc_path = item_dir / "description-data.txt"

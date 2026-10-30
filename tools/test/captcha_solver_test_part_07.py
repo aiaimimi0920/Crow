@@ -347,7 +347,8 @@ def test_live_solve_does_not_fall_back_to_cdp_after_unverified_screen_mapping(mo
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
-    assert calls == {"os": 1, "cdp": 0, "reload": 1}
+    assert solver.last_failure_reason == "execution_unavailable"
+    assert calls == {"os": 1, "cdp": 0, "reload": 0}
 
 def test_wait_for_verification_success_accepts_authenticated_auction_page(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223, target_url="https://sf.taobao.com/list/1.htm")

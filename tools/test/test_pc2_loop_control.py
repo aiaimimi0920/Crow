@@ -15,7 +15,7 @@ def test_confirmation_returns_probe_reset_and_preserves_cleanup_order(
     monkeypatch.setattr(
         control,
         "_retry_pending_auth_confirmation",
-        lambda _api: {"confirmed": kind == "auth"},
+        lambda _api, **_kwargs: {"confirmed": kind == "auth"},
     )
     monkeypatch.setattr(
         control, "_retry_pending_collection_resume", lambda _api: {"confirmed": True}

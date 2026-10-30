@@ -104,6 +104,108 @@ def test_matching_healthy_detail_still_provides_authentication(probe, url):
     assert connections == ["current"]
 
 
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "?spm=tracking",
+        "?foo=tracking&__captcha_solver_bg=1",
+        "/_____tmd_____/punish?spm=tracking&x5secdata=opaque",
+    ],
+)
+def test_detail_recovery_uses_canonical_identity_with_tracking_parameters(
+    probe, suffix
+):
+    add, connections = probe
+    url = DETAIL + suffix
+    add(url, target_id="current")
+    result = pc2_solver_cdp.check_cdp_browser_for_authenticated_target(ENDPOINT, DETAIL)
+    assert result == {"_target_id": "current", "_target_url": url}
+    assert connections == ["current"]
+
+
+@pytest.mark.parametrize(
+    "blocked_summary",
+    [
+        {"authenticatedPage": False, "challengePresent": True},
+        {"authenticatedPage": False, "loginRequired": True},
+        {"authenticatedPage": False, "explicitFailure": True},
+        {"authenticatedPage": False, "hardBlock": True},
+        {},
+    ],
+)
+def test_tracking_parameters_cannot_hide_same_item_challenge_or_unknown_state(
+    probe, blocked_summary
+):
+    add, connections = probe
+    add(DETAIL, target_id="healthy")
+    add(
+        DETAIL + "/_____tmd_____/punish?spm=tracking&x5secdata=opaque",
+        blocked_summary,
+        target_id="blocked",
+    )
+    assert (
+        pc2_solver_cdp.check_cdp_browser_for_authenticated_target(ENDPOINT, DETAIL)
+        is None
+    )
+    assert connections == ["healthy", "blocked"]
+
+
+def test_seed_health_does_not_borrow_queryless_redirect_authentication(probe):
+    add, connections = probe
+    add(SEED.split("?", 1)[0] + "/_____tmd_____/punish?x5secdata=opaque")
+    assert (
+        pc2_solver_cdp.check_cdp_browser_for_authenticated_target(ENDPOINT, SEED)
+        is None
+    )
+    assert connections == []
+
+
+def test_matching_detail_recovery_with_tracking_does_not_rebuild_page(
+    probe, monkeypatch
+):
+    add, connections = probe
+    add(DETAIL + "?spm=tracking", target_id="current")
+    completions = []
+    monkeypatch.setattr(
+        pc2_solver_loop_control, "_recent_healthy_auth_snapshot", lambda _: False
+    )
+    monkeypatch.setattr(pc2_solver_loop_control, "log_event", lambda _: None)
+    monkeypatch.setattr(pc2_solver_loop_control.time, "time", lambda: 333.0)
+    monkeypatch.setattr(
+        pc2_solver_loop_control,
+        "_mark_auth_complete_pending",
+        lambda target, **kwargs: completions.append((target, kwargs)) or {},
+    )
+    monkeypatch.setattr(
+        pc2_solver_loop_control,
+        "_retry_pending_auth_confirmation",
+        lambda *_args, **_kwargs: {"confirmed": True},
+    )
+    monkeypatch.setattr(
+        pc2_solver_loop_control,
+        "rebuild_missing_challenge_target",
+        lambda *_args: pytest.fail("a healthy matching item must not be rebuilt"),
+    )
+    status = {
+        "scope": "detail",
+        "challenge_id": "current-challenge",
+        "paused": True,
+        "last_request": {
+            "node_id": "pc2",
+            "target_url": DETAIL,
+            "cdp_endpoint": ENDPOINT,
+        },
+    }
+    result = pc2_solver_loop_control.recover_stale_pause(
+        "http://api.test", ENDPOINT, status, [DETAIL], "pc2", 0.0
+    )
+    assert completions == [(DETAIL, {"challenge_id": "current-challenge"})]
+    assert result["last_auth_confirmed_at"] == 333.0
+    assert result["reset_probe_counter"] is True
+    assert result["last_probe_target"] is None
+    assert connections == ["current"]
+
+
 def test_matching_detail_challenge_cannot_be_overridden_by_healthy_other_tab(probe):
     add, connections = probe
     add(

@@ -118,7 +118,15 @@ def test_auth_ack_resets_history_only_for_confirmed_current_challenge(
         last_success_at=100,
     )
     response = (
-        {"stale_challenge": True} if stale else _confirmed_auth_payload("completion")
+        {"stale_challenge": True}
+        if stale
+        else {
+            **_confirmed_auth_payload("completion"),
+            "scope": "detail",
+            "scope_paused": False,
+            "scope_manual_required": False,
+            "scope_force_unlock_flag_exists": False,
+        }
     )
     monkeypatch.setattr(auth, "notify_auth_complete", lambda *a, **k: response)
     result = auth._retry_pending_auth_confirmation("http://unused", state, now=101)

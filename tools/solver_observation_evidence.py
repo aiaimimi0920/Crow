@@ -5,6 +5,14 @@ import json
 import re
 from datetime import datetime
 
+from tools.solver_binding_evidence import binding_evidence as _target_binding_evidence
+from tools.solver_pointer_evidence import (
+    POINTER_PHASES,
+)
+from tools.solver_pointer_evidence import (
+    pointer_evidence as _pointer_evidence,
+)
+
 KINDS = {
     "local_solver_start",
     "local_solver_end",
@@ -16,15 +24,38 @@ KINDS = {
     "solver_cooldown_started",
     "solver_cooldown_elapsed",
 }
-PHASES = {"os_drag", "drag_complete", "verification", "verified", "challenge_failure"}
+PHASES = {
+    "target_binding",
+    "slider_geometry",
+    "drag_distance",
+    "pointer_failure",
+    "pointer_hit",
+    "input_receipt",
+    "input_receipt_unavailable",
+    "cursor_position",
+    "os_drag",
+    "drag_complete",
+    "verification",
+    "verified",
+    "challenge_failure",
+    "slider_missing",
+    "nc_retry_click",
+    "nc_retry_restored",
+    "nc_retry_authenticated",
+    "nc_retry_uncertain",
+}
 FAILURES = {
+    "cdp_unavailable",
+    "deadline_exceeded",
     "challenge_retry_exhausted",
     "max_attempts_exceeded",
     "challenge_loading",
     "manual_required",
     "cancelled",
     "slider_not_found",
+    "slider_endpoint_unconfirmed",
     "timeout",
+    "execution_unavailable",
 }
 PROFILES = {
     "fast_exact_v3",
@@ -44,6 +75,33 @@ def timestamp(value):
     # Docker emits nanoseconds; the supported Python runtime accepts microseconds.
     value = re.sub(r"(\.\d{6})\d+", r"\1", value).replace("Z", "+00:00")
     return datetime.fromisoformat(value).timestamp()
+
+
+def _challenge_failure_evidence(event):
+    evidence = {}
+    if "code" in event:
+        code = event["code"]
+        evidence["code"] = (
+            code
+            if isinstance(code, str)
+            and re.fullmatch(r"error:[0-9]{1,6}|none|other", code)
+            else "other"
+        )
+    if type(event.get("retryable")) is bool:
+        evidence["retryable"] = event["retryable"]
+    for key, allowed, fallback in (
+        ("code_kind", {"absent", "numeric", "opaque", "invalid"}, "invalid"),
+        ("ready_state", {"loading", "interactive", "complete", "unknown"}, "unknown"),
+    ):
+        if key in event:
+            value = event[key]
+            evidence[key] = (
+                value if isinstance(value, str) and value in allowed else fallback
+            )
+    for key in ("target_ready", "probe_failed"):
+        if type(event.get(key)) is bool:
+            evidence[key] = event[key]
+    return evidence
 
 
 def project_line(line, container_id):
@@ -92,6 +150,48 @@ def project_line(line, container_id):
         )
     if kind == "local_solver_diagnostic":
         out["phase"] = event["phase"]
+        if event["phase"] in POINTER_PHASES:
+            out.update(_pointer_evidence(event))
+        if event["phase"] == "nc_retry_click":
+            index, count = event.get("candidate_index"), event.get("candidate_count")
+            if type(index) is int and type(count) is int and 1 <= index <= count <= 16:
+                out.update(candidate_index=index, candidate_count=count)
+            candidate = event.get("candidate_kind")
+            out["candidate_kind"] = (
+                candidate
+                if isinstance(candidate, str)
+                and candidate
+                in {
+                    "widget_centerline",
+                    "widget_vertical",
+                    "retry_text",
+                    "widget_fallback",
+                }
+                else "unknown"
+            )
+        if event["phase"] == "challenge_failure":
+            out.update(_challenge_failure_evidence(event))
+        if event["phase"] == "target_binding":
+            out.update(_target_binding_evidence(event))
+        if event["phase"] == "slider_missing":
+            ready = event.get("ready_state")
+            out["ready_state"] = (
+                ready
+                if isinstance(ready, str)
+                and ready in {"loading", "interactive", "complete"}
+                else "unknown"
+            )
+            for key in (
+                "probe_failed",
+                "target_ready",
+                "challenge_present",
+                "login_required",
+                "hard_block",
+                "explicit_failure",
+                "authenticated_page",
+            ):
+                if type(event.get(key)) is bool:
+                    out[key] = event[key]
         if event["phase"] == "os_drag":
             out["automatic_input"] = event.get("input") == "pyautogui"
             out["profile"] = (
@@ -100,10 +200,11 @@ def project_line(line, container_id):
                 and event["profile"] in PROFILES
                 else "other"
             )
-        for key in ("distance", "screen_x", "screen_y"):
-            value = event.get(key)
-            if type(value) in (int, float) and -100000 < value < 100000:
-                out[key] = value
+        if event["phase"] not in {"input_receipt", "input_receipt_unavailable"}:
+            for key in ("distance", "screen_x", "screen_y"):
+                value = event.get(key)
+                if type(value) in (int, float) and -100000 < value < 100000:
+                    out[key] = value
         for key in (
             "success",
             "slider_gone",
@@ -231,6 +332,64 @@ def summarize(events):
                     )
                 if event["phase"] == "verified":
                     current["verified"] = True
+                if event["phase"] in POINTER_PHASES:
+                    evidence = current.setdefault("pointer_events", [])
+                    if len(evidence) < 64:
+                        evidence.append(
+                            {
+                                k: event[k]
+                                for k in (
+                                    "at",
+                                    "phase",
+                                    "reason",
+                                    "check",
+                                    "delta",
+                                    "corrections",
+                                    "distance",
+                                    "track_width",
+                                    "slider_width",
+                                    "backend_completed",
+                                    "press_seen",
+                                    "press_on_target",
+                                    "pressed_moves",
+                                    "release_seen",
+                                    "document_current",
+                                )
+                                if k in event
+                            }
+                        )
+                if event["phase"] == "challenge_failure":
+                    current["last_challenge_failure"] = {
+                        "at": event["at"],
+                        **_challenge_failure_evidence(event),
+                    }
+                if event["phase"] == "target_binding":
+                    bindings = current.setdefault("target_binding_events", [])
+                    if len(bindings) < 64:
+                        bindings.append(
+                            {"at": event["at"], **_target_binding_evidence(event)}
+                        )
+                if event["phase"] in {
+                    "nc_retry_click",
+                    "nc_retry_restored",
+                    "nc_retry_authenticated",
+                    "nc_retry_uncertain",
+                }:
+                    retries = current.setdefault("nc_retry_events", [])
+                    if len(retries) < 64:
+                        retries.append(
+                            {
+                                k: event[k]
+                                for k in (
+                                    "at",
+                                    "phase",
+                                    "candidate_index",
+                                    "candidate_count",
+                                    "candidate_kind",
+                                )
+                                if k in event
+                            }
+                        )
             elif kind == "local_solver_end" and not current["completed"]:
                 current.update(
                     completed=True,
@@ -245,7 +404,8 @@ def summarize(events):
                 )
             elif (
                 kind == "auth_completion_challenge_resolved"
-                and current["automatic_local_success"]
+                and current["completed"]
+                and current["local_success"]
             ):
                 current["challenge_hash"] = event.get("challenge_hash")
         if kind == "auth_complete_result":
@@ -253,7 +413,8 @@ def summarize(events):
             candidates = [
                 a
                 for a in attempts
-                if a["automatic_local_success"]
+                if a["completed"]
+                and a["local_success"]
                 and event.get("challenge_hash")
                 and event.get("target_hash")
                 and a.get("challenge_hash") == event["challenge_hash"]
@@ -313,6 +474,9 @@ def summarize(events):
         automatic_auth_confirmations=len(automatic_auth),
         incomplete=sum(not a["completed"] for a in attempts),
         unlinked_auth_confirmations=len(unlinked_auth),
+        auth_confirmed_without_verified_drag=sum(
+            a["auth_confirmed"] and not a["automatic_local_success"] for a in attempts
+        ),
         local_success_without_auth_confirmation=sum(
             a["automatic_local_success"] and not a["auth_confirmed"] for a in attempts
         ),

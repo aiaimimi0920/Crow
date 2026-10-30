@@ -320,18 +320,25 @@ def test_export_cdp_cookies_websocket_probe_ignores_host_proxy_env(monkeypatch):
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         def get(self, url: str, *, timeout: int):
             calls.append({"url": url, "timeout": timeout, "trust_env": self.trust_env})
             return _Response()
 
+        def close(self) -> None:
+            self.close_calls += 1
+
     class _FakeWebSocket:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
         def send(self, _payload: str) -> None:
             return None
 
         @staticmethod
         def recv() -> str:
-            return json.dumps({"result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
+            return json.dumps({"id": 1, "result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
 
         def close(self) -> None:
             return None
@@ -341,7 +348,8 @@ def test_export_cdp_cookies_websocket_probe_ignores_host_proxy_env(monkeypatch):
         "get",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("requests.get should not be used")),
     )
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
     monkeypatch.setattr(browserless_seed_probe.websocket, "create_connection", lambda *_args, **_kwargs: _FakeWebSocket())
 
     cookies = browserless_seed_probe._export_cdp_cookies_via_websocket(
@@ -350,6 +358,7 @@ def test_export_cdp_cookies_websocket_probe_ignores_host_proxy_env(monkeypatch):
     )
 
     assert cookies == [{"name": "cookie2", "domain": ".taobao.com"}]
+    assert session.close_calls == 1
     assert calls == [
         {
             "url": "http://127.0.0.1:9224/json/version",
@@ -384,14 +393,20 @@ def test_resolve_cdp_endpoint_rewrites_chromium_loopback_websocket(monkeypatch) 
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         def get(self, _url: str, *, timeout: int) -> _Response:
             assert timeout == 10
             assert self.trust_env is False
             return _Response()
 
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+        def close(self) -> None:
+            self.close_calls += 1
+
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
 
     assert browserless_seed_probe._resolve_cdp_endpoint(
         "http://pc2-browser-solver:9224"
     ) == "ws://pc2-browser-solver:9224/devtools/browser/browser-remote"
+    assert session.close_calls == 1

@@ -23,7 +23,7 @@ def solve_probe(monkeypatch, summaries, sliders=()):
         captcha_preflight, "time", SimpleNamespace(monotonic=lambda: clock[0])
     )
 
-    def summary():
+    def summary(*, deadline=None):
         index = min(reads[0], len(summaries) - 1)
         reads[0] += 1
         return summaries[index].copy()
@@ -112,7 +112,7 @@ def test_permanently_loading_page_keeps_original_bounded_failure(
     assert solver.solve(max_attempts=1, slider_find_max_retries=1) is False
     assert solver.last_failure_reason == "challenge_loading"
     assert clock[0] == 8 and waits == [0.25] * 32
-    assert reads[0] == 33 + int(after_reset)
+    assert reads[0] == 32 + int(after_reset)
     solver._do_drag.assert_not_called()
     solver._reload_page.assert_not_called()
     solver._send_cdp.assert_not_called()

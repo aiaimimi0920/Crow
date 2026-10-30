@@ -34,6 +34,9 @@ def test_websocket_is_closed_when_cookie_response_is_malformed(monkeypatch):
     closed = []
 
     class Socket:
+        def settimeout(self, _timeout):
+            pass
+
         def send(self, message):
             assert json.loads(message) == {"id": 1, "method": "Storage.getCookies"}
 

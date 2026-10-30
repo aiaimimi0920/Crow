@@ -17,11 +17,15 @@ def test_resolve_cdp_endpoint_ignores_read_only_cache(monkeypatch, tmp_path) -> 
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         @staticmethod
         def get(_url: str, *, timeout: int) -> _Response:
             assert timeout == 10
             return _Response()
+
+        def close(self) -> None:
+            self.close_calls += 1
 
     def fail_write(*_args, **_kwargs) -> int:
         raise OSError(30, "Read-only file system")
@@ -30,12 +34,14 @@ def test_resolve_cdp_endpoint_ignores_read_only_cache(monkeypatch, tmp_path) -> 
         "FAPAI_CDP_WEBSOCKET_CACHE_PATH",
         str(tmp_path / "readonly" / "cdp-websocket-cache.json"),
     )
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
     monkeypatch.setattr(Path, "write_text", fail_write)
 
     assert browserless_seed_probe._resolve_cdp_endpoint(
         "http://pc2-browser-solver:9224"
     ) == "ws://pc2-browser-solver:9224/devtools/browser/browser-remote"
+    assert session.close_calls == 1
 
 
 def test_export_cdp_cookies_websocket_probe_falls_back_to_json_target_list(monkeypatch):
@@ -54,6 +60,7 @@ def test_export_cdp_cookies_websocket_probe_falls_back_to_json_target_list(monke
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         def get(self, url: str, *, timeout: int):
             calls.append(url)
@@ -72,18 +79,25 @@ def test_export_cdp_cookies_websocket_probe_falls_back_to_json_target_list(monke
                 )
             raise AssertionError(url)
 
+        def close(self) -> None:
+            self.close_calls += 1
+
     class _FakeWebSocket:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
         def send(self, _payload: str) -> None:
             return None
 
         @staticmethod
         def recv() -> str:
-            return json.dumps({"result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
+            return json.dumps({"id": 1, "result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
 
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
     monkeypatch.setattr(browserless_seed_probe.websocket, "create_connection", lambda *_args, **_kwargs: _FakeWebSocket())
 
     cookies = browserless_seed_probe._export_cdp_cookies_via_websocket(
@@ -92,6 +106,7 @@ def test_export_cdp_cookies_websocket_probe_falls_back_to_json_target_list(monke
     )
 
     assert cookies == [{"name": "cookie2", "domain": ".taobao.com"}]
+    assert session.close_calls == 1
     assert calls == [
         "http://127.0.0.1:9224/json/version",
         "http://127.0.0.1:9224/json",
@@ -113,24 +128,32 @@ def test_export_cdp_cookies_websocket_probe_uses_cached_websocket_when_http_endp
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         def get(self, url: str, *, timeout: int):
             calls.append(url)
             raise TimeoutError("cdp endpoint stalled")
 
+        def close(self) -> None:
+            self.close_calls += 1
+
     class _FakeWebSocket:
+        def settimeout(self, _timeout: float) -> None:
+            pass
+
         def send(self, _payload: str) -> None:
             return None
 
         @staticmethod
         def recv() -> str:
-            return json.dumps({"result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
+            return json.dumps({"id": 1, "result": {"cookies": [{"name": "cookie2", "domain": ".taobao.com"}]}})
 
         def close(self) -> None:
             return None
 
     monkeypatch.setenv("FAPAI_CDP_WEBSOCKET_CACHE_PATH", str(cache_path))
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
     monkeypatch.setattr(browserless_seed_probe.websocket, "create_connection", lambda *_args, **_kwargs: _FakeWebSocket())
 
     cookies = browserless_seed_probe._export_cdp_cookies_via_websocket(
@@ -139,6 +162,7 @@ def test_export_cdp_cookies_websocket_probe_uses_cached_websocket_when_http_endp
     )
 
     assert cookies == [{"name": "cookie2", "domain": ".taobao.com"}]
+    assert session.close_calls == 1
     assert calls == [
         "http://127.0.0.1:9224/json/version",
         "http://127.0.0.1:9224/json",
@@ -160,18 +184,24 @@ def test_resolve_cdp_endpoint_uses_cached_websocket_when_http_probe_fails(monkey
     class _Session:
         def __init__(self) -> None:
             self.trust_env = True
+            self.close_calls = 0
 
         def get(self, url: str, *, timeout: int):
             calls.append(url)
             raise TimeoutError("cdp endpoint stalled")
 
+        def close(self) -> None:
+            self.close_calls += 1
+
     monkeypatch.setenv("FAPAI_CDP_WEBSOCKET_CACHE_PATH", str(cache_path))
-    monkeypatch.setattr(browserless_seed_probe.requests, "Session", _Session)
+    session = _Session()
+    monkeypatch.setattr(browserless_seed_probe.requests, "Session", lambda: session)
 
     endpoint = browserless_seed_probe._resolve_cdp_endpoint("http://127.0.0.1:9224")
 
     assert endpoint == "ws://127.0.0.1:9224/devtools/browser/browser-cache"
     assert calls == ["http://127.0.0.1:9224/json/version"]
+    assert session.close_calls == 1
 
 
 def test_probe_seed_page_includes_response_status_and_final_url():

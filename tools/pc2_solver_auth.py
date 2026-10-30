@@ -55,13 +55,50 @@ def notify_auth_complete(
         except Exception as exc:
             last_result = {"ok": False, "error": repr(exc)}
         last_result["request_attempts"] = attempt
-        if _auth_complete_response_confirmed(last_result, completion_id):
+        if _auth_complete_response_confirmed(last_result, completion_id, scope=scope):
             return last_result
         if last_result.get("stale_challenge") is True:
+            return last_result
+        if _auth_complete_refresh_pending(
+            last_result, completion_id, challenge_id, scope
+        ):
+            # The same job is already accepted. Leave polling/backoff to the
+            # outer pending controller instead of counting duplicate POSTs.
             return last_result
         if attempt < attempts and AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS > 0:
             time.sleep(AUTH_COMPLETE_REQUEST_BACKOFF_SECONDS * attempt)
     return last_result
+
+
+def _auth_complete_refresh_pending(
+    payload: object,
+    completion_id: str | None,
+    challenge_id: str | None,
+    scope: str | None,
+) -> bool:
+    """An owned asynchronous receipt is pending, never proof of authentication."""
+    if (
+        not isinstance(payload, dict)
+        or payload.get("ok") is not True
+        or payload.get("auth_state_confirmed") is not False
+        or not isinstance(completion_id, str)
+        or not completion_id
+        or payload.get("completion_id") != completion_id
+        or not isinstance(challenge_id, str)
+        or not challenge_id
+        or scope not in ("seed", "detail")
+        or payload.get("scope") != scope
+    ):
+        return False
+    snapshot = payload.get("cookie_snapshot")
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("status") in ("pending", "running")
+        and snapshot.get("completion_id") == completion_id
+        and snapshot.get("expected_challenge_id") == challenge_id
+        and snapshot.get("scope") == scope
+        and snapshot.get("refreshed") is False
+    )
 
 
 def _response_scope_state(payload: object) -> dict[str, object] | None:
@@ -113,13 +150,19 @@ def _response_scope_state(payload: object) -> dict[str, object] | None:
 
 
 def _auth_complete_response_confirmed(
-    payload: object, completion_id: str | None
+    payload: object, completion_id: str | None, *, scope: str | None = None
 ) -> bool:
     if not isinstance(payload, dict):
         return False
     if payload.get("ok") is not True or payload.get("auth_state_confirmed") is not True:
         return False
     if str(payload.get("completion_id") or "") != str(completion_id or ""):
+        return False
+    # A scoped request cannot consume another scope's cleared state or a
+    # legacy aggregate ACK, even if the completion ID happens to match.
+    if scope not in (None, "") and (
+        scope not in ("seed", "detail") or payload.get("scope") != scope
+    ):
         return False
     solver_status = payload.get("captcha_solver")
     if not isinstance(solver_status, dict):

@@ -34,21 +34,28 @@ def test_drag_pauses_on_handle_before_press_and_before_first_move(
 
 
 @pytest.mark.parametrize("backend,variant", BACKENDS)
+@pytest.mark.parametrize("y_offsets", [[], [0.2, -0.3, 0.4]])
 def test_drag_applies_small_xy_tremor_while_pressed_and_restores_endpoint(
-    monkeypatch, backend, variant
+    monkeypatch, backend, variant, y_offsets
 ):
     solver, pointer, drag = make_drag(monkeypatch, backend, variant, fraction=0.5)
     monkeypatch.setattr("src.captcha_os_input.random.random", lambda: 1.0)
     # Alternate deterministic half-sigma offsets to prove both directions reach
     # the pointer backend, rather than only asserting that a profile has fields.
-    offsets = iter([0.5, 0.5, -0.5, -0.5, 0.5, 0.5])
+    offsets = {}
+
+    def gaussian(mean, sigma):
+        samples = offsets.setdefault(sigma, iter([0.5, -0.5, 0.5]))
+        return mean + sigma * next(samples, 0.0)
+
     monkeypatch.setattr(
         "src.captcha_os_input.random.gauss",
-        lambda mean, sigma: mean + sigma * next(offsets, 0.0),
+        gaussian,
     )
     fractions = [0.25, 0.5, 0.75]
     if backend == "os":
         monkeypatch.setattr(solver, "_os_drag_warmup_points", lambda *args: [])
+        monkeypatch.setattr(solver, "_os_drag_y_track", lambda *args: y_offsets)
         monkeypatch.setattr(
             solver, "_os_drag_track", lambda *args: (fractions, [0.01] * 3)
         )
@@ -66,9 +73,16 @@ def test_drag_applies_small_xy_tremor_while_pressed_and_restores_endpoint(
     press_index = pointer.events.index(("button", True))
     release_index = pointer.events.index(("button", False))
     moves = [e for e in pointer.events[press_index:release_index] if e[0] == "move"]
-    for event, fraction, sign in zip(moves[:3], fractions, [1, -1, 1], strict=True):
+    expected_y = (
+        y_offsets
+        if backend == "os" and y_offsets
+        else [sign * sigma_y / 2 for sign in [1, -1, 1]]
+    )
+    for event, fraction, sign, y_offset in zip(
+        moves[:3], fractions, [1, -1, 1], expected_y, strict=True
+    ):
         assert event[1] == pytest.approx(100 + 260 * fraction + sign * sigma_x / 2)
-        assert event[2] == pytest.approx(50 + sign * sigma_y / 2)
+        assert event[2] == pytest.approx(50 + y_offset)
         assert 0 < sigma_x <= 1.0 and 0 < sigma_y <= 1.1
     assert moves[-1][1] == 360
     assert pointer.events[release_index - 1][0] == "wait"

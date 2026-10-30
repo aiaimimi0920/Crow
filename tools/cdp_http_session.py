@@ -2,10 +2,13 @@
 
 import logging
 
+from tools.capture_budget import bounded_http_timeout, check_capture_budget
+
 logger = logging.getLogger(__name__)
 
 
 def request_cdp(session_factory, method, url, *, timeout_seconds):
+    timeout_seconds = bounded_http_timeout(timeout_seconds)
     session = session_factory()
     try:
         session.trust_env = False
@@ -14,7 +17,9 @@ def request_cdp(session_factory, method, url, *, timeout_seconds):
         session.headers["Connection"] = "close"
         # requests buffers the response by default; closing the session does not
         # invalidate its body, JSON, status, or headers returned to the caller.
-        return getattr(session, method)(url, timeout=timeout_seconds)
+        response = getattr(session, method)(url, timeout=timeout_seconds)
+        check_capture_budget()
+        return response
     finally:
         try:
             session.close()

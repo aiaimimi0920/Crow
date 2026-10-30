@@ -75,12 +75,15 @@ def test_drag_timing_improvements():
                 "handleOffsetWidth": 40,
                 "handleOffsetLeft": 200,
             },
-            162,
+            pytest.approx(162 * 400 / 402),
         ),
         (None, 362),
     ],
 )
-def test_live_drag_distance_uses_remaining_track_geometry(monkeypatch, track, expected):
+@pytest.mark.parametrize("bound", [False, True])
+def test_live_drag_distance_uses_remaining_track_geometry(
+    monkeypatch, track, expected, bound
+):
     """A handle already partway across the track only moves the remaining distance."""
     from src.captcha_solver import CaptchaSolver
 
@@ -93,11 +96,23 @@ def test_live_drag_distance_uses_remaining_track_geometry(monkeypatch, track, ex
     )
     monkeypatch.setattr(solver, "_bring_to_front", lambda: True)
     monkeypatch.setattr(solver, "_wait_interruptibly", lambda _seconds: None)
-    monkeypatch.setattr(
-        solver, "_find_slider", lambda: {"x": 200, "y": 100, "width": 40, "height": 40}
-    )
-    monkeypatch.setattr(solver, "_get_track_width", lambda: 400)
-    monkeypatch.setattr(solver, "_get_track_rect", lambda: track)
+    info = {"x": 200, "y": 100, "width": 40, "height": 40}
+    if bound:
+        info["track_rect"] = track
+        if track is None:
+            expected = 302  # Existing 340px fallback, not a different widget's width.
+    monkeypatch.setattr(solver, "_find_slider", lambda: dict(info))
+
+    def legacy_width():
+        assert not bound, "Atomic slider geometry must not rescan another track"
+        return 400
+
+    def legacy_rect():
+        assert not bound, "Atomic slider geometry must not rescan another track"
+        return track
+
+    monkeypatch.setattr(solver, "_get_track_width", legacy_width)
+    monkeypatch.setattr(solver, "_get_track_rect", legacy_rect)
     monkeypatch.setattr(solver, "_os_mouse_enabled", lambda: False)
     monkeypatch.setattr(
         solver,

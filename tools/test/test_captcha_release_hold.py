@@ -35,10 +35,15 @@ def make_drag(monkeypatch, backend, variant=0, fraction=0.0):
     pointer = RecordingPointer()
     solver = CaptchaSolver(pointer_backend=pointer)
     monkeypatch.setattr(solver, "_wait_interruptibly", pointer.wait)
+    pointer.hold_range = (
+        solver._os_drag_profile(variant)["hold_before_release"]
+        if backend == "os"
+        else (1.5, 2.5)
+    )
 
     def sample(low, high):
         result = low + (high - low) * fraction
-        if (low, high) == (1.5, 2.5):
+        if (low, high) == pointer.hold_range:
             pointer.events.append(("sample", low, high, result))
         return result
 
@@ -101,8 +106,10 @@ def test_drag_samples_endpoint_hold_in_range_for_every_attempt(
         move, sample, hold = pointer.events[release_index - 3 : release_index]
         assert move[0] == "move"
         assert move[1] == 360
-        assert sample == ("sample", 1.5, 2.5, 1.5 + fraction)
-        assert hold == ("wait", 1.5 + fraction, True, move[1:])
+        low, high = pointer.hold_range
+        sampled_hold = low + (high - low) * fraction
+        assert sample == ("sample", low, high, sampled_hold)
+        assert hold == ("wait", sampled_hold, True, move[1:])
         assert not pointer.down
 
 
@@ -111,23 +118,30 @@ def test_drag_samples_endpoint_hold_in_range_for_every_attempt(
 def test_endpoint_hold_can_stop_and_still_releases_button(monkeypatch, backend, reason):
     solver, pointer, drag = make_drag(monkeypatch, backend)
     now = [0.0]
+    sampled_hold = pointer.hold_range[0]
+    stop_after = min(0.3, sampled_hold / 2)
 
     class StopDuringHold:
         def is_set(self):
-            return reason == "cancelled" and now[0] >= 0.3
+            return reason == "cancelled" and now[0] >= stop_after
 
         def wait(self, seconds):
-            now[0] += seconds
+            now[0] += (
+                min(seconds, max(0, stop_after - now[0]))
+                if reason == "cancelled"
+                else seconds
+            )
 
     budget = SolveBudget(
-        deadline=0.3 if reason == "deadline_exceeded" else 100,
+        deadline=stop_after if reason == "deadline_exceeded" else 100,
         cancel_event=StopDuringHold(),
         clock=lambda: now[0],
     )
 
     def wait(seconds):
+        previous = pointer.events[-1] if pointer.events else None
         pointer.wait(seconds)
-        if seconds == 1.5:
+        if previous == ("sample", *pointer.hold_range, sampled_hold):
             assert pointer.down
             assert pointer.xy[0] == 360
             budget.wait(seconds)
@@ -136,7 +150,7 @@ def test_endpoint_hold_can_stop_and_still_releases_button(monkeypatch, backend, 
     with pytest.raises(SolveStopped), budget.scope(solver):
         drag()
 
-    assert now[0] == pytest.approx(0.3)
+    assert now[0] == pytest.approx(stop_after)
     assert solver.last_failure_reason == reason
     assert pointer.events[-1] == ("button", False)
     assert not pointer.down

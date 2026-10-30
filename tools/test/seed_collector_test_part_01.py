@@ -159,6 +159,7 @@ def test_should_archive_stale_seed_jobs_rejects_blank_or_duplicate_job_keys() ->
     )
 
 def test_run_seed_collector_once_claims_one_page_and_populates_detail_queue(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(seed_collector, "fetch_json", lambda *a, **kw: {"paused": False})
     repo = _make_repo(tmp_path)
     fetched_urls: list[str] = []
     api_base_urls: list[str | None] = []

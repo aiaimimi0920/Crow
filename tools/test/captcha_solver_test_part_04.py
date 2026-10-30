@@ -254,7 +254,10 @@ def test_send_cdp_mouse_event_consumes_matching_response() -> None:
     assert ws.sent_payloads[0]["method"] == "Input.dispatchMouseEvent"
     assert ws.recv_count == 1
 
-def test_solver_exhausts_bounded_retry_when_cdp_mouse_input_times_out(monkeypatch) -> None:
+
+def test_solver_defers_without_reload_when_cdp_mouse_input_times_out(
+    monkeypatch,
+) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)
     cdp_calls: list[str] = []
     reload_calls: list[bool] = []
@@ -288,11 +291,12 @@ def test_solver_exhausts_bounded_retry_when_cdp_mouse_input_times_out(monkeypatc
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert solver.solve(max_attempts=1) is False
-    assert solver.last_failure_reason == "max_attempts_exceeded"
+    assert solver.last_failure_reason == "cdp_unavailable"
     assert [method for method in cdp_calls if method.startswith("Input.")] == [
         "Input.dispatchMouseEvent"
     ]
-    assert reload_calls == [True]
+    assert reload_calls == []
+
 
 def test_solver_returns_false_quickly_for_baxia_hard_block(monkeypatch) -> None:
     solver = captcha_solver.CaptchaSolver(port=9223)

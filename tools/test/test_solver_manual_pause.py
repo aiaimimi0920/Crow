@@ -1,6 +1,5 @@
 """Manual pause remains active when scoped or compatibility flag writes fail."""
 
-import builtins
 import json
 from pathlib import Path
 
@@ -14,7 +13,7 @@ from src.runtime_state import RuntimeState
 def test_flag_failure_keeps_manual_pause_and_attempts_both_flags(
     monkeypatch, tmp_path, scope, failure
 ):
-    from src import server
+    from src import server, solver_manual_pause
 
     monkeypatch.setattr(server, "RUNTIME", RuntimeState())
     monkeypatch.setenv("FAPAI_SOLVER_STATE_DIR", str(tmp_path))
@@ -28,18 +27,18 @@ def test_flag_failure_keeps_manual_pause_and_attempts_both_flags(
         else {scoped if failure == "scoped" else legacy}
     )
     opened = []
-    open_file = builtins.open
+    write_json = solver_manual_pause.write_json
 
     def fail_flag(path, *args, **kwargs):
         selected = Path(path)
-        if selected in {scoped, legacy} and args and args[0] == "w":
+        if selected in {scoped, legacy}:
             opened.append(selected)
             if selected in failed:
                 raise PermissionError(f"locked {selected.name}")
-        return open_file(path, *args, **kwargs)
+        return write_json(path, *args, **kwargs)
 
     with monkeypatch.context() as fault:
-        fault.setattr(builtins, "open", fail_flag)
+        fault.setattr(solver_manual_pause, "write_json", fail_flag)
         error = server._mark_solver_manual_required(scope=scope, manual_only=True)
 
     first_failure = scoped if scoped in failed else legacy

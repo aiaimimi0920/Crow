@@ -1,8 +1,10 @@
-"""Terminal challenge results must wait for a human, even if reporting fails."""
+"""Manual handoff receipts and blocked-execution reporting."""
 
 import time
 from collections.abc import Callable, Mapping
 from typing import TypeVar, cast
+
+from tools.pc2_solver_scope_policy import manual_challenge_registration_needed
 
 _AttemptResult = TypeVar("_AttemptResult")
 
@@ -66,8 +68,33 @@ def attempt_or_manual_handoff(
         return None
 
 
+def report_execution_block(
+    reason: str,
+    status: dict[str, object],
+    report: Callable[[], Mapping[str, object]],
+    emit: Callable[[dict[str, object]], None],
+) -> None:
+    """Preserve manual registration and its receipt before the blocked event."""
+    if reason == "manual_only" and manual_challenge_registration_needed(status):
+        result = report()
+        solver = result.get("captcha_solver")
+        emit(
+            {
+                "kind": "manual_challenge_reported",
+                "status": result.get("status"),
+                "ok": result.get("ok"),
+                "error": result.get("error"),
+                "challenge_id": solver.get("challenge_id")
+                if isinstance(solver, dict)
+                else None,
+            }
+        )
+    emit({"kind": "local_solver_execution_blocked", "reason": reason})
+
+
 __all__ = (
     "ManualChallengeRequired",
-    "retry_terminal_manual_report",
     "attempt_or_manual_handoff",
+    "report_execution_block",
+    "retry_terminal_manual_report",
 )

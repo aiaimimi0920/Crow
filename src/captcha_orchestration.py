@@ -3,6 +3,10 @@ from __future__ import annotations
 import logging
 import random
 
+from .captcha_deferral import TargetNavigationUnconfirmed, preserve_unconfirmed_target
+from .captcha_nc_retry import NCRetryDeferred
+from .captcha_slider_geometry import SliderEndpointReached
+from .captcha_target_diagnostics import log_missing_slider, log_target_binding
 from .captcha_verification import ready_target_matches
 
 logger = logging.getLogger(__name__)
@@ -26,6 +30,9 @@ class CaptchaOrchestrationMixin:
             )
         except SolveStopped:
             return False
+        except (NCRetryDeferred, TargetNavigationUnconfirmed):
+            # Deferred state and socket cleanup already finished under the lock.
+            return False
 
     def _solve_attempts(
         self,
@@ -36,10 +43,10 @@ class CaptchaOrchestrationMixin:
         *, _budget,
     ):
         """Main solve method - tries all methods in priority order."""
-        with _budget.scope(self):
+        with _budget.scope(self), preserve_unconfirmed_target(self, _budget):
             self.last_failure_reason = None
 
-            def finish(result):
+            def finish(result, *, preserve_target=False):
                 if self._stop_if_cancelled():
                     result = False
                 if not result and self.last_failure_reason == "manual_required":
@@ -51,7 +58,10 @@ class CaptchaOrchestrationMixin:
                         self.ws = None
                     self._opened_target_ids.clear()
                     return result
-                self._close_owned_target_tabs()
+                if not preserve_target:
+                    self._close_owned_target_tabs()
+                if self._stop_if_cancelled():
+                    return False
                 return result
 
             connected_for_first_attempt = False
@@ -67,6 +77,8 @@ class CaptchaOrchestrationMixin:
                 return finish(False)
             if preflight.get("already_authenticated"):
                 return finish(True)
+            if preflight.get("retryable_failure"):
+                return finish(False)
             if preflight.get("connected"):
                 connected_for_first_attempt = True
                 if preflight.get("has_slider"):
@@ -131,8 +143,11 @@ class CaptchaOrchestrationMixin:
                 elif not self.connect_tab():
                     if self.last_failure_reason == "manual_required":
                         return finish(False)
-                    logger.warning("[SOLVER] connect_tab failed; retrying in 5 seconds")
-                    self._wait_interruptibly(5)
+                    if attempt < max_attempts:
+                        logger.warning("[SOLVER] connect_tab failed; retrying in 5 seconds")
+                        self._wait_interruptibly(5)
+                    else:
+                        logger.warning("[SOLVER] connect_tab failed on the final attempt.")
                     continue
 
                 logger.info("[SOLVER] Connected to browser. Starting solve loop...")
@@ -149,25 +164,12 @@ class CaptchaOrchestrationMixin:
                         )
                     if not slider_info:
                         challenge_summary = self._refresh_challenge_summary({})
-                        if (
-                            not local_mock_target
-                            and challenge_summary.get("readyState") == "loading"
-                            and not challenge_summary.get("hasSlider")
-                        ):
-                            challenge_summary = self._wait_for_loading_document(
-                                challenge_summary
+                        if not local_mock_target:
+                            slider_info, challenge_summary = (
+                                self._confirm_missing_slider(challenge_summary)
                             )
-                            if (
-                                not challenge_summary.get("probeFailed")
-                                and challenge_summary.get("hasSlider")
-                                and ready_target_matches(
-                                    challenge_summary, self.target_url
-                                )
-                            ):
-                                slider_info = self._find_slider(
-                                    max_retries=1, retry_delay=0
-                                )
                     if not slider_info:
+                        log_missing_slider(logger, challenge_summary, self.target_url)
                         if challenge_summary.get("probeFailed"):
                             self._preflight_retryable_failure()
                             return finish(False)
@@ -184,10 +186,22 @@ class CaptchaOrchestrationMixin:
                                     pass
                                 self.ws = None
                             return finish(True)
+                        if not local_mock_target and challenge_summary.get("hasSlider"):
+                            self._preflight_retryable_failure("slider_not_found")
+                            return finish(False, preserve_target=True)
                         if challenge_summary.get("hardBlock") and not challenge_summary.get("hasSlider"):
+                            if (
+                                not local_mock_target
+                                and nc_retry_replays >= nc_retry_replay_limit
+                            ):
+                                self.last_failure_reason = "challenge_retry_exhausted"
+                                self._close_solver_ws()
+                                return finish(False)
                             logger.info("[SOLVER] Hard block without slider; trying NC retry-click to restore slider.")
                             restored = self._reset_failed_nc_challenge()
-                            if restored:
+                            if self._stop_if_cancelled():
+                                return finish(False)
+                            if restored and local_mock_target:
                                 logger.info("[SOLVER] NC slider restored after retry-click; continuing loop...")
                                 if self.ws:
                                     try:
@@ -203,14 +217,28 @@ class CaptchaOrchestrationMixin:
                                 )
                             if challenge_summary.get("probeFailed"):
                                 self._preflight_retryable_failure()
-                                return finish(False)
+                                return finish(
+                                    False, preserve_target=not local_mock_target
+                                )
                             if challenge_summary.get("readyState") == "loading" and not challenge_summary.get("hasSlider"):
                                 self._preflight_retryable_failure("challenge_loading")
-                                return finish(False)
+                                return finish(
+                                    False, preserve_target=not local_mock_target
+                                )
                             if challenge_summary.get("authenticatedPage"):
                                 self._preflight_already_authenticated()
                                 return finish(True)
                             if challenge_summary.get("hasSlider"):
+                                if not local_mock_target:
+                                    if not ready_target_matches(
+                                        challenge_summary, self.target_url
+                                    ):
+                                        self._preflight_retryable_failure("slider_not_found")
+                                        return finish(False, preserve_target=True)
+                                    # Recovery spent no drag attempt. Reuse it only
+                                    # within the existing bounded NC replay budget.
+                                    nc_retry_replays += 1
+                                    attempt = max(attempt - 1, 0)
                                 self._close_solver_ws()
                                 continue
                             if challenge_summary.get("hardBlock"):
@@ -260,9 +288,8 @@ class CaptchaOrchestrationMixin:
                     )
 
                     # Step 2: Get Track Width (dynamic)
-                    track_width = self._get_track_width()
+                    track_width, track_rect = self._slider_track_geometry(slider_info)
                     slider_info["track_width"] = track_width
-                    track_rect = self._get_track_rect()
 
                     # Calculate actual drag distance
                     # NC captcha needs slider to reach nearly the end (95-100%)
@@ -274,6 +301,8 @@ class CaptchaOrchestrationMixin:
                         # distance from the live rectangles instead of assuming the
                         # handle is always at the left edge.
                         distance = self._remaining_drag_distance(slider_info, track_rect, track_width)
+                        if distance == 0:
+                            raise SliderEndpointReached
                     logger.info(
                         "[SOLVER] Drag distance: %.0fpx (track: %.0fpx, slider: %.0fpx)",
                         distance,
@@ -301,16 +330,23 @@ class CaptchaOrchestrationMixin:
                         )
                         if drag_result is None:
                             os_drag_failure = str(self.last_failure_reason or "")
-                            mapping_or_focus_failure = (
+                            unsafe_os_failure = (
                                 os_drag_failure == "window_focus_failed"
+                                or os_drag_failure == "mouse_drag_exception"
                                 or os_drag_failure.startswith("screen_mapping_")
                                 or os_drag_failure in {"os_cursor_position_unverified", "os_button_state_unverified"}
                             )
-                            if mapping_or_focus_failure:
+                            if unsafe_os_failure:
+                                # OS input may already have reached the page; its old
+                                # coordinates cannot authorize a second CDP gesture.
                                 logger.warning(
-                                    "[SOLVER] OS focus/mapping was not verified; "
+                                    "[SOLVER] OS drag input or target was not verified; "
                                     "skipping unsafe CDP drag fallback."
                                 )
+                                self._preflight_retryable_failure(
+                                    "execution_unavailable"
+                                )
+                                return finish(False, preserve_target=True)
                             else:
                                 logger.info("[SOLVER] OS mouse unavailable; falling back to CDP drag.")
                                 drag_result = self._do_drag(start_x, start_y, distance)
@@ -325,6 +361,17 @@ class CaptchaOrchestrationMixin:
                                     pass
                                 self.ws = None
                             return finish(False)
+                        if (
+                            not local_mock_target
+                            and self.last_failure_reason == "cdp_unavailable"
+                        ):
+                            # Input may have reached the page despite a missing ACK.
+                            logger.warning(
+                                "[SOLVER] CDP drag input was not confirmed; "
+                                "preserving page for bounded retry."
+                            )
+                            self._preflight_retryable_failure("cdp_unavailable")
+                            return finish(False, preserve_target=True)
                         logger.warning("[SOLVER] Drag did not complete; reloading and continuing")
                         self._reload_page()
                         self._bring_to_front()
@@ -347,7 +394,8 @@ class CaptchaOrchestrationMixin:
                     logger.info("[SOLVER] Drag complete. Verifying...")
 
                     # Step 4: Verify Success
-                    self._wait_interruptibly(0.15 if local_mock_target else random.uniform(1.8, 2.4))
+                    if local_mock_target:
+                        self._wait_interruptibly(0.15)
 
                     if self._wait_for_verification_success():
                         logger.info("[SOLVER] Verified: Captcha solved")
@@ -363,8 +411,41 @@ class CaptchaOrchestrationMixin:
                     if self.last_failure_reason == "manual_required":
                         return finish(False)
 
-                    logger.warning("[SOLVER] Verification failed; reloading and retrying")
+                    logger.warning("[SOLVER] Verification unconfirmed; inspecting challenge state")
                     challenge_summary = self._page_challenge_summary()
+                    loading_after_drag = (
+                        not local_mock_target
+                        and challenge_summary.get("readyState") == "loading"
+                        and not challenge_summary.get("hasSlider")
+                    )
+                    if loading_after_drag:
+                        logger.info(
+                            "[SOLVER] Document loading after drag; waiting within solve budget."
+                        )
+                        challenge_summary = self._wait_for_loading_document(challenge_summary)
+                    from .captcha_navigation_receipt import navigation_binding_fields
+
+                    log_target_binding(
+                        logger,
+                        "post_drag",
+                        challenge_summary,
+                        self.target_url,
+                        navigation=navigation_binding_fields(self, challenge_summary),
+                    )
+                    if challenge_summary.get("probeFailed"):
+                        self._preflight_retryable_failure()
+                        return finish(False, preserve_target=not local_mock_target)
+                    if loading_after_drag:
+                        if challenge_summary.get(
+                            "readyState"
+                        ) == "loading" and not challenge_summary.get("hasSlider"):
+                            self._preflight_retryable_failure("challenge_loading")
+                            return finish(False, preserve_target=True)
+                        if challenge_summary.get("hasSlider") and not ready_target_matches(
+                            challenge_summary, self.target_url
+                        ):
+                            self._preflight_retryable_failure("slider_not_found")
+                            return finish(False, preserve_target=True)
                     logger.info(
                         "[SOLVER] Challenge diagnostic: "
                         f"{self._challenge_failure_diagnostic(challenge_summary)}"
@@ -397,7 +478,32 @@ class CaptchaOrchestrationMixin:
                         continue
                     if challenge_summary.get("explicitFailure"):
                         if nc_retry_replays < nc_retry_replay_limit:
-                            if self._reset_failed_nc_challenge():
+                            restored = self._reset_failed_nc_challenge()
+                            if not restored and not local_mock_target:
+                                # Retry input may replace the document after its short poll.
+                                # Never classify that new document using the pre-click failure.
+                                if self._stop_if_cancelled():
+                                    return finish(False)
+                                challenge_summary = self._refresh_challenge_summary(challenge_summary)
+                                challenge_summary = self._wait_for_loading_document(challenge_summary)
+                                if challenge_summary.get("probeFailed"):
+                                    self._preflight_retryable_failure()
+                                    return finish(False, preserve_target=True)
+                                if challenge_summary.get("authenticatedPage"):
+                                    self._preflight_already_authenticated()
+                                    return finish(True)
+                                if challenge_summary.get("readyState") == "loading" and not challenge_summary.get("hasSlider"):
+                                    self._preflight_retryable_failure("challenge_loading")
+                                    return finish(False, preserve_target=True)
+                                if not challenge_summary.get("explicitFailure"):
+                                    restored = bool(
+                                        challenge_summary.get("hasSlider")
+                                        and ready_target_matches(challenge_summary, self.target_url)
+                                    )
+                                    if not restored:
+                                        self._preflight_retryable_failure("slider_not_found")
+                                        return finish(False, preserve_target=True)
+                            if restored:
                                 nc_retry_replays += 1
                                 logger.info(
                                     "[SOLVER] Challenge asked to retry; "
@@ -423,9 +529,12 @@ class CaptchaOrchestrationMixin:
                     self._bring_to_front()
                     self._wait_interruptibly(0.2 if local_mock_target else random.uniform(1, 2))
 
+                except SliderEndpointReached:
+                    confirmed = self._verify_slider_endpoint()
+                    return finish(confirmed, preserve_target=not confirmed)
                 except Exception as e:
                     from .captcha_budget import SolveStopped
-                    if isinstance(e, SolveStopped):
+                    if isinstance(e, (SolveStopped, NCRetryDeferred)):
                         raise
                     logger.exception("[SOLVER] Error during steps")
                     self._close_solver_ws()
@@ -443,7 +552,8 @@ class CaptchaOrchestrationMixin:
             if recovered_authenticated_page:
                 logger.info("[SOLVER] List page is authenticated after challenge attempts; clearing auth lock path.")
                 return finish(True)
-            self.last_failure_reason = "max_attempts_exceeded"
+            if self.last_failure_reason != "cdp_unavailable":
+                self.last_failure_reason = "max_attempts_exceeded"
             return finish(False)
 
 

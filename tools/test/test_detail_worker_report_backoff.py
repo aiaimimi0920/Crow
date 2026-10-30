@@ -122,7 +122,7 @@ def test_cancellation_during_report_floor_never_probes(clock, monkeypatch):
 @pytest.mark.parametrize("scope", [None, ""])
 def test_legacy_report_without_scope_still_honors_floor(clock, scope):
     receipt = run_wait(scope=scope)
-    assert clock["now"] == 150
+    assert clock["now"] == 142
     assert receipt["report_backoff_seconds"] == 142
     assert receipt["wait_exit"] == "report_backoff_elapsed"
 
@@ -178,7 +178,7 @@ def test_seed_only_pause_can_resume_clear_detail_after_floor(clock):
         },
     }
     receipt = run_wait()
-    assert clock["now"] == 150
+    assert clock["now"] == 142
     assert receipt["wait_exit"] == "report_backoff_elapsed"
     assert clock["polls"] == 1
 
@@ -203,6 +203,6 @@ def test_largest_report_floor_applies_to_whole_batch(clock):
         result,
         900,
     )
-    assert clock["now"] == 150
+    assert clock["now"] == 143
     assert receipt["report_backoff_seconds"] == 143
     assert clock["polls"] == 1

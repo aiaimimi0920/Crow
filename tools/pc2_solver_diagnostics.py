@@ -9,15 +9,53 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from tools.pc2_solver_transport import log_event
+from tools.solver_binding_evidence import BINDING_ENUMS
 
 _LOGGERS = (
     "src.captcha_orchestration",
     "src.captcha_os_input",
     "src.captcha_slider",
+    "src.captcha_nc_retry",
+    "src.captcha_preflight",
 )
 _NUMBER = r"-?\d{1,6}(?:\.\d{1,3})?"
 _BOOL = r"True|False|None"
 _PATTERNS = (
+    (
+        "target_binding",
+        (
+            r"\[SOLVER\] Target binding: stage=(?P<stage>[a-z_]{1,24}) binding=(?P<binding>[a-z_]{1,24}) "
+            r"location_code=(?P<location_code>[a-z_]{1,24}) st_param=(?P<st_param>[a-z_]{1,24}) "
+            r"auction_start_seg=(?P<auction_start_seg>[a-z_]{1,24}) page=(?P<page>[a-z_]{1,24})"
+            r"(?: navigation_probe=(?P<navigation_probe>[a-z_]{1,24})"
+            r" navigation_frame=(?P<navigation_frame>[a-z_]{1,24})"
+            r" navigation_loader=(?P<navigation_loader>[a-z_]{1,24})"
+            r" navigation_url=(?P<navigation_url>[a-z_]{1,24}))?"
+            r"(?: navigation_capture=(?P<navigation_capture>[a-z_]{1,24})"
+            r" navigation_origin=(?P<navigation_origin>[a-z_]{1,24})"
+            r" navigation_transition=(?P<navigation_transition>[a-z_]{1,24})"
+            r" navigation_commit=(?P<navigation_commit>[a-z_]{1,24})"
+            r" navigation_flow_loader=(?P<navigation_flow_loader>[a-z_]{1,24})"
+            r" navigation_flow_pending=(?P<navigation_flow_pending>[a-z_]{1,24}))?"
+        ),
+    ),
+    (
+        "nc_retry_click",
+        (
+            r"\[SOLVER\] Clicking NC retry target (?P<candidate_index>\d{1,2})/(?P<candidate_count>\d{1,2}) "
+            rf"\((?P<candidate_kind>widget_centerline|widget_vertical|retry_text|widget_fallback)\) at \({_NUMBER},{_NUMBER}\)"
+        ),
+    ),
+    (
+        "slider_missing",
+        (
+            r"\[SOLVER\] Slider unavailable: ready=(?P<ready_state>loading|interactive|complete|unknown) "
+            rf"probeFailed=(?P<probe_failed>{_BOOL}) targetReady=(?P<target_ready>{_BOOL}) "
+            rf"challengePresent=(?P<challenge_present>{_BOOL}) loginRequired=(?P<login_required>{_BOOL}) "
+            rf"hardBlock=(?P<hard_block>{_BOOL}) explicitFailure=(?P<explicit_failure>{_BOOL}) "
+            rf"authenticatedPage=(?P<authenticated_page>{_BOOL})"
+        ),
+    ),
     (
         "pointer_failure",
         r"\[SOLVER\] OS pointer probe failed reason=(?P<reason>[a-z_]{1,40}) check=(?P<check>[a-z_]{1,40})",
@@ -54,6 +92,19 @@ _PATTERNS = (
         rf"\[SOLVER\] OS drag timing movement=(?P<movement_seconds>{_NUMBER})s hold=(?P<hold_seconds>{_NUMBER})s",
     ),
     (
+        "input_receipt",
+        (
+            rf"\[SOLVER\] OS input receipt backendCompleted=(?P<backend_completed>{_BOOL}) "
+            rf"pressSeen=(?P<press_seen>{_BOOL}) pressOnTarget=(?P<press_on_target>{_BOOL}) "
+            rf"pressedMoves=(?P<pressed_moves>\d{{1,5}}) releaseSeen=(?P<release_seen>{_BOOL}) "
+            rf"documentCurrent=(?P<document_current>{_BOOL})"
+        ),
+    ),
+    (
+        "input_receipt_unavailable",
+        rf"\[SOLVER\] OS input receipt unavailable backendCompleted=(?P<backend_completed>{_BOOL})",
+    ),
+    (
         "verification",
         (
             rf"\[SOLVER\] (?:\[SOLVER\] )?Verification: success=(?P<success>{_BOOL}), sliderGone=(?P<slider_gone>{_BOOL}), "
@@ -63,10 +114,28 @@ _PATTERNS = (
     ),
     (
         "challenge_failure",
+        (
+            r"\[SOLVER\] Challenge diagnostic: code=(?P<code>[^ ]{1,80}) "
+            r"codeKind=(?P<code_kind>[a-z_]{1,20}) ready=(?P<ready_state>[a-z_]{1,20}) "
+            rf"targetReady=(?P<target_ready>{_BOOL}) probeFailed=(?P<probe_failed>{_BOOL}) "
+            rf"retryable=(?P<retryable>{_BOOL})"
+        ),
+    ),
+    (
+        "challenge_failure",
         rf"\[SOLVER\] Challenge diagnostic: code=(?P<code>[^ ]{{1,80}}) title=.* class=.* path=.* retryable=(?P<retryable>{_BOOL})",
     ),
 )
 _ENUMS = {
+    **BINDING_ENUMS,
+    "candidate_kind": {
+        "widget_centerline",
+        "widget_vertical",
+        "retry_text",
+        "widget_fallback",
+    },
+    "ready_state": {"loading", "interactive", "complete", "unknown"},
+    "code_kind": {"absent", "numeric", "opaque", "invalid"},
     "reason": {
         "target_unavailable",
         "target_invalid",
@@ -77,6 +146,16 @@ _ENUMS = {
     },
     "check": {
         "target",
+        "open_native_focus",
+        "open_snapshot",
+        "open_binding",
+        "binding_missing",
+        "binding_document",
+        "binding_expired",
+        "binding_changed",
+        "node_unavailable",
+        "frame_unavailable",
+        "track_unavailable",
         "native_focus",
         "snapshot",
         "event_buttons",
@@ -103,6 +182,18 @@ _ENUMS = {
     "input": {"uinput", "win32", "pyautogui"},
 }
 _BOOLEANS = {
+    "backend_completed",
+    "press_seen",
+    "press_on_target",
+    "release_seen",
+    "document_current",
+    "probe_failed",
+    "target_ready",
+    "challenge_present",
+    "login_required",
+    "hard_block",
+    "explicit_failure",
+    "authenticated_page",
     "located",
     "clipped",
     "success",
@@ -116,6 +207,9 @@ _BOOLEANS = {
 _FIXED = {
     "[SOLVER] Drag complete. Verifying...": "drag_complete",
     "[SOLVER] Verified: Captcha solved": "verified",
+    "[SOLVER] NC slider restored after retry click.": "nc_retry_restored",
+    "[SOLVER] NC retry click recovered an authenticated page.": "nc_retry_authenticated",
+    "[SOLVER] NC retry document uncertain; deferring without further clicks.": "nc_retry_uncertain",
 }
 
 
@@ -137,13 +231,25 @@ def diagnostic_event(message: str) -> dict[str, object] | None:
             if key in _BOOLEANS:
                 event[key] = None if value == "None" else value == "True"
             elif key in _ENUMS:
-                event[key] = value if value in _ENUMS[key] else "unknown"
+                event[key] = (
+                    value
+                    if value in _ENUMS[key]
+                    else ("invalid" if key == "code_kind" else "unknown")
+                )
             elif key == "code":
                 event[key] = (
-                    value if re.fullmatch(r"error:\d{1,6}|none", value) else "other"
+                    value if re.fullmatch(r"error:[0-9]{1,6}|none", value) else "other"
                 )
+            elif key in {"candidate_index", "candidate_count", "pressed_moves"}:
+                event[key] = int(value)
             else:
                 event[key] = float(value)
+        if phase == "nc_retry_click" and not (
+            1 <= event["candidate_index"] <= event["candidate_count"] <= 16
+        ):
+            return None
+        if phase == "input_receipt" and event["pressed_moves"] > 10000:
+            return None
         return event
     return None
 

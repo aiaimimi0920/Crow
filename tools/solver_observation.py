@@ -91,7 +91,8 @@ def write_report(root, run, events, samples, issues, cursor):
         first_business_sample_at=samples[0]["at"] if samples else None,
         last_business_sample_at=samples[-1]["at"] if samples else None,
         limitations=[
-            "Local success requires observed pyautogui drag, verified phase and success=true.",
+            "Automatic slider success requires observed pyautogui drag, verified phase and success=true.",
+            "Linked auth recovery without verified drag is counted separately, not as slider success.",
             "Started counts emitted start events, not deduplicated business requests.",
             "Missing target/challenge linkage leaves auth confirmations unlinked.",
             "Auth proof requires correlated completion ID, automatic source and scope.",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Iterable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, closing
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlparse, urlsplit, urlunsplit
@@ -85,17 +85,42 @@ def filter_cdp_cookies_to_origins(
 def _export_cdp_cookies_via_websocket(
     cdp_endpoint: str, origins: Iterable[str]
 ) -> list[dict[str, object]]:
-    session = requests.Session()
-    session.trust_env = False
-    websocket_url = _resolve_cdp_websocket_for_cookie_export(session, cdp_endpoint)
+    with closing(requests.Session()) as session:
+        session.trust_env = False
+        websocket_url = _resolve_cdp_websocket_for_cookie_export(session, cdp_endpoint)
     ws = websocket.create_connection(websocket_url, timeout=20)
     try:
+        deadline = time.monotonic() + 20.0
         ws.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
-        response = json.loads(ws.recv())
+        cookies = _receive_cookie_result(ws, deadline)
     finally:
         ws.close()
-    cookies = response.get("result", {}).get("cookies", [])
     return filter_cdp_cookies_to_origins(cookies, origins)
+
+
+def _receive_cookie_result(
+    ws: websocket.WebSocket, deadline: float
+) -> list[dict[str, object]]:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("CDP cookie response deadline exceeded")
+        ws.settimeout(remaining)
+        response = json.loads(ws.recv())
+        if not isinstance(response, dict):
+            raise TypeError("Invalid CDP cookie response")
+        # CDP notifications and other responses are not this request's result.
+        if type(response.get("id")) is not int or response["id"] != 1:
+            continue
+        if "error" in response:
+            raise RuntimeError("CDP Storage.getCookies failed")
+        result = response.get("result")
+        cookies = result.get("cookies") if isinstance(result, dict) else None
+        if not isinstance(cookies, list) or any(
+            not isinstance(cookie, dict) for cookie in cookies
+        ):
+            raise RuntimeError("Invalid CDP cookie result")
+        return cookies
 
 
 def cdp_endpoint_is_healthy(cdp_endpoint: str, *, timeout_seconds: float = 3.0) -> bool:
@@ -104,16 +129,16 @@ def cdp_endpoint_is_healthy(cdp_endpoint: str, *, timeout_seconds: float = 3.0) 
         return False
     if normalized.startswith(("ws://", "wss://")):
         return True
-    session = requests.Session()
-    session.trust_env = False
-    for path, expected_type in (("/json/version", dict), ("/json/list", list)):
-        try:
-            response = session.get(f"{normalized}{path}", timeout=timeout_seconds)
-            response.raise_for_status()
-            if isinstance(response.json(), expected_type):
-                return True
-        except Exception:  # noqa: BLE001, S112 - probe failures advance to the next endpoint
-            continue
+    with closing(requests.Session()) as session:
+        session.trust_env = False
+        for path, expected_type in (("/json/version", dict), ("/json/list", list)):
+            try:
+                response = session.get(f"{normalized}{path}", timeout=timeout_seconds)
+                response.raise_for_status()
+                if isinstance(response.json(), expected_type):
+                    return True
+            except Exception:  # noqa: BLE001, S112 - probe failures advance to the next endpoint
+                continue
     return False
 
 
@@ -312,14 +337,14 @@ def _resolve_cdp_endpoint(cdp_endpoint: str) -> str:
     normalized = str(cdp_endpoint or "").strip()
     if not normalized or normalized.startswith(("ws://", "wss://")):
         return normalized
-    session = requests.Session()
-    session.trust_env = False
-    try:
-        response = session.get(f"{normalized.rstrip('/')}/json/version", timeout=10)
-        response.raise_for_status()
-        payload = response.json()
-    except Exception:  # noqa: BLE001 - Playwright can still try the original endpoint
-        return _load_cached_cdp_websocket(cdp_endpoint) or normalized
+    with closing(requests.Session()) as session:
+        session.trust_env = False
+        try:
+            response = session.get(f"{normalized.rstrip('/')}/json/version", timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:  # noqa: BLE001 - Playwright can still try the original endpoint
+            return _load_cached_cdp_websocket(cdp_endpoint) or normalized
     if not isinstance(payload, dict):
         return _load_cached_cdp_websocket(cdp_endpoint) or normalized
     websocket_url = rewrite_cdp_websocket_url(
@@ -338,14 +363,14 @@ def resolve_cdp_user_agent(
     normalized = str(cdp_endpoint or "").strip()
     if not normalized or normalized.startswith(("ws://", "wss://")):
         return default
-    session = requests.Session()
-    session.trust_env = False
-    try:
-        response = session.get(f"{normalized.rstrip('/')}/json/version", timeout=10)
-        response.raise_for_status()
-        payload = response.json()
-    except Exception:  # noqa: BLE001 - user-agent probing is optional
-        return default
+    with closing(requests.Session()) as session:
+        session.trust_env = False
+        try:
+            response = session.get(f"{normalized.rstrip('/')}/json/version", timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:  # noqa: BLE001 - user-agent probing is optional
+            return default
     if not isinstance(payload, dict):
         return default
     candidate = str(payload.get("User-Agent") or payload.get("userAgent") or "").strip()

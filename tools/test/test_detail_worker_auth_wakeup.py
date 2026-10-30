@@ -107,7 +107,7 @@ def test_unknown_or_still_blocked_state_keeps_backoff(
     receipt = run(monkeypatch, clock, status, layout=layout)
     assert clock["now"] == 900
     assert receipt["wait_exit"] == "deadline_elapsed"
-    assert receipt["status_poll_count"] == clock["requests"] == 30
+    assert receipt["status_poll_count"] == clock["requests"] == 29
 
 
 @pytest.mark.parametrize(

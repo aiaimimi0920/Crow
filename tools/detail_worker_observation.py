@@ -1,7 +1,7 @@
 """Bounded worker telemetry; never infer network requests from item attempts."""
 
-from collections import Counter
 import math
+from collections import Counter
 
 ITEM_COUNTERS = (
     "claimed_items",
@@ -25,6 +25,7 @@ DECISIONS = frozenset(
 REASONS = frozenset(
     {
         "collection_paused",
+        "status_unavailable",
         "operator_paused",
         "manual_required",
         "captcha_solver_manual_required",
@@ -34,6 +35,9 @@ REASONS = frozenset(
         "detail_challenge_page",
         "transient_dns_error",
         "detail_cdp_unreachable",
+        "detail_browser_proxy_unavailable",
+        "detail_navigation_connection_closed",
+        "detail_navigation_timed_out",
         "exception",
     }
 )

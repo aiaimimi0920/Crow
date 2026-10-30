@@ -24,7 +24,7 @@ def preflight_probe(monkeypatch, summaries):
         raising=False,
     )
 
-    def summary():
+    def summary(*, deadline=None):
         value = summaries[min(calls[0], len(summaries) - 1)]
         calls[0] += 1
         return value.copy()
@@ -72,7 +72,7 @@ def test_never_ready_document_stops_at_bounded_loading_window(monkeypatch):
     result = solver._preflight_current_challenge()
     assert not result["connected"] and not result["manual_required"]
     assert solver.last_failure_reason == "challenge_loading"
-    assert clock[0] == 8.0 and len(waits) == 32 and calls[0] == 33
+    assert clock[0] == 8.0 and len(waits) == 32 and calls[0] == 32
     solver._send_cdp.assert_not_called()
     solver._poll_until_authenticated.assert_not_called()
 

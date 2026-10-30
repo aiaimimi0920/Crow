@@ -12,10 +12,30 @@ from src.project_environment import getenv as project_getenv
 from .captcha_budget import SolveStopped
 from .captcha_dom import eval_in_all_frames
 from .captcha_os_target import OSPointerTarget
+from .captcha_target_diagnostics import log_target_binding
+from .captcha_verification import ready_target_matches
 from .collection.adapters.taobao_auth_target import canonical_auth_target
 from .collection.adapters.taobao_solver_target import _split_web_target_url
 
 logger = logging.getLogger(__name__)
+
+
+class NCRetryDeferred(Exception):
+    """Stop this solve without further input, navigation or target cleanup."""
+
+    reason = "cdp_unavailable"
+
+
+class NCRetryInputUnconfirmed(NCRetryDeferred):
+    """The retry click may have reached the page despite a missing CDP ACK."""
+
+
+class NCRetryTargetUnconfirmed(NCRetryDeferred):
+    """The current document cannot authorize retry input for this request."""
+
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(reason)
 
 
 class CaptchaNCRetryMixin:
@@ -212,38 +232,9 @@ class CaptchaNCRetryMixin:
         return candidates
 
     def _nc_retry_outcome(self, timeout_seconds=8.0):
-        deadline = time.time() + max(float(timeout_seconds or 0), 0.5)
-        stable_slider_signature = None
-        stable_slider_samples = 0
-        while time.time() < deadline:
-            if self._stop_if_cancelled():
-                return {"cancelled": True}
-            summary = self._refresh_challenge_summary({})
-            if summary.get("authenticatedPage"):
-                return {"authenticated": True, "summary": summary}
-            if summary.get("explicitFailure"):
-                stable_slider_signature = None
-                stable_slider_samples = 0
-                self._wait_interruptibly(0.35)
-                continue
-            slider = self._find_slider(max_retries=1, retry_delay=0)
-            if slider:
-                signature = tuple(
-                    round(float(slider.get(key) or 0), 1)
-                    for key in ("x", "y", "width", "height")
-                )
-                if signature == stable_slider_signature:
-                    stable_slider_samples += 1
-                else:
-                    stable_slider_signature = signature
-                    stable_slider_samples = 1
-                if stable_slider_samples >= 3:
-                    return {"slider": slider, "summary": summary}
-            else:
-                stable_slider_signature = None
-                stable_slider_samples = 0
-            self._wait_interruptibly(0.35)
-        return {"authenticated": False}
+        from .captcha_nc_retry_outcome import nc_retry_outcome
+
+        return nc_retry_outcome(self, timeout_seconds, clock=lambda: time.time())
 
     def _click_css_point(self, css_x, css_y, *, slider_info=None):
         if self._os_mouse_enabled():
@@ -302,9 +293,15 @@ class CaptchaNCRetryMixin:
                     finally:
                         probe.close()
                 logger.info("[SOLVER] OS click mapping unavailable; falling back to CDP click.")
-        pressed = self._dispatch_mouse("mousePressed", css_x, css_y, buttons=1, click_count=1)
-        released = self._dispatch_mouse("mouseReleased", css_x, css_y, buttons=0, click_count=1)
-        return bool(pressed and released)
+        if not self._dispatch_mouse(
+            "mousePressed", css_x, css_y, buttons=1, click_count=1
+        ):
+            raise NCRetryInputUnconfirmed
+        if not self._dispatch_mouse(
+            "mouseReleased", css_x, css_y, buttons=0, click_count=1
+        ):
+            raise NCRetryInputUnconfirmed
+        return True
 
     def _reset_failed_nc_challenge(self):
         """Click '点击框体重试' so NC rebuilds a fresh slider instead of locking collection."""
@@ -319,23 +316,74 @@ class CaptchaNCRetryMixin:
             return False
         candidates = self._nc_retry_click_candidates(targets)
         if not candidates:
-            candidates = [{
-                "label": "widget_fallback",
-                "x": widget["x"] + widget["width"] / 2,
-                "y": widget["y"] + widget["height"] / 2,
-                "rect": widget,
-            }]
+            candidates = [
+                {
+                    "label": "widget_fallback",
+                    "x": widget["x"] + widget["width"] / 2,
+                    "y": widget["y"] + widget["height"] / 2,
+                    "rect": widget,
+                }
+            ]
         for index, candidate in enumerate(candidates, 1):
+            if self._solver_target_scope(self.target_url) in {"seed", "detail"}:
+                if self._stop_if_cancelled():
+                    raise NCRetryTargetUnconfirmed("slider_not_found")
+                summary = self._refresh_challenge_summary({})
+                if self._stop_if_cancelled():
+                    raise NCRetryTargetUnconfirmed("slider_not_found")
+                from .captcha_navigation_receipt import navigation_binding_fields
+
+                log_target_binding(
+                    logger,
+                    "retry_preclick",
+                    summary,
+                    self.target_url,
+                    navigation=navigation_binding_fields(self, summary),
+                )
+                reason = (
+                    "cdp_unavailable"
+                    if summary.get("probeFailed")
+                    else "challenge_loading"
+                    if summary.get("readyState") == "loading"
+                    else "slider_not_found"
+                    if not ready_target_matches(summary, self.target_url)
+                    else None
+                )
+                if reason:
+                    logger.info(
+                        "[SOLVER] NC retry target unconfirmed; deferring before input: %s",
+                        reason,
+                    )
+                    raise NCRetryTargetUnconfirmed(reason)
+                if summary.get("authenticatedPage"):
+                    return True
+                if summary.get("hasSlider") and not summary.get("explicitFailure"):
+                    # Recovery may begin too late for three stable poll samples.
+                    # Let the caller revalidate it, never click old widget points.
+                    logger.info(
+                        "[SOLVER] NC retry document uncertain; deferring without further clicks."
+                    )
+                    return False
             click_x = candidate["x"]
             click_y = candidate["y"]
             logger.info(
                 f"[SOLVER] Clicking NC retry target {index}/{len(candidates)} "
                 f"({candidate['label']}) at ({click_x:.0f},{click_y:.0f})"
             )
-            if not self._click_css_point(click_x, click_y, slider_info=candidate.get("rect") or widget):
+            if not self._click_css_point(
+                click_x, click_y, slider_info=candidate.get("rect") or widget
+            ):
                 continue
             self._wait_interruptibly(random.uniform(0.6, 1.0))
             outcome = self._nc_retry_outcome(timeout_seconds=3.0)
+            if any(
+                outcome.get(key)
+                for key in ("probeFailed", "loading", "cancelled", "targetUnavailable")
+            ):
+                logger.info(
+                    "[SOLVER] NC retry document uncertain; deferring without further clicks."
+                )
+                return False
             if outcome.get("authenticated"):
                 logger.info("[SOLVER] NC retry click recovered an authenticated page.")
                 self.last_failure_reason = None
@@ -445,7 +493,9 @@ class CaptchaNCRetryMixin:
                 self.last_failure_reason = None
                 return True
             if summary.get("hasSlider"):
-                logger.info("[SOLVER] Slider returned while waiting for login; handing off to drag solver.")
+                logger.info(
+                    "[SOLVER] Slider returned while waiting for login; handing off to drag solver."
+                )
                 return False
             if not self._looks_like_login_ui(summary):
                 if self._recover_authenticated_list_page():
@@ -454,4 +504,4 @@ class CaptchaNCRetryMixin:
         return False
 
 
-__all__ = ["CaptchaNCRetryMixin"]
+__all__ = ["CaptchaNCRetryMixin", "NCRetryDeferred", "NCRetryInputUnconfirmed", "NCRetryTargetUnconfirmed"]

@@ -4,6 +4,8 @@ from collections.abc import Callable
 from threading import Event
 from typing import Protocol
 
+from .auth_cookie_probe_budget import DetailProbeBudget, snapshot_probe_budget
+
 
 class StateWriter(Protocol):
     def __call__(self, **updates: object) -> object: ...
@@ -35,6 +37,44 @@ def run_snapshot_retry(
     completion_request: dict[str, object] | None = None,
     stop_event: Event | None = None,
 ) -> None:
+    with snapshot_probe_budget(
+        payload.get("scope"), max_attempts, stop_event
+    ) as budget:
+        _run_snapshot_retry(
+            payload,
+            completion_id,
+            max_attempts=max_attempts,
+            base_backoff=base_backoff,
+            set_state=set_state,
+            refresh=refresh,
+            finalize=finalize,
+            clock=clock,
+            sleep=sleep,
+            finalize_auth=finalize_auth,
+            expected_challenge_id=expected_challenge_id,
+            completion_request=completion_request,
+            stop_event=stop_event,
+            budget=budget,
+        )
+
+
+def _run_snapshot_retry(
+    payload: dict[str, object],
+    completion_id: str | None,
+    *,
+    max_attempts: int,
+    base_backoff: float,
+    set_state: StateWriter,
+    refresh: Callable[[dict[str, object]], object],
+    finalize: Finalizer,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+    finalize_auth: bool,
+    expected_challenge_id: str | None,
+    completion_request: dict[str, object] | None,
+    stop_event: Event | None,
+    budget: DetailProbeBudget | None,
+) -> None:
     last_result: dict[str, object] = {"refreshed": False, "reason": "not_started"}
 
     def stopped(attempts: int) -> bool:
@@ -54,9 +94,17 @@ def run_snapshot_retry(
         )
         return True
 
-    for attempt in range(1, max_attempts + 1):
-        if stopped(attempt - 1):
+    attempt = 0
+    round_index = 0
+    while attempt < max_attempts:
+        if stopped(attempt):
             return
+        previous_attempt = attempt
+        used_before = budget.used if budget is not None else 0
+        if budget is not None:
+            budget.limit = min(budget.limit, used_before + max_attempts - attempt)
+        attempt += 1
+        round_index += 1
         set_state(
             status="running",
             completion_id=completion_id,
@@ -80,17 +128,22 @@ def run_snapshot_retry(
         except Exception as error:  # noqa: BLE001 - preserve retry diagnostics for refresh failures.
             last_result = {"refreshed": False, "error": repr(error)}
 
+        if budget is not None:
+            attempt = min(
+                max_attempts, previous_attempt + max(1, budget.used - used_before)
+            )
         if stopped(attempt):
             return
         if last_result.get("refreshed") is True:
             auth_finalization = None
             if finalize_auth:
                 try:
-                    auth_finalization = finalize(
-                        completion_id,
-                        expected_challenge_id=expected_challenge_id,
-                        completion_request=completion_request,
-                    )
+                    with snapshot_probe_budget(None, 0, None):
+                        auth_finalization = finalize(
+                            completion_id,
+                            expected_challenge_id=expected_challenge_id,
+                            completion_request=completion_request,
+                        )
                 except Exception:
                     # Do not leave a dead worker advertised as running or retry cleanup.
                     set_state(
@@ -137,7 +190,7 @@ def run_snapshot_retry(
             )
             return
         if attempt < max_attempts:
-            delay = min(base_backoff * (2 ** (attempt - 1)), 300.0)
+            delay = min(base_backoff * (2 ** (round_index - 1)), 300.0)
             set_state(
                 status="pending",
                 completion_id=completion_id,

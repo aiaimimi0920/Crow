@@ -13,7 +13,8 @@ NODE_FIXTURE = r"""
 const fs = require('fs'), vm = require('vm');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 function element(spec) {
-    return {...spec, offsetParent: spec.hidden || spec.fixed ? null : {},
+    return {...spec, isConnected: !spec.disconnected, clientLeft: spec.clientLeft || 0, clientTop: spec.clientTop || 0,
+        offsetParent: spec.hidden || spec.fixed ? null : {},
         ownerDocument: {defaultView: {getComputedStyle: node => ({display: node.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1', position: node.fixed ? 'fixed' : 'static', ...node.style})}},
         getBoundingClientRect: () => ({left: 5, top: 8, width: 100, height: 20, ...spec.rect})};
 }
@@ -22,6 +23,7 @@ function doc(spec) {
     const matches = (node, query) => query.split(',').some(s => (node.selectors || []).includes(s.trim()));
     nodes.forEach(node => {
         node.parentElement = Number.isInteger(node.parent) ? nodes[node.parent] : null;
+        if (Number.isInteger(node.offsetParentIndex)) node.offsetParent = nodes[node.offsetParentIndex];
         node.matches = query => matches(node, query);
         node.closest = query => {
             for (let current = node; current; current = current.parentElement) {
@@ -38,13 +40,21 @@ function doc(spec) {
     });
     const frames = (spec.frames || []).map(frame => {
         const node = element(frame);
-        Object.defineProperty(node, 'contentDocument', {get() {
+        let child;
+        Object.defineProperty(node, 'contentDocument', {configurable: true, get() {
             if (frame.crossOrigin) throw Error('cross-origin');
-            return frame.document ? doc(frame.document) : null;
+            if (!child && frame.document) {
+                child = doc(frame.document);
+                child.defaultView.frameElement = node;
+            }
+            return child || null;
         }});
         return node;
     });
-    return {
+    const result = {
+        defaultView: {frameElement: null, getComputedStyle: node => ({display: node.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1', position: node.fixed ? 'fixed' : 'static', ...node.style})},
+        hasFocus: () => true, visibilityState: 'visible',
+        addEventListener: () => {}, removeEventListener: () => {},
         body: {innerText: spec.text || '', className: spec.className || ''},
         title: spec.title || '', location: {href: spec.url || ''}, readyState: spec.readyState || 'complete',
         documentElement: {outerHTML: spec.html || ''},
@@ -53,8 +63,11 @@ function doc(spec) {
         getElementsByTagName: tag => tag === 'iframe' ? frames : [],
         getElementById: id => nodes.find(node => matches(node, '#' + id)) || null,
     };
+    nodes.concat(frames).forEach(node => {node.ownerDocument = result;});
+    return result;
 }
-const value = vm.runInNewContext(input.expression, {document: doc(input.document), window: {}, URL}, {timeout: 1000});
+const value = vm.runInNewContext(input.expression, {document: doc(input.document), window: {}, URL,
+    setTimeout: () => 1, clearTimeout: () => {}}, {timeout: 1000});
 process.stdout.write(JSON.stringify(value));
 """
 
@@ -128,7 +141,7 @@ def test_nested_iframes_do_not_silently_expand_the_scan_scope():
     assert solver._find_slider_once() is None
 
 
-def test_track_in_iframe_retains_local_rectangle_and_handle_offsets():
+def test_track_in_iframe_uses_viewport_rectangle_and_local_handle_offsets():
     solver = DocumentSolver(
         {
             "frames": [
@@ -141,7 +154,12 @@ def test_track_in_iframe_retains_local_rectangle_and_handle_offsets():
                                 "rect": {"left": 20, "width": 310},
                                 "offsetWidth": 310,
                             },
-                            slider(offsetLeft=3, offsetWidth=30),
+                            slider(
+                                parent=0,
+                                offsetParentIndex=0,
+                                offsetLeft=3,
+                                offsetWidth=30,
+                            ),
                         ]
                     },
                 }
@@ -150,7 +168,7 @@ def test_track_in_iframe_retains_local_rectangle_and_handle_offsets():
     )
     assert solver._get_track_width() == 310
     rect = solver._get_track_rect()
-    assert rect["left"] == 20
+    assert rect["left"] == 320
     assert (rect["handleOffsetLeft"], rect["handleOffsetWidth"]) == (3, 30)
 
 
