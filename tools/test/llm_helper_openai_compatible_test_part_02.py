@@ -25,13 +25,18 @@ def test_chat_with_glm_falls_back_across_openai_model_candidates(monkeypatch):
     class SuccessfulResponse(_FakeResponse):
         content = _FakeResponse.text.encode("utf-8")
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, _url: str, *, json: dict[str, Any], **_kwargs):
             calls.append(json["model"])
-            return UnavailableResponse() if json["model"] == "primary-model" else SuccessfulResponse()
+            return (
+                UnavailableResponse()
+                if json["model"] == "primary-model"
+                else SuccessfulResponse()
+            )
 
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -56,8 +61,9 @@ def test_chat_with_glm_does_not_hide_openai_candidate_auth_failure(monkeypatch):
         def raise_for_status(self) -> None:
             raise requests.HTTPError("401 Client Error", response=self)
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, _url: str, *, json: dict[str, Any], **_kwargs):
@@ -76,7 +82,9 @@ def test_chat_with_glm_does_not_hide_openai_candidate_auth_failure(monkeypatch):
     assert calls == ["primary-model"]
 
 
-def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(monkeypatch):
+def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(
+    monkeypatch,
+):
     calls: list[str] = []
 
     class ModelsResponse:
@@ -86,8 +94,9 @@ def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(
         def __init__(self, status_code: int):
             self.status_code = status_code
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def get(self, *_args, **_kwargs):
@@ -103,7 +112,9 @@ def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(
     monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "fallback-model")
     monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
-    result = llm_helper.preflight_openai_compatible_backend(timeout=7.5, check_chat=True)
+    result = llm_helper.preflight_openai_compatible_backend(
+        timeout=7.5, check_chat=True
+    )
 
     assert result["status_code"] == 200
     assert result["chat_status_code"] == 200
@@ -111,9 +122,12 @@ def test_preflight_openai_compatible_backend_falls_back_across_model_candidates(
     assert calls == ["primary-model", "fallback-model"]
 
 
-def test_preflight_openai_compatible_backend_reports_network_unavailable_without_raising(monkeypatch):
-    class FakeSession:
+def test_preflight_openai_compatible_backend_reports_network_unavailable_without_raising(
+    monkeypatch,
+):
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def get(self, *_args, **_kwargs):
@@ -124,7 +138,9 @@ def test_preflight_openai_compatible_backend_reports_network_unavailable_without
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.setattr(requests, "Session", lambda: FakeSession())
 
-    result = llm_helper.preflight_openai_compatible_backend(timeout=1.0, check_chat=True)
+    result = llm_helper.preflight_openai_compatible_backend(
+        timeout=1.0, check_chat=True
+    )
 
     assert result["enabled"] is True
     assert result["status_code"] == 0
@@ -142,8 +158,9 @@ def test_chat_with_glm_does_not_retry_non_transient_openai_compatible_400(monkey
         def raise_for_status(self) -> None:
             raise requests.HTTPError("400 Client Error", response=self)
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, *args, **kwargs):
@@ -164,7 +181,9 @@ def test_chat_with_glm_does_not_retry_non_transient_openai_compatible_400(monkey
 
 
 def test_avm_risk_prompt_asks_for_stable_reusable_location_index_name():
-    prompt = llm_helper.build_avm_risk_prompt("北京市朝阳区八里庄远洋天地小区7号楼1单元101室")
+    prompt = llm_helper.build_avm_risk_prompt(
+        "北京市朝阳区八里庄远洋天地小区7号楼1单元101室"
+    )
 
     assert "稳定位置索引名" in prompt
     assert "后续可复用" in prompt
@@ -172,7 +191,9 @@ def test_avm_risk_prompt_asks_for_stable_reusable_location_index_name():
     assert "楼号、单元号、房号" in prompt
 
 
-def test_extract_auction_data_prompt_asks_for_stable_reusable_location_index_name(monkeypatch):
+def test_extract_auction_data_prompt_asks_for_stable_reusable_location_index_name(
+    monkeypatch,
+):
     captured: dict[str, str] = {}
 
     def fake_chat_with_glm(prompt: str) -> str:
@@ -215,9 +236,15 @@ def test_extract_avm_risk_features_normalizes_list_evidence_source(monkeypatch):
         }
     )
 
-    monkeypatch.setattr(llm_avm_risk, "chat_with_glm", lambda _prompt: json.dumps(payload, ensure_ascii=False))
+    monkeypatch.setattr(
+        llm_avm_risk,
+        "chat_with_glm",
+        lambda _prompt: json.dumps(payload, ensure_ascii=False),
+    )
 
-    features = llm_helper.extract_avm_risk_features("北京市东城区朝阳门内大街288号院3号楼", item_id="risk-list-source")
+    features = llm_helper.extract_avm_risk_features(
+        "北京市东城区朝阳门内大街288号院3号楼", item_id="risk-list-source"
+    )
 
     assert features is not None
     assert features["evidence_source"] == "页面主文"
@@ -248,8 +275,9 @@ def test_fetch_description_data_text_decodes_gbk_description(monkeypatch):
         def raise_for_status(self):
             return None
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def get(self, url: str, *, headers: dict[str, str], timeout: float):
@@ -314,8 +342,9 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
         def raise_for_status(self):
             return None
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
             self.urls: list[str] = []
 
@@ -337,7 +366,9 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
     assert "面积为117.06㎡" in captured["prompt"]
 
 
-def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional_share(monkeypatch):
+def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional_share(
+    monkeypatch,
+):
     desc_html = "拍卖标的为某房产二分之一产权，房屋建筑面积为120.00㎡。"
     html = """
     <html>
@@ -376,8 +407,9 @@ def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional
         def raise_for_status(self):
             return None
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def get(self, url: str, *, headers: dict[str, str], timeout: float):

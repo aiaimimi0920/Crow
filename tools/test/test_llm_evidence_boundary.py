@@ -47,7 +47,7 @@ def test_all_provider_payloads_apply_roles_and_output_budget(tmp_path, monkeypat
         def json(self):
             return {"choices": [{"message": {"content": '{}'}}]}
 
-    class Session:
+    class Session(llm_openai_compatible.requests.sessions.Session):
         def post(self, url, **kwargs):
             captured.append(kwargs["json"])
             return Response()

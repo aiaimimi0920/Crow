@@ -1,58 +1,97 @@
 from __future__ import annotations
 
-from html import unescape
+import hashlib
 import json
 import logging
 import re
+import threading
+from collections import OrderedDict
+from html import unescape
 
 import requests
+from .html_parse import parse_html
 
 logger = logging.getLogger(__name__)
 
+_FILTER_CACHE = OrderedDict()
+_FILTER_CACHE_LOCK = threading.Lock()
+_FILTER_CACHE_MAX = 8
+_UNWANTED_XPATH = (
+    "//script|//style|//img|//svg|//video|//audio|//iframe|//noscript|//meta|//link"
+)
+_UNWRAP_RE = re.compile(r"</?(?:div|a|span|li|p)>", re.IGNORECASE)
+
 
 def filter_content(html_content):
-    """
-    Filter HTML content using BeautifulSoup to preserve structure (divs, tables)
-    but remove scripts, styles, and other noise.
-    """
-    from bs4 import BeautifulSoup
+    """Return compact HTML while preserving table relationships for evidence.
 
+    Results are memoized by content digest: the same detail page is filtered
+    by the artifact writer, the risk extractor and the auction extractor, so
+    caching turns 3-4 full parses per listing into a single parse.
+    """
+    if not html_content:
+        return ""
+    key = hashlib.blake2b(html_content.encode("utf-8"), digest_size=16).hexdigest()
+    if key is not None:
+        with _FILTER_CACHE_LOCK:
+            cached = _FILTER_CACHE.get(key)
+            if cached is not None:
+                _FILTER_CACHE.move_to_end(key)
+                return cached
+    text = _filter_content_uncached(html_content)
+    if key is not None:
+        with _FILTER_CACHE_LOCK:
+            _FILTER_CACHE[key] = text
+            while len(_FILTER_CACHE) > _FILTER_CACHE_MAX:
+                _FILTER_CACHE.popitem(last=False)
+    return text
+
+
+def _filter_content_uncached(html_content):
     try:
-        # Use lxml if available, else html.parser
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        # Remove unwanted tags completely
-        for tag in soup(['script', 'style', 'img', 'svg', 'video', 'iframe', 'noscript', 'meta', 'link']):
-            tag.decompose()
-
-        # Remove strict structure tags but keep content (unwrap)
-        for tname in ['div', 'a', 'span', 'li', 'p']:
-            for tag in soup.find_all(tname):
-                tag.unwrap()
-
-        # Remove all attributes from remaining tags to reduce noise/tokens
-        for tag in soup.find_all(True):
-            tag.attrs = {}
-
-        # Convert to string and normalize whitespace: remove newlines, collapse spaces
-        text = str(soup)
-        text = re.sub(r'[\r\n]+', ' ', text)
-        text = re.sub(r'\s+', ' ', text)
-
-        return text.strip()
-
-    except Exception as e:
-        logger.exception("Error in filter_content")
-        # Fallback to simple filtering if bs4 fails
-        # Using string replacement for basic cleanup
-        text = html_content
-        for tag in ['<div>', '</div>', '<p>', '</p>', '<span>', '</span>', '<a>', '</a>', '<li>', '</li>']:
-             text = text.replace(tag, ' ')
-
-        # Remove newlines and collapse spaces
-        text = re.sub(r'[\r\n]+', ' ', text)
-        text = re.sub(r'\s+', ' ', text)
-        return text.strip()
+        from lxml import html as _lxml_html
+    except ImportError:
+        _lxml_html = None
+    if _lxml_html is not None:
+        try:
+            doc = _lxml_html.fromstring(
+                html_content, parser=_lxml_html.HTMLParser(remove_comments=True)
+            )
+            for node in doc.xpath(_UNWANTED_XPATH):
+                node.drop_tree()
+            for node in doc.iter():
+                attrib = getattr(node, "attrib", None)
+                if attrib:
+                    attrib.clear()
+            rendered = _lxml_html.tostring(doc, encoding="unicode", method="html")
+            # Strip only presentation wrappers in one pass; retain tables/rows/cells.
+            rendered = _UNWRAP_RE.sub("", rendered)
+            return re.sub(r"\s+", " ", rendered).strip()
+        except _lxml_html.etree.ParserError:
+            if html_content.strip():
+                raise
+            return ""
+    soup = parse_html(html_content)
+    for tag in soup(
+        [
+            "script",
+            "style",
+            "img",
+            "svg",
+            "video",
+            "audio",
+            "iframe",
+            "noscript",
+            "meta",
+            "link",
+        ]
+    ):
+        tag.decompose()
+    for tag in soup.find_all(["div", "a", "span", "li", "p"]):
+        tag.unwrap()
+    for tag in soup.find_all(True):
+        tag.attrs = {}
+    return re.sub(r"\s+", " ", str(soup)).strip()
 
 
 AREA_EVIDENCE_PATTERNS = [
@@ -145,12 +184,10 @@ def _parse_description_data_link(soup):
 
 def fetch_description_data_text(html_content, *, timeout=20):
     """Fetch Taobao/Tmall async description HTML referenced by #description-data."""
-    from bs4 import BeautifulSoup
-
     if not html_content:
         return None
     try:
-        soup = BeautifulSoup(html_content, "html.parser")
+        soup = parse_html(html_content)
         link = _parse_description_data_link(soup)
         if not link:
             return None
@@ -176,7 +213,7 @@ def fetch_description_data_text(html_content, *, timeout=20):
             desc_html = _decode_response_bytes(raw_bytes)
         else:
             desc_html = str(getattr(response, "text", ""))
-        desc_soup = BeautifulSoup(desc_html, "html.parser")
+        desc_soup = parse_html(desc_html)
         return desc_soup.get_text("\n", strip=True) or desc_html
     except Exception as exc:
         logger.warning("[AREA_FALLBACK_WARN] description-data fetch failed: %s", exc)
@@ -245,14 +282,22 @@ def _backfill_area_and_unit_price(data, area_fallback):
             if gross_area is None:
                 gross_area = fallback_area
                 data["产权建筑面积"] = gross_area
-            area = round(gross_area * share_ratio, 2) if share_ratio and share_ratio < 1 else gross_area
+            area = (
+                round(gross_area * share_ratio, 2)
+                if share_ratio and share_ratio < 1
+                else gross_area
+            )
             data["建筑面积"] = area
     if area is None:
         return data
 
     unit_price = _parse_plain_number(data.get("单价"))
     transaction_price = _parse_plain_number(data.get("成交价格"))
-    if transaction_price and transaction_price > 0 and (unit_price is None or unit_price <= 0):
+    if (
+        transaction_price
+        and transaction_price > 0
+        and (unit_price is None or unit_price <= 0)
+    ):
         data["单价"] = round(transaction_price / area, 2)
     return data
 
@@ -265,16 +310,16 @@ COORDINATE_PATTERNS = [
         r'(?is)(?:latitude|lat)\s*["\']?\s*[:=]\s*["\']?(-?\d{1,2}\.\d+)[,"\']?.{0,80}?(?:longitude|lng)\s*["\']?\s*[:=]\s*["\']?([1-9]\d{1,2}\.\d+)',
     ),
     re.compile(
-        r'(?is)(?:center|point|lnglat|lonlat)[^0-9-]{0,20}\[\s*([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)\s*\]',
+        r"(?is)(?:center|point|lnglat|lonlat)[^0-9-]{0,20}\[\s*([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)\s*\]",
     ),
     re.compile(
-        r'(?is)(?:longitude|lng)=([1-9]\d{1,2}\.\d+).*?(?:latitude|lat)=(-?\d{1,2}\.\d+)',
+        r"(?is)(?:longitude|lng)=([1-9]\d{1,2}\.\d+).*?(?:latitude|lat)=(-?\d{1,2}\.\d+)",
     ),
     re.compile(
         r'(?is)(?:center|point|lnglat|lonlat)\s*[:=]\s*["\']([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)["\']',
     ),
     re.compile(
-        r'(?is)(?:AMap\.LngLat|LngLat)\s*\(\s*([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)\s*\)',
+        r"(?is)(?:AMap\.LngLat|LngLat)\s*\(\s*([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)\s*\)",
     ),
 ]
 
@@ -312,4 +357,20 @@ def extract_property_coordinates(html_content):
     return None
 
 
-__all__ = ['filter_content', 'AREA_EVIDENCE_PATTERNS', 'GENERIC_AREA_EVIDENCE_PATTERNS', 'NON_BUILDING_AREA_PREFIXES', '_parse_area_number', 'extract_area_from_text', '_parse_description_data_link', 'fetch_description_data_text', '_decode_response_bytes', '_parse_plain_number', '_parse_share_ratio', '_backfill_area_and_unit_price', 'COORDINATE_PATTERNS', '_is_valid_china_coordinate', 'extract_property_coordinates']
+__all__ = [
+    "filter_content",
+    "AREA_EVIDENCE_PATTERNS",
+    "GENERIC_AREA_EVIDENCE_PATTERNS",
+    "NON_BUILDING_AREA_PREFIXES",
+    "_parse_area_number",
+    "extract_area_from_text",
+    "_parse_description_data_link",
+    "fetch_description_data_text",
+    "_decode_response_bytes",
+    "_parse_plain_number",
+    "_parse_share_ratio",
+    "_backfill_area_and_unit_price",
+    "COORDINATE_PATTERNS",
+    "_is_valid_china_coordinate",
+    "extract_property_coordinates",
+]

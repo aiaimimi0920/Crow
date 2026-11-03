@@ -156,7 +156,9 @@ def clear_manual_pause(
         # aggregate pause setter or singleton cleanup release another owner.
         if preserve_global:
             return None
-        set_pause(False, scope=scope)
+        control = runtime.control.snapshot()
+        if scope or control.reason != "operator":
+            set_pause(False, scope=scope)
         runtime.recovery.resume(time.time())
         runtime.solver.cancel()
         if not preserve_running_state:

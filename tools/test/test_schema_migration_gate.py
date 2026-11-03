@@ -53,7 +53,9 @@ def test_full_upgrade_preserves_evidence_and_matches_metadata(tmp_path, monkeypa
     monkeypatch.delenv("FAPAI_DB_URL", raising=False)
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "alembic"))
-    with engine.begin() as connection:
+    # Concurrent PostgreSQL index DDL owns its autocommit boundary. The test
+    # database is isolated; an enclosing rollback transaction is not suitable.
+    with engine.connect() as connection:
         config.attributes["connection"] = connection
         # Build the complete schema before exercising the current head. The
         # pre-index revision is the last historical migration that predates
@@ -63,6 +65,7 @@ def test_full_upgrade_preserves_evidence_and_matches_metadata(tmp_path, monkeypa
         connection.execute(text("INSERT INTO fapai_seed_item (item_id, status, source_payload, detail_attempt_count) "
                                 "VALUES ('legacy', 'raw_detail_captured', :payload, 0)"), {"payload": evidence})
         before = connection.execute(text("SELECT source_payload FROM fapai_seed_item WHERE item_id='legacy'")).scalar_one()
+        connection.commit()
         command.upgrade(config, "head")
         after = connection.execute(text("SELECT source_payload FROM fapai_seed_item WHERE item_id='legacy'")).scalar_one()
         assert after == before

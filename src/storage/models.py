@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from src.storage.utc_datetime import UtcNaiveDateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -12,7 +25,9 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(UtcNaiveDateTime(), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcNaiveDateTime(), server_default=func.now(), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         UtcNaiveDateTime(),
         server_default=func.now(),
@@ -22,6 +37,10 @@ class TimestampMixin:
 
 
 class PropertyListing(Base, TimestampMixin):
+    __table_args__ = (
+        Index("ix_property_listing_status_auction_date", "status", "auction_date"),
+        Index("ix_property_listing_status_is_deleted", "status", "is_deleted"),
+    )
     __tablename__ = "property_listing"
 
     item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -34,7 +53,9 @@ class PropertyListing(Base, TimestampMixin):
 
     status: Mapped[str | None] = mapped_column(String(32))
     auction_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
-    auction_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    auction_start_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False)
+    )
     auction_round: Mapped[int | None] = mapped_column(Integer)
     transaction_price: Mapped[float | None] = mapped_column(Numeric(18, 2))
     starting_price: Mapped[float | None] = mapped_column(Numeric(18, 2))
@@ -76,14 +97,18 @@ class PropertyListing(Base, TimestampMixin):
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_reason: Mapped[str | None] = mapped_column(Text)
-    last_synced_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), server_default=func.now())
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), server_default=func.now()
+    )
 
 
 class PropertyRiskFlags(Base, TimestampMixin):
     __tablename__ = "property_risk_flags"
 
     item_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("property_listing.item_id", ondelete="CASCADE"), primary_key=True
+        String(64),
+        ForeignKey("property_listing.item_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     land_right_type: Mapped[str | None] = mapped_column(String(32))
     is_occupied: Mapped[bool | None] = mapped_column(Boolean)
@@ -102,12 +127,16 @@ class PropertyLegalContext(Base, TimestampMixin):
     __tablename__ = "property_legal_context"
 
     item_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("property_listing.item_id", ondelete="CASCADE"), primary_key=True
+        String(64),
+        ForeignKey("property_listing.item_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     court_name: Mapped[str | None] = mapped_column(String(256))
     case_number: Mapped[str | None] = mapped_column(String(256))
     appraisal_agency_name: Mapped[str | None] = mapped_column(String(256))
-    appraisal_benchmark_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    appraisal_benchmark_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False)
+    )
     appraisal_report_urls: Mapped[list | None] = mapped_column(JSON)
     announcement_attachment_urls: Mapped[list | None] = mapped_column(JSON)
 
@@ -116,7 +145,9 @@ class PropertyAudit(Base, TimestampMixin):
     __tablename__ = "property_audit"
 
     item_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("property_listing.item_id", ondelete="CASCADE"), primary_key=True
+        String(64),
+        ForeignKey("property_listing.item_id", ondelete="CASCADE"),
+        primary_key=True,
     )
     detail_archive_path: Mapped[str | None] = mapped_column(Text)
     source_json_path: Mapped[str | None] = mapped_column(Text)
@@ -139,7 +170,9 @@ class PropertyAudit(Base, TimestampMixin):
     is_processed: Mapped[bool | None] = mapped_column(Boolean)
     detail_captured: Mapped[bool | None] = mapped_column(Boolean)
     detail_fetch_status: Mapped[str | None] = mapped_column(String(64))
-    detail_fetch_attempted_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime())
+    detail_fetch_attempted_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime()
+    )
     detail_fetch_attempt_count: Mapped[int | None] = mapped_column(Integer)
     detail_fetch_last_url: Mapped[str | None] = mapped_column(Text)
     seed_status: Mapped[str | None] = mapped_column(String(32), index=True)
@@ -166,10 +199,14 @@ class PropertySearchTask(Base, TimestampMixin):
     sort_param: Mapped[str | None] = mapped_column(String(16), index=True)
     next_page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     max_page: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
     leased_by: Mapped[str | None] = mapped_column(String(128), index=True)
     lease_until: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
-    zero_bid_terminated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    zero_bid_terminated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     source_url: Mapped[str | None] = mapped_column(Text)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -185,10 +222,14 @@ class CollectionSeedScanJob(Base, TimestampMixin):
     district: Mapped[str | None] = mapped_column(String(64), index=True)
     location_code: Mapped[str] = mapped_column(String(32), index=True)
     category: Mapped[str] = mapped_column(String(32), index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
     source_url_template: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict | None] = mapped_column(JSON)
-    completed_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
 
 
 class CollectionSeedScanProgress(Base, TimestampMixin):
@@ -207,40 +248,66 @@ class CollectionSeedScanProgress(Base, TimestampMixin):
     next_page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     max_page: Mapped[int | None] = mapped_column(Integer)
     last_success_page: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
     leased_by: Mapped[str | None] = mapped_column(String(128), index=True)
     lease_until: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
     last_fetch_url: Mapped[str | None] = mapped_column(Text)
     last_item_count: Mapped[int | None] = mapped_column(Integer)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
-    completed_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
-    last_rescan_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
-    rescan_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    completed_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
+    last_rescan_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
+    rescan_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
-    __table_args__ = (UniqueConstraint("job_key", "sort_key", name="uq_fapai_seed_scan_progress_job_sort"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "job_key", "sort_key", name="uq_fapai_seed_scan_progress_job_sort"
+        ),
+    )
 
 
 class CollectionSeedItem(Base, TimestampMixin):
     __tablename__ = "fapai_seed_item"
-    __table_args__ = (Index("ix_fapai_seed_item_status_first_seen", "status", "first_seen_at"),)
+    __table_args__ = (
+        Index("ix_fapai_seed_item_status_first_seen", "status", "first_seen_at"),
+    )
 
     item_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_item_id: Mapped[str | None] = mapped_column(String(64), index=True)
     source_platform: Mapped[str | None] = mapped_column(String(32), index=True)
     source_url: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_detail", index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending_detail", index=True
+    )
     first_seen_job_key: Mapped[str | None] = mapped_column(String(192), index=True)
     first_seen_sort_key: Mapped[str | None] = mapped_column(String(64), index=True)
-    first_seen_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
-    last_seen_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
+    first_seen_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
     source_payload: Mapped[dict | None] = mapped_column(JSON)
-    detail_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    detail_attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     detail_last_error: Mapped[str | None] = mapped_column(Text)
     detail_leased_by: Mapped[str | None] = mapped_column(String(128), index=True)
-    detail_lease_until: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
-    detail_completed_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
+    detail_lease_until: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
+    detail_completed_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
     final_json_path: Mapped[str | None] = mapped_column(Text)
     selected_json_path: Mapped[str | None] = mapped_column(Text)
 
@@ -255,7 +322,9 @@ class CollectionAnalysisRun(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    pipeline_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    pipeline_version: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
     input_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -265,7 +334,9 @@ class CollectionAnalysisRun(Base, TimestampMixin):
     artifact_paths: Mapped[dict | None] = mapped_column(JSON)
     receipt: Mapped[dict | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(Text)
-    completed_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -281,7 +352,9 @@ class CollectionSeedOccurrence(Base):
     __tablename__ = "fapai_seed_occurrence"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    occurrence_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    occurrence_key: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
     item_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("fapai_seed_item.item_id", ondelete="CASCADE"),
@@ -297,18 +370,24 @@ class CollectionSeedOccurrence(Base):
     source_page_url: Mapped[str | None] = mapped_column(Text)
     source_final_url: Mapped[str | None] = mapped_column(Text)
     raw_item: Mapped[dict | None] = mapped_column(JSON)
-    seen_at: Mapped[datetime] = mapped_column(UtcNaiveDateTime(), server_default=func.now(), nullable=False, index=True)
+    seen_at: Mapped[datetime] = mapped_column(
+        UtcNaiveDateTime(), server_default=func.now(), nullable=False, index=True
+    )
 
 
 class PropertyIngestEvent(Base):
     __tablename__ = "property_ingest_event"
-    __table_args__ = (Index("ix_property_ingest_event_type_created", "event_type", "created_at"),)
+    __table_args__ = (
+        Index("ix_property_ingest_event_type_created", "event_type", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     item_id: Mapped[str | None] = mapped_column(String(64), index=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     event_payload: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(UtcNaiveDateTime(), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcNaiveDateTime(), server_default=func.now(), nullable=False
+    )
 
 
 class ManualReviewReceipt(Base, TimestampMixin):
@@ -320,7 +399,9 @@ class ManualReviewReceipt(Base, TimestampMixin):
     payload: Mapped[dict | None] = mapped_column(JSON)
     resolution_notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str | None] = mapped_column(String(128))
-    receipt_updated_at: Mapped[datetime | None] = mapped_column(UtcNaiveDateTime(), index=True)
+    receipt_updated_at: Mapped[datetime | None] = mapped_column(
+        UtcNaiveDateTime(), index=True
+    )
 
 
 class ManualReviewReceiptJob(Base, TimestampMixin):
@@ -329,7 +410,9 @@ class ManualReviewReceiptJob(Base, TimestampMixin):
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     receipt_action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    receipt_ready_signal: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    receipt_ready_signal: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
     maintenance_options: Mapped[dict | None] = mapped_column(JSON)
     result_summary: Mapped[dict | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(Text)
@@ -341,7 +424,9 @@ class ManualReviewReceiptOperation(Base):
     __tablename__ = "manual_review_receipt_operation"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operation_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
     operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     ready_signal: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -352,7 +437,9 @@ class ManualReviewReceiptOperation(Base):
     maintenance_job_id: Mapped[str | None] = mapped_column(String(64), index=True)
     deleted: Mapped[bool | None] = mapped_column(Boolean)
     resolution_notes: Mapped[str | None] = mapped_column(Text)
-    requested_at: Mapped[datetime] = mapped_column(UtcNaiveDateTime(), nullable=False, index=True, server_default=func.now())
+    requested_at: Mapped[datetime] = mapped_column(
+        UtcNaiveDateTime(), nullable=False, index=True, server_default=func.now()
+    )
 
 
 # Public import compatibility only. Tables, indexes, FKs and stored rows keep their

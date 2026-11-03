@@ -45,22 +45,23 @@ def test_bezier_path_generation():
     print(f"✓ Bezier path: {len(path)} points, Y-range: {y_range:.1f}px")
 
 
-def test_drag_timing_improvements():
-    """Verify drag method has improved timing."""
-    import inspect
-
+def test_drag_timing_improvements(monkeypatch):
+    """Measure scheduled waits instead of matching an obsolete source literal."""
     from src.captcha_solver import CaptchaSolver
 
     solver = CaptchaSolver(port=9223)
-    source = inspect.getsource(solver._do_drag)
-
-    # Check for improved timings
-    assert "random.uniform(1.5, 2.5)" in source, (
-        "Should use the current endpoint hold range"
+    waits = []
+    events = []
+    monkeypatch.setattr(solver, "_wait_interruptibly", waits.append)
+    monkeypatch.setattr(
+        solver,
+        "_dispatch_mouse",
+        lambda event, *args, **kwargs: events.append(event) or True,
     )
-    assert "random.uniform" in source, "Should use randomization"
-
-    print("✓ Drag timing includes improvements")
+    assert solver._do_drag(100, 50, 260) == 360
+    assert 0 < sum(waits) < 1.5
+    assert events.count("mousePressed") == 1
+    assert events[-1] == "mouseReleased"
 
 
 @pytest.mark.parametrize(

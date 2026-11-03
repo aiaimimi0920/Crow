@@ -30,12 +30,28 @@ def test_compatibility_facade_preserves_exported_class_identity(monkeypatch):
 def test_chat_with_glm_uses_openai_compatible_backend_when_env_is_set(monkeypatch):
     calls: list[dict[str, Any]] = []
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
-        def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float):
-            calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout, "trust_env": self.trust_env})
+        def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+            timeout: float,
+        ):
+            calls.append(
+                {
+                    "url": url,
+                    "headers": headers,
+                    "json": json,
+                    "timeout": timeout,
+                    "trust_env": self.trust_env,
+                }
+            )
             return _FakeResponse()
 
     def fake_session_factory():
@@ -54,7 +70,7 @@ def test_chat_with_glm_uses_openai_compatible_backend_when_env_is_set(monkeypatc
 
     result = llm_helper.chat_with_glm("return json")
 
-    assert result == "{\"ok\":true}"
+    assert result == '{"ok":true}'
     assert len(calls) == 1
     assert calls[0]["url"] == "https://example.test/v1/chat/completions"
     assert calls[0]["headers"]["Authorization"] == "Bearer test-key"
@@ -68,8 +84,9 @@ def test_chat_with_glm_uses_openai_compatible_backend_when_env_is_set(monkeypatc
 def test_chat_with_glm_forwards_valid_reasoning_effort(monkeypatch):
     calls: list[dict[str, Any]] = []
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, _url: str, *, json: dict[str, Any], **_kwargs):
@@ -123,16 +140,28 @@ def test_explicit_analysis_model_rejects_gpt_route_before_request(monkeypatch):
         llm_helper.chat_with_glm("test", model="gpt-5.4")
 
 
-def test_chat_with_glm_applies_explicit_openai_compatible_proxy_without_trusting_env(monkeypatch):
+def test_chat_with_glm_applies_explicit_openai_compatible_proxy_without_trusting_env(
+    monkeypatch,
+):
     calls: list[dict[str, Any]] = []
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
             self.proxies: dict[str, str] = {}
 
-        def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float):
-            calls.append({"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env})
+        def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+            timeout: float,
+        ):
+            calls.append(
+                {"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env}
+            )
             return _FakeResponse()
 
     monkeypatch.setattr(requests, "Session", lambda: FakeSession())
@@ -144,7 +173,7 @@ def test_chat_with_glm_applies_explicit_openai_compatible_proxy_without_trusting
 
     result = llm_helper.chat_with_glm("return json")
 
-    assert result == "{\"ok\":true}"
+    assert result == '{"ok":true}'
     assert calls == [
         {
             "url": "https://example.test/v1/chat/completions",
@@ -164,13 +193,22 @@ def test_preflight_openai_compatible_backend_uses_same_proxy_controls(monkeypatc
         status_code = 401
         text = '{"error":"auth required"}'
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
             self.proxies: dict[str, str] = {}
 
         def get(self, url: str, *, headers: dict[str, str], timeout: float):
-            calls.append({"url": url, "headers": headers, "timeout": timeout, "proxies": dict(self.proxies), "trust_env": self.trust_env})
+            calls.append(
+                {
+                    "url": url,
+                    "headers": headers,
+                    "timeout": timeout,
+                    "proxies": dict(self.proxies),
+                    "trust_env": self.trust_env,
+                }
+            )
             return FakeResponse()
 
     monkeypatch.setattr(requests, "Session", lambda: FakeSession())
@@ -180,7 +218,11 @@ def test_preflight_openai_compatible_backend_uses_same_proxy_controls(monkeypatc
 
     result = llm_helper.preflight_openai_compatible_backend(timeout=7.5)
 
-    assert result == {"enabled": True, "url": "https://example.test/v1/models", "status_code": 401}
+    assert result == {
+        "enabled": True,
+        "url": "https://example.test/v1/models",
+        "status_code": 401,
+    }
     assert calls == [
         {
             "url": "https://example.test/v1/models",
@@ -192,20 +234,25 @@ def test_preflight_openai_compatible_backend_uses_same_proxy_controls(monkeypatc
     ]
 
 
-def test_preflight_local_openai_compatible_backend_bypasses_generic_fapai_proxy(monkeypatch):
+def test_preflight_local_openai_compatible_backend_bypasses_generic_fapai_proxy(
+    monkeypatch,
+):
     calls: list[dict[str, Any]] = []
 
     class FakeResponse:
         status_code = 200
         text = '{"data":[]}'
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
             self.proxies: dict[str, str] = {}
 
         def get(self, url: str, *, headers: dict[str, str], timeout: float):
-            calls.append({"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env})
+            calls.append(
+                {"url": url, "proxies": dict(self.proxies), "trust_env": self.trust_env}
+            )
             return FakeResponse()
 
     monkeypatch.setattr(requests, "Session", lambda: FakeSession())
@@ -216,7 +263,11 @@ def test_preflight_local_openai_compatible_backend_bypasses_generic_fapai_proxy(
 
     result = llm_helper.preflight_openai_compatible_backend(timeout=7.5)
 
-    assert result == {"enabled": True, "url": "http://host.docker.internal:8317/v1/models", "status_code": 200}
+    assert result == {
+        "enabled": True,
+        "url": "http://host.docker.internal:8317/v1/models",
+        "status_code": 200,
+    }
     assert calls == [
         {
             "url": "http://host.docker.internal:8317/v1/models",
@@ -237,16 +288,32 @@ def test_preflight_openai_compatible_backend_can_probe_chat_completions(monkeypa
         status_code = 503
         text = '{"error":"busy"}'
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
             self.proxies: dict[str, str] = {}
 
         def get(self, url: str, *, headers: dict[str, str], timeout: float):
-            calls.append({"method": "get", "url": url, "headers": headers, "timeout": timeout, "trust_env": self.trust_env})
+            calls.append(
+                {
+                    "method": "get",
+                    "url": url,
+                    "headers": headers,
+                    "timeout": timeout,
+                    "trust_env": self.trust_env,
+                }
+            )
             return ModelsResponse()
 
-        def post(self, url: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float):
+        def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, Any],
+            timeout: float,
+        ):
             calls.append(
                 {
                     "method": "post",
@@ -264,7 +331,9 @@ def test_preflight_openai_compatible_backend_can_probe_chat_completions(monkeypa
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
 
-    result = llm_helper.preflight_openai_compatible_backend(timeout=7.5, check_chat=True)
+    result = llm_helper.preflight_openai_compatible_backend(
+        timeout=7.5, check_chat=True
+    )
 
     assert result == {
         "enabled": True,
@@ -304,7 +373,13 @@ def test_llm_helper_import_allows_openai_env_without_secrets_json(tmp_path):
     src_dir.mkdir()
     (src_dir / "__init__.py").write_text("", encoding="utf-8")
     shutil.copy2(llm_helper.__file__, src_dir / "llm_helper.py")
-    shutil.copy2(Path(llm_helper.__file__).parent / "project_environment.py", src_dir / "project_environment.py")
+    shutil.copy2(
+        Path(llm_helper.__file__).parent / "project_environment.py",
+        src_dir / "project_environment.py",
+    )
+    shutil.copy2(
+        Path(llm_helper.__file__).parent / "html_parse.py", src_dir / "html_parse.py"
+    )
     for module_path in Path(llm_helper.__file__).parent.glob("llm_*.py"):
         if module_path.name != "llm_helper.py":
             shutil.copy2(module_path, src_dir / module_path.name)
@@ -342,8 +417,9 @@ def test_llm_helper_import_allows_openai_env_without_secrets_json(tmp_path):
 
 
 def test_chat_with_glm_decodes_openai_compatible_utf8_even_without_charset(monkeypatch):
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, *args, **kwargs):
@@ -356,7 +432,7 @@ def test_chat_with_glm_decodes_openai_compatible_utf8_even_without_charset(monke
 
     result = llm_helper.chat_with_glm("return json")
 
-    assert result == "{\"市场评估价\":1,\"是否成交\":true}"
+    assert result == '{"市场评估价":1,"是否成交":true}'
 
 
 def test_chat_with_glm_retries_transient_openai_compatible_503(monkeypatch):
@@ -373,8 +449,9 @@ def test_chat_with_glm_retries_transient_openai_compatible_503(monkeypatch):
     class SuccessfulResponse(_FakeResponse):
         content = _FakeResponse.text.encode("utf-8")
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, *args, **kwargs):
@@ -392,7 +469,7 @@ def test_chat_with_glm_retries_transient_openai_compatible_503(monkeypatch):
 
     result = llm_helper.chat_with_glm("return json")
 
-    assert result == "{\"ok\":true}"
+    assert result == '{"ok":true}'
     assert len(calls) == 2
 
 
@@ -410,8 +487,9 @@ def test_chat_with_glm_retries_transient_openai_compatible_524(monkeypatch):
     class SuccessfulResponse(_FakeResponse):
         content = _FakeResponse.text.encode("utf-8")
 
-    class FakeSession:
+    class FakeSession(requests.sessions.Session):
         def __init__(self):
+            super().__init__()
             self.trust_env = True
 
         def post(self, *args, **kwargs):
@@ -429,5 +507,5 @@ def test_chat_with_glm_retries_transient_openai_compatible_524(monkeypatch):
 
     result = llm_helper.chat_with_glm("return json")
 
-    assert result == "{\"ok\":true}"
+    assert result == '{"ok":true}'
     assert len(calls) == 2

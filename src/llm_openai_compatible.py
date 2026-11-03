@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
+import threading
 import time
 from urllib.parse import urlparse
 
@@ -16,6 +16,7 @@ from src.llm_model_selector import (
     LLMBackendUnavailableError,
     get_model_selector,
 )
+from src.llm_rest_transport import _get_http_session, _message_text
 from src.llm_websocket import AIService
 from src.project_environment import getenv as project_getenv
 
@@ -63,9 +64,18 @@ def _get_openai_compatible_config():
         "timeout": float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180")),
         "max_retries": int(os.environ.get("OPENAI_MAX_RETRIES", "3")),
     }
-    reasoning_effort = str(os.environ.get("OPENAI_REASONING_EFFORT") or "").strip().lower()
+    reasoning_effort = (
+        str(os.environ.get("OPENAI_REASONING_EFFORT") or "").strip().lower()
+    )
     if reasoning_effort:
-        allowed_reasoning_efforts = {"none", "minimal", "low", "medium", "high", "xhigh"}
+        allowed_reasoning_efforts = {
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        }
         if reasoning_effort not in allowed_reasoning_efforts:
             raise ValueError(
                 "OPENAI_REASONING_EFFORT must be one of: "
@@ -98,21 +108,41 @@ def _is_local_openai_compatible_url(base_url):
 
 def _get_openai_compatible_proxies(base_url=None):
     fallback_proxy = _first_nonempty_env("OPENAI_PROXY", "CROW_LLM_PROXY")
-    explicit_http_proxy = _first_nonempty_env("OPENAI_HTTP_PROXY", "CROW_LLM_HTTP_PROXY")
-    explicit_https_proxy = _first_nonempty_env("OPENAI_HTTPS_PROXY", "CROW_LLM_HTTPS_PROXY")
-    if base_url and _is_local_openai_compatible_url(base_url) and not (
-        fallback_proxy or explicit_http_proxy or explicit_https_proxy
+    explicit_http_proxy = _first_nonempty_env(
+        "OPENAI_HTTP_PROXY", "CROW_LLM_HTTP_PROXY"
+    )
+    explicit_https_proxy = _first_nonempty_env(
+        "OPENAI_HTTPS_PROXY", "CROW_LLM_HTTPS_PROXY"
+    )
+    if (
+        base_url
+        and _is_local_openai_compatible_url(base_url)
+        and not (fallback_proxy or explicit_http_proxy or explicit_https_proxy)
     ):
         return {}
 
-    http_proxy = explicit_http_proxy or _first_nonempty_env("CROW_HTTP_PROXY") or fallback_proxy
-    https_proxy = explicit_https_proxy or _first_nonempty_env("CROW_HTTPS_PROXY") or fallback_proxy or http_proxy
+    http_proxy = (
+        explicit_http_proxy or _first_nonempty_env("CROW_HTTP_PROXY") or fallback_proxy
+    )
+    https_proxy = (
+        explicit_https_proxy
+        or _first_nonempty_env("CROW_HTTPS_PROXY")
+        or fallback_proxy
+        or http_proxy
+    )
     proxies = {}
     if http_proxy:
         proxies["http"] = http_proxy
     if https_proxy:
         proxies["https"] = https_proxy
     return proxies
+
+
+try:
+    _REST_CONCURRENCY = max(int(os.environ.get("CROW_LLM_REST_CONCURRENCY", "6")), 1)
+except ValueError:
+    _REST_CONCURRENCY = 6
+_REST_SEMAPHORE = threading.BoundedSemaphore(_REST_CONCURRENCY)
 
 
 def _chat_with_openai_compatible(content, config):
@@ -124,19 +154,17 @@ def _chat_with_openai_compatible(content, config):
     )
 
     url = f"{config['base_url']}/chat/completions"
-    session = requests.Session()
-    session.trust_env = False
     proxies = _get_openai_compatible_proxies(config["base_url"])
-    if proxies:
-        session.proxies = proxies
+    session = _get_http_session(config["base_url"], proxies, config["api_key"])
     max_retries = max(int(config.get("max_retries", 3)), 1)
     models = list(config.get("models") or [config["model"]])
     response = None
     forbidden_models = set()
+    empty_models = set()
     for attempt in range(1, max_retries + 1):
         wait_seconds = min(2 ** (attempt - 1), 8)
         for model in models:
-            if model in forbidden_models:
+            if model in forbidden_models or model in empty_models:
                 continue
             require_non_gpt_analysis_model(model, setting="OpenAI request model")
             request_payload = {
@@ -147,19 +175,31 @@ def _chat_with_openai_compatible(content, config):
             }
             if config.get("reasoning_effort"):
                 request_payload["reasoning_effort"] = config["reasoning_effort"]
-            response = session.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {config['api_key']}",
-                    "Content-Type": "application/json",
-                },
-                json=request_payload,
-                timeout=config["timeout"],
-            )
+            with _REST_SEMAPHORE:
+                response = session.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {config['api_key']}",
+                        "Content-Type": "application/json",
+                    },
+                    json=request_payload,
+                    timeout=config["timeout"],
+                )
+            session.cookies.clear()
             status_code = getattr(response, "status_code", None)
             if status_code is not None and status_code < 400:
-                config["last_successful_model"] = model
-                break
+                text, finish_reason = _message_text(response)
+                if text:
+                    config["last_successful_model"] = model
+                    return text
+                empty_models.add(model)
+                logger.warning(
+                    "LLM model %s returned empty content (finish_reason=%s); "
+                    "trying next candidate without backoff",
+                    model,
+                    finish_reason,
+                )
+                continue
             if status_code in (400, 401):
                 response.raise_for_status()
             if status_code == 403:
@@ -170,9 +210,9 @@ def _chat_with_openai_compatible(content, config):
                 break
             if status_code not in (403, 429, 500, 502, 503, 504, 524):
                 response.raise_for_status()
-        if response is not None and getattr(response, "status_code", None) is not None and response.status_code < 400:
-            break
-        if attempt >= max_retries or len(forbidden_models) == len(models):
+        if attempt >= max_retries or len(forbidden_models | empty_models) >= len(
+            models
+        ):
             break
         if wait_seconds > MAX_RETRY_WAIT_SECONDS:
             response.raise_for_status()
@@ -184,22 +224,14 @@ def _chat_with_openai_compatible(content, config):
         )
         time.sleep(wait_seconds)
     if response is None:
-        raise LLMBackendUnavailableError("LLM backend unavailable: no OpenAI-compatible model candidates")
+        raise LLMBackendUnavailableError(
+            "LLM backend unavailable: no OpenAI-compatible model candidates"
+        )
     response.raise_for_status()
-    raw_bytes = getattr(response, "content", None)
-    if isinstance(raw_bytes, (bytes, bytearray)):
-        raw_payload = raw_bytes.decode("utf-8")
-    else:
-        raw_payload = str(getattr(response, "text", ""))
-    payload = json.loads(raw_payload)
-    choices = payload.get("choices") if isinstance(payload, dict) else None
-    if not choices:
-        raise ValueError("OpenAI-compatible response missing choices")
-    message = choices[0].get("message") if isinstance(choices[0], dict) else None
-    result = message.get("content") if isinstance(message, dict) else None
-    if not result:
-        raise ValueError("OpenAI-compatible response missing message content")
-    return result
+    raise ValueError(
+        "OpenAI-compatible response missing message content "
+        f"(models tried: {', '.join(models)}; empty: {', '.join(sorted(empty_models)) or 'none'})"
+    )
 
 
 def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
@@ -207,16 +239,24 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
     if not config:
         return {"enabled": False}
     from src.llm_qualification_pool import QualifiedModelPool, pool_enabled
+
     if pool_enabled():
         import sqlite3
+
         try:
-            pool = QualifiedModelPool(config, proxies=_get_openai_compatible_proxies(config["base_url"]))
+            pool = QualifiedModelPool(
+                config, proxies=_get_openai_compatible_proxies(config["base_url"])
+            )
             models = pool.refresh_in_background()
         except (OSError, sqlite3.Error, ValueError):
             models = []
-        return {"enabled": True, "status_code": 200 if models else 503,
-                "chat_status_code": 200 if models else 503, "qualified_models": models,
-                "model_pool": "ready" if models else "exhausted_or_probing"}
+        return {
+            "enabled": True,
+            "status_code": 200 if models else 503,
+            "chat_status_code": 200 if models else 503,
+            "qualified_models": models,
+            "model_pool": "ready" if models else "exhausted_or_probing",
+        }
     url = f"{config['base_url']}/models"
     session = requests.Session()
     session.trust_env = False
@@ -297,7 +337,9 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
 def preflight_llm_backend(timeout=15.0, *, check_chat=False):
     config = _get_openai_compatible_config()
     if config:
-        result = preflight_openai_compatible_backend(timeout=timeout, check_chat=check_chat)
+        result = preflight_openai_compatible_backend(
+            timeout=timeout, check_chat=check_chat
+        )
         result.setdefault("backend", "openai_compatible")
         return result
     pool = get_model_pool()
@@ -313,12 +355,16 @@ def preflight_llm_backend(timeout=15.0, *, check_chat=False):
         return result
 
     disabled_models = dict(getattr(get_model_selector(), "disabled_models", {}) or {})
-    enabled_models = [model for model in pool if str(model.get("name") or "") not in disabled_models]
+    enabled_models = [
+        model for model in pool if str(model.get("name") or "") not in disabled_models
+    ]
     if not enabled_models:
         result.update(
             {
                 "chat_status_code": 401 if disabled_models else 503,
-                "error": "all_models_appid_no_auth" if disabled_models else "all_models_unavailable",
+                "error": "all_models_appid_no_auth"
+                if disabled_models
+                else "all_models_unavailable",
                 "probe_errors": [
                     {
                         "model_name": model_name,
@@ -352,7 +398,10 @@ def preflight_llm_backend(timeout=15.0, *, check_chat=False):
                     "error": error_msg,
                 }
             )
-            if error_code not in AUTH_INVALID_ERROR_CODES or "AppIdNoAuthError" not in error_msg:
+            if (
+                error_code not in AUTH_INVALID_ERROR_CODES
+                or "AppIdNoAuthError" not in error_msg
+            ):
                 auth_error_only = False
         except LLMBackendUnavailableError as exc:
             message = str(exc)
@@ -385,7 +434,9 @@ def preflight_llm_backend(timeout=15.0, *, check_chat=False):
     result.update(
         {
             "chat_status_code": 401 if probe_errors and auth_error_only else 503,
-            "error": "all_models_appid_no_auth" if probe_errors and auth_error_only else "all_models_unavailable",
+            "error": "all_models_appid_no_auth"
+            if probe_errors and auth_error_only
+            else "all_models_unavailable",
             "probe_errors": probe_errors[:5],
         }
     )
@@ -412,19 +463,28 @@ def chat_with_glm(content, *, model=None):
             openai_config["model"],
         )
         from src.llm_qualification_pool import QualifiedModelPool, pool_enabled
+
         if pool_enabled():
             import sqlite3
+
             try:
-                pool = QualifiedModelPool(openai_config, proxies=_get_openai_compatible_proxies(openai_config["base_url"]))
+                pool = QualifiedModelPool(
+                    openai_config,
+                    proxies=_get_openai_compatible_proxies(openai_config["base_url"]),
+                )
                 result = pool.chat(content, model=requested_model or None)
             except (OSError, sqlite3.Error, ValueError):
-                raise LLMBackendUnavailableError("LLM backend unavailable: model pool state unavailable") from None
+                raise LLMBackendUnavailableError(
+                    "LLM backend unavailable: model pool state unavailable"
+                ) from None
         else:
             result = _chat_with_openai_compatible(content, openai_config)
         logger.debug("OpenAI-compatible response received (len=%s).", len(result))
         stripped = _strip_json_markdown(result)
         if not str(stripped or "").strip():
-            raise LLMBackendUnavailableError("LLM backend unavailable: OpenAI-compatible backend returned empty response")
+            raise LLMBackendUnavailableError(
+                "LLM backend unavailable: OpenAI-compatible backend returned empty response"
+            )
         return stripped
 
     if model:
@@ -442,8 +502,21 @@ def chat_with_glm(content, *, model=None):
         )
     stripped = _strip_json_markdown(result)
     if not str(stripped or "").strip():
-        raise LLMBackendUnavailableError("LLM backend unavailable: empty response from AI backend")
+        raise LLMBackendUnavailableError(
+            "LLM backend unavailable: empty response from AI backend"
+        )
     return stripped
 
 
-__all__ = ['_chat_with_openai_compatible', '_first_nonempty_env', '_get_openai_compatible_config', '_get_openai_compatible_proxies', '_is_local_openai_compatible_url', '_strip_json_markdown', 'chat_with_glm', 'preflight_llm_backend', 'preflight_openai_compatible_backend', 'require_non_gpt_analysis_model']
+__all__ = [
+    "_chat_with_openai_compatible",
+    "_first_nonempty_env",
+    "_get_openai_compatible_config",
+    "_get_openai_compatible_proxies",
+    "_is_local_openai_compatible_url",
+    "_strip_json_markdown",
+    "chat_with_glm",
+    "preflight_llm_backend",
+    "preflight_openai_compatible_backend",
+    "require_non_gpt_analysis_model",
+]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from .collection_control_state import CHALLENGE_SCOPES
 from .runtime_state import RuntimeState
 from .solver_captcha_reports import ReportMarker
 from .solver_pause_cleanup import PauseSetter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -66,8 +69,13 @@ class AuthCleanupCompletion:
                 and not scoped.get("force_reset_required")
             )
         return bool(
-            not solver_status.get("paused")
-            and not solver_status.get("running")
+            (
+                not solver_status.get("paused")
+                or self.runtime().control.snapshot().reason == "operator"
+            )
+            # NOTE: an in-flight solver run is not an auth failure. Treating
+            # "running" as a veto used to re-arm manual_required right after a
+            # successful auth cleanup, producing a permanent pause loop.
             and not solver_status.get("manual_required")
             and not solver_status.get("force_unlock_flag_exists")
         )
@@ -104,12 +112,28 @@ class AuthCleanupCompletion:
                 or None
             )
             if normalized_current != normalized_expected:
+                logger.warning(
+                    "auth completion dropped as stale challenge: scope=%r "
+                    "expected=%r current=%r (cookie snapshot predates the "
+                    "active captcha; collection stays paused)",
+                    completion_scope,
+                    normalized_expected,
+                    normalized_current,
+                )
                 return {
                     "auth_state_confirmed": False,
                     "stale_challenge": True,
                     "expected_challenge_id": normalized_expected,
                     "challenge_id": normalized_current,
                     "error": "cookie snapshot belongs to an older captcha challenge",
+                }
+
+            if completion_scope not in CHALLENGE_SCOPES and any(
+                self.read_scope(scope).get("challenge_id") for scope in CHALLENGE_SCOPES
+            ):
+                return {
+                    "auth_state_confirmed": False,
+                    "error": "active scoped challenge requires matching challenge_id and scope",
                 }
 
             previously_confirmed = self.was_confirmed(completion_id)
@@ -180,7 +204,10 @@ class AuthCleanupCompletion:
                 self.runtime().solver.record_outcome(
                     "manual_required", "manual_required"
                 )
-                self.set_pause(True, "manual_required")
+                if self.runtime().control.snapshot().reason != "operator":
+                    self.set_pause(
+                        True, "manual_required", scope=completion_scope or None
+                    )
 
             result: dict[str, object] = {
                 "auth_state_confirmed": auth_state_confirmed,

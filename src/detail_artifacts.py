@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urljoin
 
+from .html_parse import parse_html
+
 if TYPE_CHECKING:
     from bs4 import BeautifulSoup
 
@@ -77,10 +79,9 @@ def extract_detail_artifacts(
     archive_revision: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, object]:
-    from bs4 import BeautifulSoup
 
     artifact_fields: dict[str, object] = {}
-    soup = BeautifulSoup(html_content, "html.parser")
+    soup = parse_html(html_content)
     base_url = source_url or ""
     root = Path(data_root)
     archive_path = partial(

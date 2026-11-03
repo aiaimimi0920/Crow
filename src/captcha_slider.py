@@ -365,14 +365,14 @@ class CaptchaSliderMixin:
         p3 = (target_x, target_y)
 
         # More subtle bow - humans don't always bow much
-        bow = random.choice([1, -1]) * random.uniform(2, 12)
+        bow = random.choice([1, -1]) * random.uniform(0.8, 4.5)
 
         # More varied control points
         p1_x = start_x + (target_x - start_x) * random.uniform(0.15, 0.45)
-        p1_y = start_y + bow + random.uniform(-8, 8)
+        p1_y = start_y + bow + random.uniform(-1.5, 1.5)
 
         p2_x = start_x + (target_x - start_x) * random.uniform(0.55, 0.85)
-        p2_y = target_y + bow/3 + random.uniform(-8, 8)
+        p2_y = target_y + bow/3 + random.uniform(-1.5, 1.5)
 
         # More varied point density
         num_points = int(distance / random.uniform(2, 6))
@@ -429,85 +429,76 @@ class CaptchaSliderMixin:
         return False
 
     def _do_drag(self, start_x, start_y, distance):
-        """Slow human-like drag. NC rejects paths that are too fast or missing button state."""
+        """Dispatch a bounded forward drag with short waits and button release."""
         target_x = start_x + distance
-        target_y = start_y + random.uniform(-3, 3)
+        target_y = start_y + random.uniform(-1.0, 1.0)
 
-        # 1. Pre-approach: Move near slider (no button)
-        pre_x = start_x - random.uniform(18, 36)
-        pre_y = start_y + random.uniform(-10, 10)
+        # 1. Move near the handle (no button), then onto it.
+        pre_x = start_x - random.uniform(14, 30)
+        pre_y = start_y + random.uniform(-6, 6)
         if not self._dispatch_mouse("mouseMoved", pre_x, pre_y, buttons=0):
             return None
-        self._wait_interruptibly(random.uniform(0.55, 1.05))
+        self._wait_interruptibly(random.uniform(0.08, 0.18))
 
-        # 2. Approach slider
-        if not self._dispatch_mouse("mouseMoved", start_x, start_y, buttons=0):
+        if not self._dispatch_mouse(
+            "mouseMoved",
+            start_x + random.uniform(-0.6, 0.6),
+            start_y + random.uniform(-0.6, 0.6),
+            buttons=0,
+        ):
             return None
-        self._wait_interruptibly(random.uniform(0.35, 0.75))
+        self._wait_interruptibly(random.uniform(0.03, 0.07))
 
-        # 3. Mouse down with hesitation
+        # 2. Press with a short hesitation.
         if not self._dispatch_mouse(
             "mousePressed", start_x, start_y, buttons=1, click_count=1
         ):
             return None
-        self._wait_interruptibly(random.uniform(0.18, 0.38))
+        self._wait_interruptibly(random.uniform(0.04, 0.10))
 
-        # 4. Generate bezier path
+        # 3. Execute the path using the configured short-duration range.
         path = self._generate_bezier_path(start_x, start_y, target_x, target_y)
-
-        # 5. Execute drag with a 2.4–4.2s human velocity curve
         n = max(len(path), 1)
-        for i, (px, py, _t) in enumerate(path):
-            progress = i / n
-            if progress < 0.12:
-                delay = random.uniform(0.035, 0.060)
-            elif progress < 0.35:
-                delay = random.uniform(0.022, 0.038)
-            elif progress < 0.72:
-                delay = random.uniform(0.018, 0.032)
-            elif progress < 0.88:
-                delay = random.uniform(0.028, 0.048)
-            else:
-                delay = random.uniform(0.040, 0.070)
-            if random.random() < 0.14:
-                delay += random.uniform(0.04, 0.10)
+        target_duration = random.uniform(0.30, 0.60)
+        per_point = target_duration / n
+        last_x = start_x
+        for px, py, _t in path:
+            delay = per_point * random.uniform(0.65, 1.35)
+            if random.random() < 0.06:
+                delay += random.uniform(0.008, 0.025)
             self._wait_interruptibly(delay)
+            # Keep input inside the measured track, including randomized points.
+            px = min(target_x, max(px + random.gauss(0, 0.30), last_x + random.uniform(0.05, 0.25)))
+            last_x = px
             if not self._dispatch_mouse(
                 "mouseMoved",
-                px + random.gauss(0, 0.7),
-                py + random.gauss(0, 1.1),
+                px,
+                py + random.gauss(0, 0.5),
                 buttons=1,
             ):
                 return None
 
-        # 6. Small overshoot + settle (keep the button down)
-        self._wait_interruptibly(random.uniform(0.08, 0.16))
-        overshoot = random.uniform(0, 3)
-        if not self._dispatch_mouse(
-            "mouseMoved", target_x + overshoot, target_y, buttons=1
-        ):
-            return None
-        self._wait_interruptibly(random.uniform(0.06, 0.12))
-        for _ in range(random.randint(2, 4)):
-            target_x -= random.uniform(0.6, 2.2)
-            target_y += random.uniform(-0.8, 0.8)
-            if not self._dispatch_mouse("mouseMoved", target_x, target_y, buttons=1):
+        # 4. Settle on the exact endpoint (never move backwards) and release fast.
+        for _ in range(random.randint(1, 2)):
+            settle_x = min(target_x, max(last_x, target_x - 0.15) + random.uniform(0.0, 0.20))
+            last_x = settle_x
+            if not self._dispatch_mouse(
+                "mouseMoved",
+                settle_x,
+                target_y + random.uniform(-0.20, 0.20),
+                buttons=1,
+            ):
                 return None
-            self._wait_interruptibly(random.uniform(0.025, 0.050))
-        if not self._dispatch_mouse("mouseMoved", start_x + distance, target_y, buttons=1):
-            return None
+            self._wait_interruptibly(random.uniform(0.008, 0.020))
+        self._wait_interruptibly(random.uniform(0.05, 0.11))
 
-        # 7. Sample a fresh 1.5-2.5 second hold at the final endpoint.
-        self._wait_interruptibly(random.uniform(1.5, 2.5))
-
-        # 8. Release
         if not self._dispatch_mouse(
-            "mouseReleased", start_x + distance, target_y, buttons=0, click_count=1
+            "mouseReleased", target_x, target_y, buttons=0, click_count=1
         ):
             return None
-        self._wait_interruptibly(random.uniform(0.4, 0.7))
+        self._wait_interruptibly(random.uniform(0.10, 0.20))
 
-        return start_x + distance
+        return target_x
 
 
 __all__ = ["CaptchaSliderMixin"]

@@ -69,11 +69,19 @@ def run_migrations_online() -> None:
 
 
 def configure_connection(connection):
+    # PostgreSQL extension discovery issues a SELECT. Do not let its implicit
+    # transaction masquerade as a caller-owned transaction to Alembic, since
+    # concurrent index migrations must enter an autocommit block.
+    caller_transaction = connection.in_transaction()
+    include_object = extension_table_filter(connection)
+    if not caller_transaction and connection.in_transaction():
+        connection.commit()
     context.configure(
         connection=connection,
         target_metadata=metadata_for_dialect(connection.dialect.name),
-        include_object=extension_table_filter(connection),
+        include_object=include_object,
         compare_type=True,
+        transaction_per_migration=True,
     )
 
 
