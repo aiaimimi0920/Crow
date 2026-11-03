@@ -13,6 +13,38 @@ class ManualChallengeRequired(RuntimeError):
     pass
 
 
+def reconcile_completed_manual_handoff(
+    state: dict[str, object],
+    status: Mapping[str, object],
+    save: Callable[[dict[str, object]], None],
+) -> bool:
+    """Close an input marker only for an acknowledged, matching manual handoff."""
+    challenge = state.get("challenge_id")
+    if (
+        state.get("slider_attempt_started_at") is None
+        or state.get("manual_pushed") is not True
+        or not isinstance(challenge, str)
+        or not challenge
+        or challenge != status.get("challenge_id")
+        or state.get("scope") not in {"seed", "detail"}
+        or state.get("scope") != status.get("scope")
+        or status.get("manual_required") is not True
+        or status.get("running") is not False
+        or any(
+            state.get(key) is not False
+            for key in (
+                "auth_complete_pending",
+                "collection_resume_pending",
+                "terminal_manual_pending",
+            )
+        )
+    ):
+        return False
+    state["slider_attempt_started_at"] = None
+    save(state)
+    return True
+
+
 def retry_terminal_manual_report(
     state: dict[str, object],
     solver_status: Mapping[str, object],
@@ -22,6 +54,7 @@ def retry_terminal_manual_report(
     now: float | None = None,
 ) -> bool:
     if not state.get("terminal_manual_pending"):
+        reconcile_completed_manual_handoff(state, solver_status, save)
         return False
     if solver_status.get("paused") is False and solver_status.get("last_status") in {
         "manual_auth_completed",
@@ -61,6 +94,7 @@ def attempt_or_manual_handoff(
     try:
         return attempt()
     except ManualChallengeRequired:
+        state["slider_attempt_started_at"] = None
         state["terminal_manual_pending"] = True
         state["terminal_manual_next_report"] = 0
         save(state)
@@ -95,6 +129,7 @@ def report_execution_block(
 __all__ = (
     "ManualChallengeRequired",
     "attempt_or_manual_handoff",
+    "reconcile_completed_manual_handoff",
     "report_execution_block",
     "retry_terminal_manual_report",
 )
