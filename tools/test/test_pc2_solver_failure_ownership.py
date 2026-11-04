@@ -179,17 +179,22 @@ def run_failed_loop(monkeypatch):
         "unavailable",
     ],
 )
+@pytest.mark.parametrize("cooldown", [False, True])
 def test_changed_request_blocks_failure_side_effects_but_keeps_budget(
-    run_failed_loop, kind
+    run_failed_loop, kind, cooldown
 ):
-    result = run_failed_loop(changed(kind))
+    result = run_failed_loop(changed(kind), cooldown_threshold=1 if cooldown else 100)
 
     result.rotate.assert_not_called()
     result.browse.assert_not_called()
     result.report.assert_not_called()
     assert result.state["slider_attempts"] == result.state["consecutive_failures"] == 1
     assert result.state["manual_pushed"] is False
-    assert result.state["slider_next_attempt_at"] > 1000
+    if cooldown:
+        assert result.state["slider_next_attempt_at"] is None
+        assert result.state["solver_cooldown_until"] == 1180.0
+    else:
+        assert result.state["slider_next_attempt_at"] > 1000
     assert len(result.reads) == 3  # poll, execution boundary, failure boundary
 
 
@@ -212,14 +217,19 @@ def test_blocked_cleanup_still_reaches_existing_shared_cooldown(run_failed_loop)
 
 
 @pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("cooldown", [False, True])
 def test_same_owned_request_retains_rotation_and_existing_escalation(
-    run_failed_loop, manual
+    run_failed_loop, manual, cooldown
 ):
-    result = run_failed_loop(active(), manual=manual)
+    result = run_failed_loop(
+        active(), manual=manual, cooldown_threshold=1 if cooldown else 100
+    )
 
-    result.rotate.assert_called_once_with(CDP, TARGET, probe_target=PROBE)
+    result.rotate.assert_called_once_with(
+        CDP, TARGET, probe_target=PROBE, open_replacement=not cooldown
+    )
     assert result.report.call_count == int(manual)
-    assert result.browse.call_count == int(not manual)
+    assert result.browse.call_count == int(not manual and not cooldown)
     assert result.state["slider_attempts"] == result.state["consecutive_failures"] == 1
 
 

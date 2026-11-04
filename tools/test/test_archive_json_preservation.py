@@ -88,7 +88,13 @@ def test_legacy_archive_write_preserves_unrelated_evidence(
     if operation == "update_file_global":
         args += ({"id": "missing"},)
     function(*args)
-    assert archive.read_bytes() == confirmed
+    if operation == "update_file_global":
+        assert json.loads(archive.read_text(encoding="utf-8")) == [
+            *expected,
+            {"id": "missing"},
+        ]
+    else:
+        assert archive.read_bytes() == confirmed
 
 
 @pytest.mark.parametrize("raw", [b'{"unfinished":', b"{}", b"[null]", b"null"])

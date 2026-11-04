@@ -239,76 +239,46 @@ def _build_detail_analysis_input(
     return effective_seed, _redact_detail_analysis_text(analysis_text)
 
 def fetch_browser_navigation_list_page(cdp_endpoint: str, target_url: str) -> tuple[str, str]:
-    from tools import taobao_login_health
-    from tools.cdp_background_page import (
-        BackgroundPageCapacityError,
-        open_background_page,
+    from functools import partial
+
+    from src.collection.adapters.taobao_auth_target import browser_target_matches
+    from tools.browser_target_capture import (
+        BrowserTargetChallenge,
+        capture_attached_target,
+    )
+    from tools.pc2_seed_auth_probe import seed_payload_authenticated
+
+    try:
+        html, final_url, _, _ = capture_attached_target(
+            target_url, cdp_endpoint=cdp_endpoint,
+            matches=partial(browser_target_matches, "seed", target_url),
+            connect_browser=connect_browser_over_cdp,
+            detach_browser=detach_attached_cdp_browser,
+            is_login_target=_is_taobao_login_target_url,
+            is_challenge=is_challenge_page, is_login=is_login_page,
+            configure_page=configure_browser_identity_before_navigation,
+            wait_for_ready=_wait_for_list_ready,
+            payload_authenticated=lambda html, url: seed_payload_authenticated(html, url, target_url),
+            label="list",
+        )
+        return html, final_url
+    except BrowserTargetChallenge as error:
+        # Preserve the list API's tuple result while the common engine owns tabs.
+        return error.html or "_____tmd_____/punish", error.challenge_url
+
+
+def _wait_for_list_ready(page):
+    from tools.browser_target_ready import wait_for_target_ready
+    from tools.pc2_seed_auth_probe import seed_payload_authenticated
+
+    return wait_for_target_ready(
+        page, is_challenge=is_challenge_page,
+        is_ready=lambda html, url: seed_payload_authenticated(html, url, url),
+        timeout_ms=detail_browser_ready_timeout_ms(),
+        poll_interval_ms=detail_browser_poll_interval_ms(),
     )
 
-    try:
-        existing_login_page = _reuse_existing_taobao_login_page(cdp_endpoint)
-        if existing_login_page is not None:
-            return existing_login_page
-        existing_challenge_page = _reuse_existing_taobao_challenge_page(
-            cdp_endpoint, target_url=target_url
-        )
-        if existing_challenge_page is not None:
-            return existing_challenge_page
-        opened = open_background_page(cdp_endpoint, target_url)
-    except BackgroundPageCapacityError:
-        # Backpressure is retryable; do not report a healthy CDP endpoint as down.
-        raise
-    except Exception as error:
-        _raise_cdp_endpoint_unavailable(cdp_endpoint, "open_list_page_target", error)
-    target: dict[str, Any] | None = dict(opened) if isinstance(opened, dict) else None
-    if target is None or not str(target.get("webSocketDebuggerUrl") or "").strip():
-        try:
-            matches = _find_matching_cdp_list_targets(cdp_endpoint, target_url)
-        except Exception as error:
-            _raise_cdp_endpoint_unavailable(cdp_endpoint, "find_list_page_target", error)
-        target = matches[0] if matches else None
-    if target is None:
-        raise RuntimeError(f"unable to open CDP list page target: {target_url}")
-
-    target_id = str(target.get("id") or "").strip()
-    preserve_challenge_target = False
-    try:
-        try:
-            html, final_url = _read_cdp_list_target_html(cdp_endpoint, target)
-            preserve_challenge_target = is_challenge_page(html, final_url)
-            return html, final_url
-        except Exception as error:
-            _raise_cdp_endpoint_unavailable(cdp_endpoint, "read_list_page_target_html", error)
-    finally:
-        # The node solver can only act on a challenge that remains attached to
-        # CDP. Normal transient pages are still closed immediately.
-        if target_id and not preserve_challenge_target:
-            try:
-                taobao_login_health.close_cdp_target(cdp_endpoint, target_id)
-            except Exception:
-                pass
-
 def fetch_browser_list_page(cdp_endpoint: str, target_url: str) -> tuple[str, str] | None:
-    try:
-        browser_page = fetch_open_browser_list_page(
-            cdp_endpoint,
-            target_url,
-            include_challenge=True,
-        )
-    except Exception as error:
-        print(
-            json.dumps(
-                {
-                    "event": "open_browser_list_page_probe_failed",
-                    "target_url": target_url,
-                    "error": safe_exception_text(error),
-                },
-                ensure_ascii=False,
-            )
-        )
-        browser_page = None
-    if browser_page is not None:
-        return browser_page
     return fetch_browser_navigation_list_page(cdp_endpoint, target_url)
 
 def recover_browser_list_page_after_challenge(
@@ -498,6 +468,7 @@ __all__ = (
     '_detail_countdown_text',
     '_build_detail_analysis_input',
     'fetch_browser_navigation_list_page',
+    '_wait_for_list_ready',
     'fetch_browser_list_page',
     'recover_browser_list_page_after_challenge',
     'fetch_list_page',

@@ -1,6 +1,6 @@
 """Bounded NC recovery sampling, without issuing retry clicks or navigation."""
 
-from .captcha_verification import ready_target_matches
+from .captcha_challenge_binding import input_target_matches
 
 
 def nc_retry_outcome(solver, timeout_seconds, *, clock):
@@ -20,7 +20,7 @@ def nc_retry_outcome(solver, timeout_seconds, *, clock):
             stable_slider_samples = 0
             solver._wait_interruptibly(0.35)
             continue
-        if bound_target and not ready_target_matches(summary, solver.target_url):
+        if bound_target and not input_target_matches(solver, summary):
             # Stable geometry cannot prove that a replacement document still
             # belongs to this request. Do not replay or click old coordinates.
             return {"targetUnavailable": True, "summary": summary}

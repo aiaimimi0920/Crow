@@ -24,7 +24,7 @@ def test_connect_browser_over_cdp_uses_extended_timeout(monkeypatch) -> None:
 
     assert browser == {"endpoint": "http://127.0.0.1:9223"}
     assert calls == [("http://127.0.0.1:9223", 120000)]
-    assert compaction_calls == ["http://127.0.0.1:9223"]
+    assert compaction_calls == [], "connecting must never close shared pages"
 
 def test_connect_browser_over_cdp_prefers_browser_websocket_url_for_http_endpoint(monkeypatch) -> None:
     calls: list[tuple[str, int]] = []
@@ -227,6 +227,14 @@ def test_read_page_content_with_retries_waits_for_navigation_to_settle() -> None
         def __init__(self) -> None:
             self.calls = 0
 
+        def locator(self, selector):
+            assert selector == "html"
+            return self
+
+        def inner_html(self, *, timeout):
+            assert timeout > 0
+            return self.content()
+
         def content(self) -> str:
             self.calls += 1
             events.append(f"content:{self.calls}")
@@ -253,6 +261,14 @@ def test_wait_for_detail_ready_returns_when_detail_marker_appears() -> None:
             ]
             self.waits: list[int] = []
 
+        def locator(self, selector):
+            assert selector == "html"
+            return self
+
+        def inner_html(self, *, timeout):
+            assert timeout > 0
+            return self.content()
+
         def content(self) -> str:
             return self.contents.pop(0) if len(self.contents) > 1 else self.contents[0]
 
@@ -271,6 +287,14 @@ def test_wait_for_detail_ready_returns_challenge_without_waiting() -> None:
     class FakePage:
         url = "https://login.taobao.com/challenge"
 
+        def locator(self, selector):
+            assert selector == "html"
+            return self
+
+        def inner_html(self, *, timeout):
+            assert timeout > 0
+            return self.content()
+
         def content(self) -> str:
             return "<html>challenge</html>"
 
@@ -287,6 +311,14 @@ def test_wait_for_detail_ready_returns_last_html_at_bounded_timeout() -> None:
     class FakePage:
         url = "https://sf-item.taobao.com/sf_item/3002.htm"
 
+        def locator(self, selector):
+            assert selector == "html"
+            return self
+
+        def inner_html(self, *, timeout):
+            assert timeout > 0
+            return self.content()
+
         def content(self) -> str:
             return "<html><body>shell</body></html>"
 
@@ -298,110 +330,17 @@ def test_wait_for_detail_ready_returns_last_html_at_bounded_timeout() -> None:
     assert html == "<html><body>shell</body></html>"
     assert len(waits) <= 2
 
-def test_fetch_browser_navigation_list_page_closes_raw_cdp_target_without_playwright(monkeypatch) -> None:
-    events: list[str] = []
+def test_fetch_browser_navigation_list_page_closes_only_shared_owned_page(monkeypatch):
+    from tools.test.test_browser_target_capture import capture_fixture, PAYLOADS
+    capture, events, _ = capture_fixture(monkeypatch, live_batch_smoke, 'seed')
+    assert capture()[0] == PAYLOADS['seed']
+    assert events.count('close_owned') == events.count('session_detach') == 1
+    assert events.index('configure') < events.index('fresh_request') < events.index('session_detach')
 
-    def _fail_sync_playwright():
-        raise AssertionError("playwright path should not be used for list navigation fallback")
-
-    fake_sync_api = types.ModuleType("playwright.sync_api")
-    fake_sync_api.sync_playwright = _fail_sync_playwright
-    fake_playwright = types.ModuleType("playwright")
-    fake_playwright.sync_api = fake_sync_api
-    monkeypatch.setitem(sys.modules, "playwright", fake_playwright)
-    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
-
-    def _compact(endpoint: str, targets=None, reserve_for_new_page: bool = False):
-        events.append(f"compact:{endpoint}:{reserve_for_new_page}")
-        return {"triggered": False}
-
-    def _open_background(endpoint: str, url: str):
-        events.append(f"background:{endpoint}:{url}")
-        return {
-            "id": "page-2",
-            "type": "page",
-            "url": url,
-            "webSocketDebuggerUrl": "ws://cdp/page-2",
-        }
-
-    def _activate(endpoint: str, target: dict[str, object]) -> None:
-        events.append(f"activate:{endpoint}:{target['id']}")
-
-    responses = [
-        {
-            "result": {
-                "result": {
-                    "value": {
-                        "html": '<html><script id="sf-item-list-data" type="application/json">{"data":[]}</script></html>',
-                        "url": "https://sf.taobao.com/list/page=2",
-                    }
-                }
-            }
-        }
-    ]
-
-    def _evaluate(websocket_url: str, expression: str) -> dict[str, object]:
-        events.append(f"evaluate:{websocket_url}")
-        assert "document.documentElement.outerHTML" in expression
-        return responses.pop(0)
-
-    def _close(endpoint: str, target_id: object) -> bool:
-        events.append(f"close:{endpoint}:{target_id}")
-        return True
-
-    monkeypatch.setattr(taobao_login_health, "compact_cdp_pages_if_needed", _compact)
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _endpoint: [])
-    monkeypatch.setattr("tools.cdp_background_page.open_background_page", _open_background)
-    monkeypatch.setattr(taobao_login_health, "activate_cdp_target", _activate)
-    monkeypatch.setattr(taobao_login_health, "evaluate_cdp_expression", _evaluate)
-    monkeypatch.setattr(taobao_login_health, "close_cdp_target", _close)
-
-    html, final_url = live_batch_smoke.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/page=2",
-    )
-
-    assert "sf-item-list-data" in html
-    assert final_url == "https://sf.taobao.com/list/page=2"
-    assert events == [
-        "background:http://127.0.0.1:9223:https://sf.taobao.com/list/page=2",
-        "evaluate:ws://cdp/page-2",
-        "close:http://127.0.0.1:9223:page-2",
-    ]
-
-def test_fetch_browser_navigation_list_page_reuses_single_existing_login_tab(monkeypatch) -> None:
-    events: list[str] = []
-    login_targets = [
-        {"id": "login-1", "type": "page", "url": "https://login.taobao.com/havanaone/login/login.htm"},
-        {"id": "login-2", "type": "page", "url": "https://login.taobao.com/havanaone/login/login.htm?uuid=2"},
-    ]
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _endpoint: login_targets)
-    monkeypatch.setattr(
-        taobao_login_health,
-        "activate_cdp_target",
-        lambda _endpoint, target: events.append(f"activate:{target['id']}"),
-    )
-    monkeypatch.setattr(
-        taobao_login_health,
-        "close_cdp_target",
-        lambda _endpoint, target_id: events.append(f"close:{target_id}") or True,
-    )
-    monkeypatch.setattr(
-        live_batch_smoke,
-        "_read_cdp_list_target_html",
-        lambda _endpoint, target: ("<html>淘宝登录</html>", str(target["url"])),
-    )
-    monkeypatch.setattr(
-        taobao_login_health,
-        "read_cdp_json",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not open a new tab")),
-    )
-
-    html, final_url = live_batch_smoke.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/page=2",
-    )
-
-    assert html == "<html>淘宝登录</html>"
-    assert urlparse(final_url).hostname == "login.taobao.com"
-    assert events == ["close:login-2"]
+def test_fetch_browser_navigation_list_page_preserves_existing_login_without_opening(monkeypatch):
+    from tools.test.test_browser_target_capture import capture_fixture
+    capture, events, _ = capture_fixture(monkeypatch, live_batch_smoke, 'seed', old_url='https://login.taobao.com/havanaone/login/login.htm')
+    html, url = capture()
+    assert live_batch_smoke.is_challenge_page(html, url)
+    assert live_batch_smoke.is_login_page(html, url)
+    assert 'fresh_request' not in events and 'close_owned' not in events

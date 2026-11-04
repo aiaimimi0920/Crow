@@ -10,6 +10,7 @@ from tools import live_batch_smoke as smoke
 from tools.detail_browser_capture import decode_capture_reply
 from tools.detail_browser_capture_child import capture_reply
 from tools.test.test_detail_capture_diagnostics import worker_failure
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 URL = "https://sf-item.taobao.com/sf_item/3001.htm"
 CHALLENGE = "<html>_____tmd_____/punish x5secdata=fixture</html>"
@@ -17,6 +18,7 @@ DETAIL = '<html><input id="J_StartPrice"></html>'
 
 
 def attached_fixture(monkeypatch, status, html, *, existing_challenge=False):
+    install_owned_page_fixture(monkeypatch)
     events = []
     page = SimpleNamespace(
         url=URL,

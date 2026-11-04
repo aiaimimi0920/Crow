@@ -1,6 +1,6 @@
 import { object } from "./desktop_value.ts";
 import { escapeHtml as esc } from "./desktop_dom.ts";
-import { authScopeState, scopeLabel, type AuthScope } from "./desktop_auth_scope.ts";
+import { authScopeRetryBlocked, authScopeState, scopeLabel, type AuthScope } from "./desktop_auth_scope.ts";
 
 export const count = (value: unknown): string => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString("zh-CN") : "—";
 export const epoch = (value: unknown): string => typeof value === "number" && Number.isFinite(value) && value > 0 && value < 1e11
@@ -25,8 +25,10 @@ function scopeView(value: unknown, scope: AuthScope): string {
   if (!state) return `<article class="ops-scope"><h3>${scopeLabel(scope)}</h3><p class="status-line">状态未上报，不能判定已恢复。</p></article>`;
   const active = state.last_status === "running" || state.last_status === "queued";
   const attention = state.manual_required === true || state.force_reset_required === true || state.node_solver_blocked === true;
-  const label = attention ? "需要认证 / 介入" : active ? "挑战处理中" : state.paused === true ? "阶段暂停" : "未报告挑战";
+  const retryBlocked = authScopeRetryBlocked(value, scope);
+  const label = retryBlocked ? "求解连续失败" : attention ? "需要认证 / 介入" : active ? "挑战处理中" : state.paused === true ? "阶段暂停" : "未报告挑战";
   return `<article class="ops-scope"><h3>${scopeLabel(scope)} <span class="pill ${attention ? "bad" : active || state.paused ? "warn" : "ok"}">${label}</span></h3>
+    ${retryBlocked ? '<p class="status-line">等待节点退避或认证介入；PC2 下次尝试时间尚未上报，不代表正在求解。</p>' : ""}
     <dl class="ops-facts">${pair("暂停原因", reason(state.pause_reason))}${pair("最近失败", reason(state.last_failure_reason))}
     ${pair("节点阻塞", reason(state.node_solver_blocked_reason))}${pair("节点已报告尝试", count(state.node_solver_blocked_attempts))}
     ${pair("挑战首次出现", epoch(state.first_seen_epoch))}${pair("暂停开始", epoch(state.pause_started_epoch))}</dl></article>`;

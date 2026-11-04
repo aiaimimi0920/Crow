@@ -180,7 +180,9 @@ def test_confirmed_or_legacy_failure_retains_rotation(monkeypatch, reason):
         )
         is PROBE
     )
-    rotate.assert_called_once_with("offline", "target", probe_target=PROBE)
+    rotate.assert_called_once_with(
+        "offline", "target", probe_target=PROBE, open_replacement=True
+    )
     browse.assert_called_once_with("offline", "offline", PROBE)
 
 

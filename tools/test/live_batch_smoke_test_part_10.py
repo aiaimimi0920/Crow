@@ -264,49 +264,15 @@ def test_list_challenge_url_detection_ignores_unrelated_query_value() -> None:
 
 
 def test_list_navigation_reuses_challenge_with_reordered_same_job_query(monkeypatch) -> None:
-    from tools import taobao_login_health
+    from tools.test.test_browser_target_capture import capture_fixture, TARGETS, CHALLENGE
 
-    challenge_target = {
-        "id": "existing-challenge",
-        "type": "page",
-        "url": (
-            "https://sf.taobao.com/list/50025969__2.htm?location_code=310101"
-            "&st_param=1&page=4"
-        ),
-    }
-    challenge_page = (
-        "<html>_____tmd_____/punish challenge</html>",
-        str(challenge_target["url"]),
+    old_url = "https://sf.taobao.com/list/50025969__2.htm?page=1&location_code=371602"
+    capture, events, _ = capture_fixture(
+        monkeypatch, live_batch_smoke, "seed", old_url=old_url, fresh_html=CHALLENGE
     )
-
-    monkeypatch.setattr(live_batch_smoke, "_reuse_existing_taobao_login_page", lambda _endpoint: None)
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _endpoint: [challenge_target])
-    monkeypatch.setattr(
-        live_batch_smoke,
-        "_read_cdp_list_target_html",
-        lambda _endpoint, target: challenge_page if target is challenge_target else None,
-    )
-    monkeypatch.setattr(
-        taobao_login_health,
-        "compact_cdp_pages_if_needed",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("an existing challenge must prevent opening another list target")
-        ),
-    )
-    monkeypatch.setattr(
-        taobao_login_health,
-        "read_cdp_json",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("an existing challenge must prevent /json/new")
-        ),
-    )
-
-    result = live_batch_smoke.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/50025969__2.htm?page=4&st_param=1&location_code=310101",
-    )
-
-    assert result == challenge_page
+    assert capture() == (CHALLENGE, TARGETS["seed"])
+    assert events.count("old_read") == 2
+    assert events.count("fresh_request") == events.count("close_owned") == 1
 
 
 def test_list_union_applies_jittered_delay_between_sources(monkeypatch) -> None:

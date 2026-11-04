@@ -132,20 +132,9 @@ def detail_browser_poll_interval_ms() -> int:
     )
 
 def _detail_page_has_ready_marker(html: str) -> bool:
-    lowered = str(html or "").lower()
-    return any(
-        marker in lowered
-        for marker in (
-            'id="j_startprice',
-            "id='j_startprice",
-            'id="itemaddress',
-            "id='itemaddress",
-            'id="description-data',
-            "id='description-data",
-            'class="countdown',
-            "class='countdown",
-        )
-    )
+    from src.collection.adapters.taobao_detail_auth import detail_page_has_ready_marker
+
+    return detail_page_has_ready_marker(html)
 
 def _wait_for_detail_ready(
     page: Any,
@@ -153,22 +142,14 @@ def _wait_for_detail_ready(
     timeout_ms: int | None = None,
     poll_interval_ms: int | None = None,
 ) -> str:
-    """Poll detail DOM readiness while preserving immediate challenge detection."""
-    timeout = max(int(timeout_ms or detail_browser_ready_timeout_ms()), 1)
-    poll_interval = max(int(poll_interval_ms or detail_browser_poll_interval_ms()), 1)
-    deadline = time.monotonic() + timeout / 1000.0
-    max_polls = max((timeout + poll_interval - 1) // poll_interval, 1)
-    last_html = ""
-    for poll_index in range(max_polls + 1):
-        last_html = read_page_content_with_retries(page, attempts=1)
-        final_url = str(getattr(page, "url", "") or "")
-        if is_challenge_page(last_html, final_url) or _detail_page_has_ready_marker(last_html):
-            return last_html
-        remaining_ms = int((deadline - time.monotonic()) * 1000)
-        if poll_index >= max_polls or remaining_ms <= 0:
-            break
-        page.wait_for_timeout(min(poll_interval, max(1, remaining_ms)))
-    return last_html
+    from tools.browser_target_ready import wait_for_target_ready
+
+    return wait_for_target_ready(
+        page, is_challenge=is_challenge_page,
+        is_ready=lambda html, _url: _detail_page_has_ready_marker(html),
+        timeout_ms=timeout_ms or detail_browser_ready_timeout_ms(),
+        poll_interval_ms=poll_interval_ms or detail_browser_poll_interval_ms(),
+    )
 
 def list_browser_recovery_max_attempts() -> int:
     return _positive_int_env(

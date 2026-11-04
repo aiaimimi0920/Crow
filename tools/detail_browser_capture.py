@@ -120,6 +120,10 @@ def decode_capture_reply(output, *, cdp_endpoint):
         return tuple(result)
     if kind == "challenge":
         raise DetailChallengeError(value["operation"], value["challenge_url"])
+    if kind == "capacity":
+        from tools.cdp_background_page import BackgroundPageCapacityError
+
+        raise BackgroundPageCapacityError("Background collector page capacity reached")
     if kind == "cdp":
         raise CdpEndpointUnavailableError(
             cdp_endpoint,

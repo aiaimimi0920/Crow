@@ -151,19 +151,8 @@ def connect_browser_over_cdp(
         _raise_cdp_endpoint_unavailable(
             cdp_endpoint, "connect_over_cdp_capture_budget", error
         )
-    try:
-        compaction = compact_cdp_page_targets_if_needed(cdp_endpoint)
-    except EnvironmentAliasConflict:
-        raise
-    except Exception as error:
-        _raise_cdp_endpoint_unavailable(cdp_endpoint, "compact_cdp_page_targets", error)
-    if compaction.get("triggered"):
-        print(
-            json.dumps(
-                {"event": "cdp_page_target_compaction", **compaction},
-                ensure_ascii=False,
-            )
-        )
+    # Connecting is read-only. Page admission/cleanup belongs to the exact-ID
+    # owner; global compaction could destroy another task's live challenge.
     last_error: BaseException | None = None
     for attempt in range(1, attempts + 1):
         try:

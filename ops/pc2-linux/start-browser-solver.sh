@@ -257,6 +257,25 @@ echo "Browser graphics backend: $graphics_backend"
 
 browser_proxy_args=()
 if [[ -n "$browser_proxy" ]]; then
+  if [[ "$browser_proxy" == *"@"* ]]; then
+    browser_proxy_bridge_port="$(crow_env CROW_BROWSER_PROXY_BRIDGE_PORT "3128")"
+    python -m tools.browser_proxy_bridge "$browser_proxy" "$browser_proxy_bridge_port" &
+    pids+=("$!")
+    python - "$browser_proxy_bridge_port" <<'PROXY_BRIDGE_READY'
+import socket
+import sys
+import time
+
+for _ in range(50):
+    try:
+        with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1):
+            raise SystemExit(0)
+    except OSError:
+        time.sleep(0.2)
+raise SystemExit("Browser proxy bridge did not become ready")
+PROXY_BRIDGE_READY
+    browser_proxy="http://127.0.0.1:${browser_proxy_bridge_port}"
+  fi
   browser_proxy_args+=(--proxy-server="$browser_proxy")
   browser_proxy_args+=(--proxy-bypass-list="$browser_proxy_bypass")
   echo "Browser egress proxy: $browser_proxy (bypass: $browser_proxy_bypass)"

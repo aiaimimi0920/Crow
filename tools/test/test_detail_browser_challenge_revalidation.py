@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from tools import live_batch_smoke as smoke
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 URL = "https://sf-item.taobao.com/sf_item/610925725633.htm"
 
@@ -22,6 +23,8 @@ def test_old_challenge_is_revalidated_without_touching_operator_page(
     monkeypatch, old_url, fresh_challenge
 ):
     import playwright.sync_api
+
+    install_owned_page_fixture(monkeypatch)
 
     events = []
 

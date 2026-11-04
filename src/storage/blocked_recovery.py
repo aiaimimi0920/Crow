@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Iterable
 
 from sqlalchemy import select
 
-from .models import CollectionSeedItem, PropertyAudit, PropertyListing
+from .blocked_completion import existing_collection_completion
+from .models import CollectionSeedItem, PropertyAudit
 from .repository_context import _coerce_naive_utc, _resolve_collection_artifact_path, _utc_now
 
 if TYPE_CHECKING:
@@ -67,14 +68,7 @@ def requeue_blocked_items(
                 continue
             audit = session.get(PropertyAudit, item_id)
             processed = audit is not None and audit.is_processed is True
-            completed = processed and session.scalar(
-                select(PropertyListing.item_id)
-                .join(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
-                .where(PropertyListing.item_id == item_id,
-                       PropertyListing.is_deleted.is_(False),
-                       PropertyAudit.detail_captured.is_(True),
-                       repository._analysis_ready_filter())
-            ) is not None
+            completed = processed and existing_collection_completion(session, repository, row, audit)
             if processed and not completed:
                 result["skip"] = "processed_requires_review"
                 continue

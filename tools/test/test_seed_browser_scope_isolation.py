@@ -18,48 +18,12 @@ from tools import (
         "https://susong-item.taobao.com/auction/123.htm/_____tmd_____/punish?x5step=1",
     ],
 )
-def test_seed_navigation_ignores_detail_challenge_without_reading_or_closing_it(
-    monkeypatch, module, detail_url
-):
-    detail = {"id": "detail-challenge", "type": "page", "url": detail_url}
-    list_url = "https://sf.taobao.com/list/50025969__2.htm?page=1"
-    seed = {
-        "id": "seed-page",
-        "type": "page",
-        "url": list_url,
-        "webSocketDebuggerUrl": "ws://127.0.0.1/devtools/page/seed-page",
-    }
-    actions = []
-    monkeypatch.setattr(module, "_reuse_existing_taobao_login_page", lambda _: None)
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [detail])
-    monkeypatch.setattr(
-        taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
-    )
-
-    def open_seed(_endpoint, url):
-        assert url == list_url
-        actions.append("open-seed")
-        return seed
-
-    def read_seed(_endpoint, target):
-        assert target["id"] == "seed-page", "seed must not read another stage's target"
-        return '<script id="sf-item-list-data">{"data":[]}</script>', list_url
-
-    monkeypatch.setattr(cdp_background_page, "open_background_page", open_seed)
-    monkeypatch.setattr(module, "_read_cdp_list_target_html", read_seed)
-    monkeypatch.setattr(
-        taobao_login_health,
-        "close_cdp_target",
-        lambda _endpoint, target_id: actions.append("close:" + target_id),
-    )
-
-    html, final_url = module.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9224", list_url
-    )
-
-    assert "sf-item-list-data" in html
-    assert final_url == list_url
-    assert actions == ["open-seed", "close:seed-page"]
+def test_seed_navigation_ignores_detail_challenge_without_reading_or_closing_it(monkeypatch, module, detail_url):
+    from tools.test.test_browser_target_capture import capture_fixture, PAYLOADS
+    capture, actions, _ = capture_fixture(monkeypatch, module, 'seed', old_url=detail_url)
+    assert capture()[0] == PAYLOADS['seed']
+    assert 'old_read' not in actions
+    assert actions.count('fresh_request') == actions.count('close_owned') == 1
 
 
 @pytest.mark.parametrize("module", [live_batch_smoke, live_smoke_browser])
@@ -85,63 +49,23 @@ def test_seed_and_unattributed_challenges_still_preserve_authentication(
 @pytest.mark.parametrize(
     "other_url",
     [
-        "https://sf.taobao.com/list/50025969__2.htm?location_code=371602&page=1",
+        "https://sf.taobao.com/list/50025969__2.htm?location_code=371603&page=1",
         "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=15",
         "https://sf.taobao.com/list/200782003__2.htm?location_code=445302&page=1",
     ],
 )
-def test_seed_navigation_does_not_recycle_another_jobs_challenge(
-    monkeypatch, module, other_url
-):
-    requested = "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=1"
-    foreign = {"id": "old-challenge", "type": "page", "url": other_url}
-    fresh = {
-        "id": "fresh-job",
-        "type": "page",
-        "url": requested,
-        "webSocketDebuggerUrl": "ws://127.0.0.1/devtools/page/fresh-job",
-    }
-    actions = []
-    monkeypatch.setattr(module, "_reuse_existing_taobao_login_page", lambda _: None)
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [foreign])
-    monkeypatch.setattr(
-        taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
-    )
-    monkeypatch.setattr(cdp_background_page, "open_background_page", lambda *a, **k: fresh)
-
-    def read(_endpoint, target):
-        assert target["id"] == "fresh-job", "an unrelated challenge must not be read"
-        return '<script id="sf-item-list-data">{"data":[]}</script>', requested
-
-    monkeypatch.setattr(module, "_read_cdp_list_target_html", read)
-    monkeypatch.setattr(
-        taobao_login_health,
-        "close_cdp_target",
-        lambda _endpoint, target_id: actions.append(target_id),
-    )
-    html, final_url = module.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9224", requested
-    )
-    assert "sf-item-list-data" in html
-    assert final_url == requested
-    assert actions == ["fresh-job"]
+def test_seed_navigation_does_not_recycle_another_jobs_challenge(monkeypatch, module, other_url):
+    from tools.test.test_browser_target_capture import capture_fixture, PAYLOADS
+    capture, actions, _ = capture_fixture(monkeypatch, module, 'seed', old_url=other_url)
+    assert capture()[0] == PAYLOADS['seed']
+    assert 'old_read' not in actions
+    assert actions.count('fresh_request') == 1
 
 
 @pytest.mark.parametrize("module", [live_batch_smoke, live_smoke_browser])
-def test_current_job_challenge_is_still_reused_without_navigation(monkeypatch, module):
-    requested = "https://sf.taobao.com/list/50025969__2.htm?location_code=445302&page=1"
-    redirected = requested.replace(".htm?", ".htm/_____tmd_____/punish?") + "&x5step=1"
-    target = {"id": "current-challenge", "type": "page", "url": redirected}
-    page = ("<html>_____tmd_____/punish challenge</html>", redirected)
-    monkeypatch.setattr(module, "_reuse_existing_taobao_login_page", lambda _: None)
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [target])
-    monkeypatch.setattr(module, "_read_cdp_list_target_html", lambda *a: page)
-    monkeypatch.setattr(
-        taobao_login_health,
-        "read_cdp_json",
-        lambda *a, **k: pytest.fail("do not reopen an active matching challenge"),
-    )
-    assert (
-        module.fetch_browser_navigation_list_page("http://127.0.0.1:9224", requested)
-        == page
-    )
+def test_current_job_challenge_is_revalidated_without_touching_borrowed_page(monkeypatch, module):
+    from tools.test.test_browser_target_capture import capture_fixture, TARGETS, PAYLOADS
+    redirected = TARGETS['seed'].replace('.htm?', '.htm/_____tmd_____/punish?') + '&x5step=1'
+    capture, actions, _ = capture_fixture(monkeypatch, module, 'seed', old_url=redirected)
+    assert capture()[0] == PAYLOADS['seed']
+    assert actions.count('old_read') == actions.count('fresh_request') == 1

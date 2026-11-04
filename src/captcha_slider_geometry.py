@@ -120,6 +120,8 @@ def geometry_expression(slider_selectors, track_selectors, *, binding_key=None):
         var track = sliderTrack(doc, handle, tracks, sliders), r = handle.getBoundingClientRect();
         var result = {found:true, x:r.left+x, y:r.top+y, width:r.width, height:r.height,
             selector:selected.selector, context:context,
+            href:document.location ? String(document.location.href) : '',
+            readyState:document.readyState, hasSlider:true,
             track_rect:sliderTrackRect(track, handle, x, y)};
         if (key) {
             var anchor = {node:handle, doc:doc, frame:frame || null, track:track,

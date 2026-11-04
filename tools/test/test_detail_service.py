@@ -73,7 +73,7 @@ def _submit_detail_html(tmp_path: Path, *, status: str):
 def test_failed_timeout_detail_html_persists_status_without_ai_queue(tmp_path: Path):
     result, state, html_path = _submit_detail_html(tmp_path, status="failed_timeout")
 
-    assert result == {"status": "queued"}
+    assert result == {"status": "queued", "retry_after": 30}
     assert html_path.exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_timeout"
@@ -85,7 +85,7 @@ def test_failed_timeout_detail_html_persists_status_without_ai_queue(tmp_path: P
 def test_failed_captcha_detail_html_persists_status_without_ai_queue(tmp_path: Path):
     result, state, html_path = _submit_detail_html(tmp_path, status="failed_captcha")
 
-    assert result == {"status": "queued"}
+    assert result == {"status": "queued", "retry_after": 30}
     assert html_path.exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_captcha"

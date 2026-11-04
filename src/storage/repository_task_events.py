@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, Dict, Sequence
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from .models import (
     PropertyAudit,
@@ -22,11 +22,23 @@ class RepositoryTaskEventsMixin:
         self.initialize()
         with self.session_factory() as session:
             stmt = (
-                select(PropertyListing.item_id, PropertyListing.source_url, PropertyListing.status)
+                select(
+                    PropertyListing.item_id,
+                    PropertyListing.source_url,
+                    PropertyListing.status,
+                )
                 .select_from(PropertyListing)
-                .outerjoin(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
+                .outerjoin(
+                    PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id
+                )
                 .where(self._detail_pending_filter())
-                .order_by(PropertyListing.auction_date.asc().nulls_last(), PropertyListing.item_id.asc())
+                .order_by(
+                    case((PropertyAudit.detail_status == "failed", 1), else_=0).asc()
+                )
+                .order_by(
+                    PropertyListing.auction_date.asc().nulls_last(),
+                    PropertyListing.item_id.asc(),
+                )
                 .limit(limit)
             )
             rows = session.execute(stmt).all()
@@ -47,7 +59,9 @@ class RepositoryTaskEventsMixin:
             stmt = (
                 select(func.count())
                 .select_from(PropertyListing)
-                .outerjoin(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
+                .outerjoin(
+                    PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id
+                )
                 .where(self._detail_pending_filter())
             )
             return session.scalar(stmt) or 0
@@ -57,18 +71,31 @@ class RepositoryTaskEventsMixin:
             return []
         self.initialize()
         with self.session_factory() as session:
-            rows = (
-                session.execute(
-                    select(PropertyListing, PropertyRiskFlags, PropertyLegalContext, PropertyAudit)
-                    .outerjoin(PropertyRiskFlags, PropertyRiskFlags.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyLegalContext, PropertyLegalContext.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
-                    .where(self._detail_pending_filter())
-                    .order_by(PropertyListing.auction_date.asc().nulls_last(), PropertyListing.item_id.asc())
-                    .limit(limit)
+            rows = session.execute(
+                select(
+                    PropertyListing,
+                    PropertyRiskFlags,
+                    PropertyLegalContext,
+                    PropertyAudit,
                 )
-                .all()
-            )
+                .outerjoin(
+                    PropertyRiskFlags,
+                    PropertyRiskFlags.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyLegalContext,
+                    PropertyLegalContext.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id
+                )
+                .where(self._detail_pending_filter())
+                .order_by(
+                    PropertyListing.auction_date.asc().nulls_last(),
+                    PropertyListing.item_id.asc(),
+                )
+                .limit(limit)
+            ).all()
             return [
                 self._listing_payload_from_rows(listing, risk, legal, audit)
                 for listing, risk, legal, audit in rows
@@ -131,18 +158,31 @@ class RepositoryTaskEventsMixin:
             if missing_filters:
                 conditions.append(or_(*missing_filters))
 
-            rows = (
-                session.execute(
-                    select(PropertyListing, PropertyRiskFlags, PropertyLegalContext, PropertyAudit)
-                    .outerjoin(PropertyRiskFlags, PropertyRiskFlags.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyLegalContext, PropertyLegalContext.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
-                    .where(*conditions)
-                    .order_by(PropertyListing.auction_date.asc().nulls_last(), PropertyListing.item_id.asc())
-                    .limit(limit)
+            rows = session.execute(
+                select(
+                    PropertyListing,
+                    PropertyRiskFlags,
+                    PropertyLegalContext,
+                    PropertyAudit,
                 )
-                .all()
-            )
+                .outerjoin(
+                    PropertyRiskFlags,
+                    PropertyRiskFlags.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyLegalContext,
+                    PropertyLegalContext.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id
+                )
+                .where(*conditions)
+                .order_by(
+                    PropertyListing.auction_date.asc().nulls_last(),
+                    PropertyListing.item_id.asc(),
+                )
+                .limit(limit)
+            ).all()
             return [
                 self._listing_payload_from_rows(listing, risk, legal, audit)
                 for listing, risk, legal, audit in rows
@@ -158,26 +198,43 @@ class RepositoryTaskEventsMixin:
             hours=24,
         )
         with self.session_factory() as session:
-            rows = (
-                session.execute(
-                    select(PropertyListing, PropertyRiskFlags, PropertyLegalContext, PropertyAudit)
-                    .outerjoin(PropertyRiskFlags, PropertyRiskFlags.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyLegalContext, PropertyLegalContext.item_id == PropertyListing.item_id)
-                    .outerjoin(PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id)
-                    .where(
-                        PropertyListing.is_deleted.is_(False),
-                        PropertyListing.source_url.is_not(None),
-                        PropertyListing.source_url != "",
-                        PropertyListing.status.in_(done_like_statuses),
-                        PropertyAudit.source_json_path.is_not(None),
-                        PropertyAudit.source_json_path != "",
-                        or_(PropertyAudit.detail_archive_path.is_(None), PropertyAudit.detail_archive_path == ""),
-                    )
-                    .order_by(PropertyListing.auction_date.asc().nulls_last(), PropertyListing.item_id.asc())
-                    .limit(limit * 20)
+            rows = session.execute(
+                select(
+                    PropertyListing,
+                    PropertyRiskFlags,
+                    PropertyLegalContext,
+                    PropertyAudit,
                 )
-                .all()
-            )
+                .outerjoin(
+                    PropertyRiskFlags,
+                    PropertyRiskFlags.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyLegalContext,
+                    PropertyLegalContext.item_id == PropertyListing.item_id,
+                )
+                .outerjoin(
+                    PropertyAudit, PropertyAudit.item_id == PropertyListing.item_id
+                )
+                .where(
+                    PropertyListing.is_deleted.is_(False),
+                    PropertyListing.source_url.is_not(None),
+                    PropertyListing.source_url != "",
+                    PropertyListing.status.in_(done_like_statuses),
+                    PropertyAudit.source_json_path.is_not(None),
+                    PropertyAudit.source_json_path != "",
+                    or_(
+                        PropertyAudit.detail_archive_path.is_(None),
+                        PropertyAudit.detail_archive_path == "",
+                    ),
+                )
+                .order_by(
+                    PropertyListing.auction_date.asc().nulls_last(),
+                    PropertyListing.item_id.asc(),
+                )
+                .where(PropertyListing.item_id.notin_(blocked_ids))
+                .limit(limit)
+            ).all()
             return [
                 self._listing_payload_from_rows(listing, risk, legal, audit)
                 for listing, risk, legal, audit in rows
@@ -201,14 +258,18 @@ class RepositoryTaskEventsMixin:
             )
             return {str(item_id) for item_id in session.scalars(stmt).all() if item_id}
 
-    def event_type_counts(self, event_types: Sequence[str], hours: int | None = None) -> Dict[str, int]:
+    def event_type_counts(
+        self, event_types: Sequence[str], hours: int | None = None
+    ) -> Dict[str, int]:
         counts = {event_type: 0 for event_type in event_types}
         if not self.enabled or not event_types:
             return counts
         self.initialize()
         with self.session_factory() as session:
             stmt = (
-                select(PropertyIngestEvent.event_type, func.count(PropertyIngestEvent.id))
+                select(
+                    PropertyIngestEvent.event_type, func.count(PropertyIngestEvent.id)
+                )
                 .where(PropertyIngestEvent.event_type.in_(tuple(event_types)))
                 .group_by(PropertyIngestEvent.event_type)
             )

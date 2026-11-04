@@ -11,6 +11,7 @@ def capture_reply(capture, request):
     from src.project_environment import EnvironmentAliasConflict
     from tools.capture_budget import capture_budget
     from tools.capture_failure_diagnostics import capture_error_diagnostic
+    from tools.cdp_background_page import BackgroundPageCapacityError
     from tools.live_smoke_context import (
         CdpEndpointUnavailableError,
         DetailChallengeError,
@@ -23,6 +24,8 @@ def capture_reply(capture, request):
         ):
             result = capture(request["seed"], cdp_endpoint=request["cdp_endpoint"])
         return {"kind": "ok", "result": result}
+    except BackgroundPageCapacityError:
+        return {"kind": "capacity"}
     except DetailChallengeError as error:
         return {
             "kind": "challenge",

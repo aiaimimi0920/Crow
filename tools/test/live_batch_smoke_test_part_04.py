@@ -107,20 +107,16 @@ def test_fetch_list_page_falls_back_to_open_browser_page(monkeypatch) -> None:
     assert status is None
     assert method == "browser_page"
 
-def test_fetch_browser_navigation_list_page_wraps_cdp_target_open_timeout(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "tools.cdp_background_page.open_background_page",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("timed out")),
-    )
-
-    with pytest.raises(live_batch_smoke.CdpEndpointUnavailableError) as excinfo:
-        live_batch_smoke.fetch_browser_navigation_list_page(
-            "http://127.0.0.1:9223",
-            "https://sf.taobao.com/list/page",
-        )
-
-    assert excinfo.value.cdp_endpoint == "http://127.0.0.1:9223"
-    assert excinfo.value.operation == "open_list_page_target"
+def test_fetch_browser_navigation_list_page_preserves_shared_connection_failure(monkeypatch):
+    from tools.test.test_browser_target_capture import capture_fixture
+    capture, _, _ = capture_fixture(monkeypatch, live_batch_smoke, 'seed')
+    error = live_batch_smoke.CdpEndpointUnavailableError('http://fixture', 'connect_over_cdp_bounded_reconnect', TimeoutError())
+    def fail(*args):
+        raise error
+    monkeypatch.setattr(live_batch_smoke, 'connect_browser_over_cdp', fail)
+    with pytest.raises(live_batch_smoke.CdpEndpointUnavailableError) as raised:
+        capture()
+    assert raised.value is error
 
 def test_fetch_list_page_falls_back_to_browser_when_http_returns_punish(monkeypatch) -> None:
     class _ChallengeResponse:

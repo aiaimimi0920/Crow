@@ -219,7 +219,7 @@ def test_collection_observer_can_requeue_completed_item_for_ai_reanalysis(tmp_pa
     assert result["ok"] is True
     assert result["item_id"] == "1001"
     assert result["status"] == "raw_detail_captured"
-    assert result["analysis_attempt_count"] == 1
+    assert result["analysis_attempt_count"] == 0
     next_claim = repo.claim_seed_raw_detail_item("analysis-worker-2", lease_seconds=30)
     assert next_claim is not None
     assert next_claim["item_id"] == "1001"

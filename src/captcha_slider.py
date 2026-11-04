@@ -5,6 +5,7 @@ import random
 import uuid
 
 from .captcha_cdp_command import cdp_connection_is_closed
+from .captcha_challenge_binding import challenge_input_binding, input_target_matches, root_frame
 from .captcha_dom import eval_in_all_frames
 from .captcha_slider_geometry import geometry_expression
 from .captcha_verification import ready_target_matches, retry_failure_is_terminal
@@ -65,6 +66,7 @@ class CaptchaSliderMixin:
         return None
 
     def _read_slider_geometry(self, *, binding_key=None):
+        before = root_frame(self) if getattr(self, "_navigation_trace", None) else None
         expression = geometry_expression(
             self.SLIDER_SELECTORS, self.TRACK_SELECTORS, binding_key=binding_key
         )
@@ -72,7 +74,25 @@ class CaptchaSliderMixin:
             "Runtime.evaluate",
             {"expression": eval_in_all_frames(expression), "returnByValue": True},
         )
-        return (ret or {}).get("result", {}).get("value")
+        value = (ret or {}).get("result", {}).get("value")
+        if (
+            binding_key and isinstance(value, dict) and value.get("found") and value.get("href")
+            and getattr(self, "target_url", None)
+            and self._solver_target_scope(self.target_url) in {"seed", "detail"}
+            and not ready_target_matches(value, self.target_url)
+        ):
+            if before is None:
+                logger.info("[SOLVER] Slider input binding: result=frame_unavailable")
+                return None
+            binding = challenge_input_binding(self, value, before=before)
+            if binding is None:
+                logger.info("[SOLVER] Slider input binding: result=%s", self._last_challenge_binding_result)
+                return None
+            value["_challenge_binding"] = binding
+            logger.info("[SOLVER] Slider input binding: result=accepted")
+        elif binding_key and not (isinstance(value, dict) and value.get("found")):
+            logger.info("[SOLVER] Slider input binding: result=geometry_missing")
+        return value
 
     def _find_slider(self, max_retries=15, retry_delay=1):
         """Find slider element using multiple selectors. Returns slider info dict or None."""
@@ -95,11 +115,19 @@ class CaptchaSliderMixin:
         """Confirm a newly visible, bound slider once, without restarting navigation."""
         if summary.get("readyState") == "loading" and not summary.get("hasSlider"):
             summary = self._wait_for_loading_document(summary)
+        if summary.get("readyState") == "interactive" and not any(
+            summary.get(key)
+            for key in ("probeFailed", "hasSlider", "authenticatedPage", "loginRequired")
+        ):
+            # The challenge can start mounting after preflight. Reuse its
+            # existing bounded wait before treating this document as terminal.
+            self._poll_until_authenticated()
+            summary = self._refresh_challenge_summary(summary)
         slider = None
         if (
             not summary.get("probeFailed")
             and summary.get("hasSlider")
-            and ready_target_matches(summary, self.target_url)
+            and input_target_matches(self, summary)
         ):
             slider = self._find_slider(max_retries=1, retry_delay=0)
         return slider, summary

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from datetime import datetime
+from src.captcha_challenge_binding import INPUT_BINDING_RESULTS
 
 from tools.solver_binding_evidence import binding_evidence as _target_binding_evidence
 from tools.solver_pointer_evidence import (
@@ -25,6 +26,7 @@ KINDS = {
     "solver_cooldown_elapsed",
 }
 PHASES = {
+    "input_binding",
     "target_binding",
     "slider_geometry",
     "drag_distance",
@@ -173,6 +175,9 @@ def project_line(line, container_id):
             out.update(_challenge_failure_evidence(event))
         if event["phase"] == "target_binding":
             out.update(_target_binding_evidence(event))
+        if event["phase"] == "input_binding":
+            value = event.get("binding_result")
+            out["binding_result"] = value if isinstance(value, str) and value in INPUT_BINDING_RESULTS else "unknown"
         if event["phase"] == "slider_missing":
             ready = event.get("ready_state")
             out["ready_state"] = (

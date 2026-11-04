@@ -5,14 +5,23 @@ from pathlib import Path
 
 import pytest
 
+from src.archive_json_io import read_records
 from src.collection.adapters import TaobaoJudicialAuctionAdapter
 from src.collection.seed_service import SeedCollectionService
+from src.collection_archive_records import CollectionArchiveRecords
+from src.runtime_state import RuntimeState
 
 
 def test_submit_batch_writes_new_seed_file_for_new_items(tmp_path: Path):
     data_root = tmp_path / "datas"
     data_root.mkdir()
     target_file = data_root / "2026-05-18.json"
+    runtime = RuntimeState()
+    archives = CollectionArchiveRecords(
+        runtime=lambda: runtime,
+        exists=lambda path: Path(path).exists(),
+        load=read_records,
+    )
 
     seen_ids: dict[str, dict[str, object]] = {}
     pending_tasks: list[str] = []
@@ -64,8 +73,10 @@ def test_submit_batch_writes_new_seed_file_for_new_items(tmp_path: Path):
         get_seen_entry=lambda item_id: seen_ids.get(item_id),
         get_flat_item=lambda item_id: None,
         get_data_path=lambda date_str: str(target_file),
-        update_file_global=lambda *_args, **_kwargs: None,
-        persist_item_to_db=lambda item, event_type, event_payload=None: persisted.append((item, event_type, event_payload)),
+        update_file_global=archives.update_file_global,
+        persist_item_to_db=lambda item, event_type, event_payload=None: (
+            persisted.append((item, event_type, event_payload))
+        ),
         evict_runtime_item=lambda item_id: None,
         archive_list_payload=lambda *_args, **_kwargs: None,
         set_seen=lambda item_id, entry: seen_ids.__setitem__(item_id, entry),
@@ -79,7 +90,9 @@ def test_submit_batch_writes_new_seed_file_for_new_items(tmp_path: Path):
     assert payload[0]["id"] == "123456"
 
 
-def test_next_task_propagates_database_failures_instead_of_reporting_completion() -> None:
+def test_next_task_propagates_database_failures_instead_of_reporting_completion() -> (
+    None
+):
     class FailingRepository:
         enabled = True
 
@@ -89,7 +102,9 @@ def test_next_task_propagates_database_failures_instead_of_reporting_completion(
         def claim_search_task(self, *args, **kwargs):
             raise RuntimeError("database unavailable")
 
-    service = SeedCollectionService(repository=FailingRepository(), adapter=TaobaoJudicialAuctionAdapter())
+    service = SeedCollectionService(
+        repository=FailingRepository(), adapter=TaobaoJudicialAuctionAdapter()
+    )
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         service.next_task("worker-1")
@@ -124,7 +139,9 @@ def test_submit_batch_propagates_existing_item_lookup_failures(tmp_path: Path) -
             safe_int=lambda value: value,
             prefer_db_task_reads=lambda: True,
             get_seen_entry=lambda item_id: None,
-            get_flat_item=lambda item_id: (_ for _ in ()).throw(OSError("database unavailable")),
+            get_flat_item=lambda item_id: (_ for _ in ()).throw(
+                OSError("database unavailable")
+            ),
             get_data_path=lambda date_str: str(tmp_path / "items.json"),
             update_file_global=lambda *args, **kwargs: None,
             persist_item_to_db=lambda *args, **kwargs: persisted.append(args),

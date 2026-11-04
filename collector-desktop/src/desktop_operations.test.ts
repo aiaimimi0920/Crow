@@ -71,3 +71,13 @@ test("unknown restart receipts lock both overview and operations source control"
   const html = renderOverview({ engine_restart: { available: true, request: { status: "unknown" } } }, "运行中");
   assert.match(html, /id="engineRestartButton"[^>]+data-available="false"/);
 });
+
+test("node retry blockage is distinct from terminal manual authentication", () => {
+  const data = fixture();
+  Object.assign(data.status.collection_scopes.detail, { node_solver_blocked: true, node_solver_blocked_reason: "repeated_solver_failures" });
+  const html = renderOperations(data, 1000, false, 2000);
+  assert.match(html, /求解连续失败/);
+  assert.match(html, /等待节点退避或认证介入/);
+  assert.match(html, /PC2 下次尝试时间尚未上报，不代表正在求解/);
+  assert.doesNotMatch(html, /需要认证 \/ 介入/);
+});

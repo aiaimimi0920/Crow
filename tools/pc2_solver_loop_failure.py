@@ -110,7 +110,10 @@ def record_failed_attempt(
         }
         if preserve_target or mutation_block_reason
         else rotate_failed_challenge_target(
-            cdp_endpoint, target_url, probe_target=probe_target
+            cdp_endpoint,
+            target_url,
+            probe_target=probe_target,
+            open_replacement=not cooldown_started,
         )
     )
     rotated_probe = rotation.get("probe_target")

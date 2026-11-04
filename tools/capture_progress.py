@@ -21,6 +21,7 @@ _STAGES = frozenset(
         "page_configure",
         "page_navigate",
         "detail_ready",
+        "list_ready",
         "page_session_detach",
         "page_close",
         "browser_detach",

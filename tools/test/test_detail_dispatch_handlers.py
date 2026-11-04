@@ -59,7 +59,9 @@ def test_paused_batch_uses_empty_response_before_database_access(host, monkeypat
     )
     handler = SimpleNamespace(send_json=Mock())
     host._post_detail_tasks(handler)
-    handler.send_json.assert_called_once_with({"tasks": []})
+    handler.send_json.assert_called_once_with(
+        {"tasks": [], "state": "paused", "retry_after": 60}
+    )
     service.assert_not_called()
 
 

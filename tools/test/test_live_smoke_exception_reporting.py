@@ -207,5 +207,5 @@ def test_browser_probe_failure_logs_safe_error_and_still_falls_back(
         ENDPOINT, "https://auction.example.invalid/list"
     ) == ("fallback", "https://auction.example.invalid/list")
     output = capsys.readouterr().out
-    assert "RuntimeError: runtime_error" in output
+    assert output == "", "the obsolete cached-page probe must not run"
     assert PRIVATE not in output

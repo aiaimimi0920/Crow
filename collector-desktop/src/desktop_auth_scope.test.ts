@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { authScopeChallenge, authScopeState, authScopeTarget } from "./desktop_auth_scope.ts";
+import { authScopeChallenge, authScopeRetryBlocked, authScopeState, authScopeTarget } from "./desktop_auth_scope.ts";
 
 test("stage statuses do not inherit the other stage or aggregate challenge", () => {
   const value = { status: { captcha_solver: { manual_required: true }, collection_scopes: {
@@ -10,6 +10,16 @@ test("stage statuses do not inherit the other stage or aggregate challenge", () 
   assert.equal(authScopeChallenge(value, "detail"), false);
   assert.equal(authScopeState(value, "detail")?.challenge_id, "detail");
   assert.equal(authScopeChallenge({}, "detail"), null);
+});
+
+test("retry blockage requires the same scope's explicit node failure report", () => {
+  const value = { status: { collection_scopes: {
+    seed: { paused: false }, detail: { node_solver_blocked: true, node_solver_blocked_reason: "repeated_solver_failures" },
+  } } };
+  assert.equal(authScopeRetryBlocked(value, "detail"), true);
+  assert.equal(authScopeRetryBlocked(value, "seed"), false);
+  assert.equal(authScopeRetryBlocked({}, "detail"), false);
+  assert.equal(authScopeRetryBlocked({ status: { collection_scopes: { detail: { manual_required: true } } } }, "detail"), false);
 });
 
 test("detail authentication never silently falls back to a list page", () => {

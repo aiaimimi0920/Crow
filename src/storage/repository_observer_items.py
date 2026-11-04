@@ -12,7 +12,7 @@ from .models import (
     CollectionSeedScanJob,
     CollectionSeedScanProgress,
 )
-from .repository_context import _resolve_collection_artifact_path, _utc_now
+from .repository_context import _coerce_naive_utc, _resolve_collection_artifact_path, _utc_now
 
 
 class RepositoryObserverItemsMixin:
@@ -174,11 +174,20 @@ class RepositoryObserverItemsMixin:
         self.initialize()
         now = _utc_now()
         with self.session_factory.begin() as session:
-            row = session.get(CollectionSeedItem, safe_item_id)
+            row = session.scalars(
+                select(CollectionSeedItem)
+                .where(CollectionSeedItem.item_id == safe_item_id)
+                .with_for_update()
+            ).first()
             if row is None:
                 return {"ok": False, "item_id": safe_item_id, "error": "item not found"}
+            lease_until = _coerce_naive_utc(row.detail_lease_until)
+            if (lease_until and lease_until > now) or (row.detail_leased_by and not lease_until):
+                return {"ok": False, "item_id": safe_item_id, "error": "item has an active or unknown lease"}
             artifacts = self._seed_artifacts_from_row(row)
-            if not artifacts.get("detail_html_path") and not artifacts.get("selected_json_path"):
+            # Artifact existence is checked on the consuming node: API and worker
+            # mounts need not be identical. selected.json alone is not AI input.
+            if not artifacts.get("detail_html_path"):
                 return {
                     "ok": False,
                     "item_id": safe_item_id,
@@ -186,20 +195,36 @@ class RepositoryObserverItemsMixin:
                 }
             payload = dict(row.source_payload or {})
             attempt_count = int(payload.get("_analysis_attempt_count") or 0)
+            history = payload.get("_manual_reanalysis_history") or []
+            if not isinstance(history, list) or any(not isinstance(entry, dict) for entry in history):
+                return {"ok": False, "item_id": safe_item_id, "error": "invalid reanalysis history"}
             payload["_manual_reanalysis_requested_at"] = self._fmt_dt(now)
             payload["_manual_reanalysis_reason"] = str(reason or "operator_requested")
+            payload["_manual_reanalysis_history"] = [*history, {
+                "requested_at": payload["_manual_reanalysis_requested_at"],
+                "reason": payload["_manual_reanalysis_reason"],
+                "previous_status": row.status,
+                "previous_error": row.detail_last_error,
+                "analysis_attempts": attempt_count,
+            }]
+            payload["_analysis_attempt_count"] = 0
+            payload["_raw_detail_artifacts"] = {
+                **(payload.get("_raw_detail_artifacts") or {}),
+                **{key: value for key, value in artifacts.items() if value},
+            }
             row.source_payload = payload
             row.status = "raw_detail_captured"
             row.detail_leased_by = None
             row.detail_lease_until = None
             row.detail_last_error = None
+            row.updated_at = now
             session.add(row)
             return {
                 "ok": True,
                 "item_id": safe_item_id,
                 "status": row.status,
                 "reason": payload["_manual_reanalysis_reason"],
-                "analysis_attempt_count": attempt_count,
+                "analysis_attempt_count": 0,
                 "artifacts": artifacts,
             }
 

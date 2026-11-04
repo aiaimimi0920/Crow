@@ -14,7 +14,7 @@ def challenge(url):
     return path + "/_____tmd_____/punish?" + query + "&x5secdata=private"
 
 
-def rotate(monkeypatch, target, tabs):
+def rotate(monkeypatch, target, tabs, **kwargs):
     closed = []
     opened = []
     monkeypatch.setattr(execution, "fetch_json", lambda *_a, **_k: tabs)
@@ -29,7 +29,9 @@ def rotate(monkeypatch, target, tabs):
         return {"id": "fresh", "url": solver.target_url}
 
     monkeypatch.setattr(CaptchaSolver, "_open_target_tab", open_target)
-    result = execution.rotate_failed_challenge_target("http://fixture", target)
+    result = execution.rotate_failed_challenge_target(
+        "http://fixture", target, **kwargs
+    )
     return closed, opened, result
 
 
@@ -124,3 +126,71 @@ def test_unrelated_challenges_are_retained_when_requested_page_is_missing(monkey
     assert len(opened) == 1
     assert result["closed"] == 0
     assert result["opened"] is True
+
+
+@pytest.mark.parametrize("target", [DETAIL, SEED])
+def test_cooldown_closes_only_rejected_request_without_preloading(monkeypatch, target):
+    other = target.replace("101.htm", "102.htm") if target == DETAIL else DETAIL
+    closed, opened, result = rotate(
+        monkeypatch,
+        target,
+        [
+            page("rejected", challenge(target)),
+            page("other", challenge(other)),
+            page("login", "https://login.taobao.com/member/login.jhtml"),
+            page("healthy", target, title="司法拍卖"),
+        ],
+        open_replacement=False,
+    )
+    assert closed == ["rejected"]
+    assert opened == []
+    assert result == {
+        "attempted": True,
+        "opened": False,
+        "closed": 1,
+        "scope": "detail" if target == DETAIL else "seed",
+        "reason": "rejected_challenge_closed_for_cooldown",
+    }
+
+
+@pytest.mark.parametrize("keepalive", ["blank", None])
+def test_cooldown_never_closes_last_page_without_keepalive(monkeypatch, keepalive):
+    from unittest.mock import Mock
+
+    keeper = Mock(return_value=keepalive)
+    monkeypatch.setattr(CaptchaSolver, "_open_keepalive_tab", keeper)
+    closed, opened, result = rotate(
+        monkeypatch,
+        DETAIL,
+        [page("rejected", challenge(DETAIL))],
+        open_replacement=False,
+    )
+    keeper.assert_called_once_with()
+    assert closed == (["rejected"] if keepalive else [])
+    assert opened == []
+    assert result["closed"] == bool(keepalive)
+    assert result["opened"] is False
+
+
+def test_cooldown_missing_request_does_not_create_any_page(monkeypatch):
+    from unittest.mock import Mock
+
+    keeper = Mock()
+    monkeypatch.setattr(CaptchaSolver, "_open_keepalive_tab", keeper)
+    closed, opened, result = rotate(monkeypatch, DETAIL, [], open_replacement=False)
+    assert closed == opened == []
+    assert result["closed"] == 0
+    assert result["opened"] is False
+    keeper.assert_not_called()
+
+
+def test_cooldown_preserves_queryless_seed_challenge_without_identity(monkeypatch):
+    closed, opened, result = rotate(
+        monkeypatch,
+        SEED,
+        [page("unbound", challenge(SEED.split("?")[0]))],
+        open_replacement=False,
+    )
+    assert closed == opened == []
+    assert result["closed"] == 0
+    assert result["opened"] is False

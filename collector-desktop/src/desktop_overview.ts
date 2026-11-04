@@ -1,4 +1,4 @@
-import { authScopeChallenge, scopeLabel, type AuthScope } from "./desktop_auth_scope.ts";
+import { authScopeChallenge, authScopeRetryBlocked, scopeLabel, type AuthScope } from "./desktop_auth_scope.ts";
 import { object } from "./desktop_value.ts";
 import { escapeHtml as escape } from "./desktop_dom.ts";
 
@@ -79,14 +79,20 @@ export function renderOverview(value: unknown, runtimeState: string, now = perfo
     <div id="engineRestartStatus" class="growth-line restart-status" role="status">${escape(restartHint)}</div></div>
     <div class="card challenge-card">${(["seed", "detail"] as AuthScope[]).map((scope) => {
       const challenge = authScopeChallenge(data, scope);
+      const retryBlocked = authScopeRetryBlocked(data, scope);
+      const label = challenge === null ? "状态未知" : retryBlocked ? "求解连续失败" : challenge ? "待认证" : "未报告挑战";
+      const hint = retryBlocked ? "节点连续求解失败，等待退避或认证介入；PC2 下次尝试时间尚未上报。"
+        : challenge === false ? "仅表示 NAS 未报告该阶段挑战，不证明 Worker 正常或持续产出。" : "";
       return `<div class="auth-stage-row"><div class="label">${scopeLabel(scope)}</div>
-        <span class="pill ${challenge === null ? "warn" : challenge ? "bad" : "ok"}">${challenge === null ? "状态未知" : challenge ? "待认证" : "未报告挑战"}</span>
-        <button id="${scope}AuthButton" class="secondary-button" aria-label="${scopeLabel(scope)}认证" title="在 PC1 主动认证${scopeLabel(scope)}，无需等待挑战报告">认证</button></div>`;
+        <span class="pill ${challenge === null ? "warn" : challenge ? "bad" : "ok"}" title="${escape(hint)}">${label}</span>
+        <button id="${scope}AuthButton" class="secondary-button" aria-label="${scopeLabel(scope)}认证" title="在 PC1 主动认证${scopeLabel(scope)}，无需等待挑战报告">认证</button>
+        ${retryBlocked ? `<div class="label">${escape(hint)}</div>` : ""}</div>`;
     }).join("")}</div>
     ${["商品链接", "商品详情", "商品分析"].map((label, index) => {
       const delta = growth[index];
       const text = statistics.stale === true ? "统计暂未更新" : delta === null ? "—" : delta >= 0 ? `+${delta}` : `${delta}（数量回退）`;
       return `<div class="card metric-card"><div class="label">${label}</div><div class="value">${Number.isFinite(counts[index]) ? counts[index] : "—"}</div>
-      <div class="growth-line ${delta === null ? "pending-growth" : delta < 0 ? "negative-growth" : ""}" title="${escape(growthHint)}：唯一商品数量变化；不把短间隔刷新折算成分钟增量">${text}</div></div>`;
+      <div class="growth-line ${delta === null ? "pending-growth" : delta < 0 ? "negative-growth" : ""}" title="${escape(growthHint)}：唯一商品数量变化；不把短间隔刷新折算成分钟增量">${text}</div>
+      <div class="label">${escape(growthHint)} · 去重净增量${index === 0 ? "；重复扫描不计新增" : ""}</div></div>`;
     }).join("")}`;
 }

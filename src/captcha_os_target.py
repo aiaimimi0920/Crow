@@ -9,6 +9,7 @@ import os
 import uuid
 
 from .captcha_budget import SolveStopped
+from .captcha_challenge_binding import challenge_binding_is_current
 from .captcha_dom import eval_in_all_frames
 from .captcha_slider_geometry import GEOMETRY_HELPERS
 
@@ -149,6 +150,8 @@ class OSPointerTarget:
 
     def run_drag(self, start_x, start_y, distance, slider_info, profile_variant_index):
         """Own the listener lifetime even when native input is interrupted."""
+        if (slider_info or {}).get("_challenge_binding") and not self.enabled:
+            return self._fail("target_unavailable", "navigation_binding")
         try:
             result = self.solver._do_drag_os_target(
                 start_x, start_y, distance, slider_info, profile_variant_index, self
@@ -190,6 +193,8 @@ class OSPointerTarget:
     def open(self):
         if not self.enabled:
             return True
+        if self.info.get("_challenge_binding") and not challenge_binding_is_current(self.solver, self.info["_challenge_binding"]):
+            return self._fail("target_unavailable", "navigation_binding")
         expression = (
             _INSTALL.replace("__KEY__", json.dumps(self.key))
             .replace("__SELECTOR__", json.dumps(self.info["selector"]))
@@ -274,6 +279,8 @@ class OSPointerTarget:
             if math.dist(cursor, (x, y)) > 2.5:
                 return self._fail("pointer_changed")
             if delta <= 2 and event.get("hit") is True:
+                if self.info.get("_challenge_binding") and not challenge_binding_is_current(self.solver, self.info["_challenge_binding"]):
+                    return self._fail("target_unavailable", "navigation_binding")
                 if not self.solver._linux_window_has_focus(
                     self.solver._linux_window_id
                 ):

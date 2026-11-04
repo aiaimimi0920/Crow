@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 from src.project_environment import getenv as project_getenv
 
 from .captcha_budget import SolveStopped
+from .captcha_challenge_binding import challenge_input_binding, root_frame
 from .captcha_dom import eval_in_all_frames
 from .captcha_os_target import OSPointerTarget
 from .captcha_target_diagnostics import log_target_binding
@@ -237,6 +238,9 @@ class CaptchaNCRetryMixin:
         return nc_retry_outcome(self, timeout_seconds, clock=lambda: time.time())
 
     def _click_css_point(self, css_x, css_y, *, slider_info=None):
+        binding = (slider_info or {}).get("_challenge_binding")
+        if binding and (not self._os_mouse_enabled() or os.name == "nt" or not slider_info.get("selector")):
+            raise NCRetryTargetUnconfirmed("slider_not_found")
         if self._os_mouse_enabled():
             try:
                 import pyautogui
@@ -293,6 +297,9 @@ class CaptchaNCRetryMixin:
                     finally:
                         probe.close()
                 logger.info("[SOLVER] OS click mapping unavailable; falling back to CDP click.")
+        if binding:
+            # New queryless authority requires the native pointer/DOM hit path.
+            raise NCRetryTargetUnconfirmed("slider_not_found")
         if not self._dispatch_mouse(
             "mousePressed", css_x, css_y, buttons=1, click_count=1
         ):
@@ -305,6 +312,7 @@ class CaptchaNCRetryMixin:
 
     def _reset_failed_nc_challenge(self):
         """Click '点击框体重试' so NC rebuilds a fresh slider instead of locking collection."""
+        before = root_frame(self) if getattr(self, "_navigation_trace", None) else None
         targets = self._nc_retry_targets()
         widget = targets.get("widget") if isinstance(targets, dict) else None
         if not widget:
@@ -340,13 +348,14 @@ class CaptchaNCRetryMixin:
                     self.target_url,
                     navigation=navigation_binding_fields(self, summary),
                 )
+                binding = None if ready_target_matches(summary, self.target_url) else challenge_input_binding(self, summary, before=before)
                 reason = (
                     "cdp_unavailable"
                     if summary.get("probeFailed")
                     else "challenge_loading"
                     if summary.get("readyState") == "loading"
                     else "slider_not_found"
-                    if not ready_target_matches(summary, self.target_url)
+                    if not ready_target_matches(summary, self.target_url) and binding is None
                     else None
                 )
                 if reason:
@@ -364,6 +373,8 @@ class CaptchaNCRetryMixin:
                         "[SOLVER] NC retry document uncertain; deferring without further clicks."
                     )
                     return False
+                if binding:
+                    candidate = {**candidate, "rect": {**(candidate.get("rect") or widget), "_challenge_binding": binding}}
             click_x = candidate["x"]
             click_y = candidate["y"]
             logger.info(
@@ -488,6 +499,8 @@ class CaptchaNCRetryMixin:
             if self._stop_if_cancelled():
                 return False
             summary = self._page_challenge_summary()
+            if summary.get("probeFailed"):
+                return False
             if summary.get("authenticatedPage"):
                 logger.info("[SOLVER] Page became authenticated while waiting for login.")
                 self.last_failure_reason = None
@@ -497,9 +510,15 @@ class CaptchaNCRetryMixin:
                     "[SOLVER] Slider returned while waiting for login; handing off to drag solver."
                 )
                 return False
-            if not self._looks_like_login_ui(summary):
-                if self._recover_authenticated_list_page():
-                    return True
+            # readyState=complete can precede asynchronous widget mounting.
+            # Never restart an active challenge inside its existing wait budget.
+            if (
+                summary.get("readyState") == "complete"
+                and not summary.get("challengePresent")
+                and not self._looks_like_login_ui(summary)
+                and self._recover_authenticated_list_page()
+            ):
+                return True
             self._wait_interruptibly(5)
         return False
 

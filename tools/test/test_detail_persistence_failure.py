@@ -130,11 +130,13 @@ def test_archive_failure_preserves_detail_input_and_completion_state(
     assert not html.exists()
     assert not marker.exists()
     assert source_archive.read_bytes() == evidence.encode("utf-8")
-    assert len(advanced) == (3 if accepted else 2)
+    assert len(advanced) == 3
     committed = json.loads(archive.read_text(encoding="utf-8"))
     if accepted:
         assert len(committed) == 1
         assert committed[0]["is_processed"] is True
         assert predictions[-1]["success"] is True
     else:
-        assert committed == []
+        assert len(committed) == 1
+        assert committed[0]["detail_fetch_status"] == "detail_rejected"
+        assert committed[0]["title"] == "candidate"

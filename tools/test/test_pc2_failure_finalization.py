@@ -100,3 +100,20 @@ def test_fresh_status_error_cannot_lose_completed_failure(monkeypatch, failed_at
     rotate.assert_not_called()
     failed_attempt.browse.assert_not_called()
     failed_attempt.report.assert_not_called()
+
+
+def test_cooldown_disables_replacement_but_keeps_shared_failure_accounting(
+    monkeypatch, failed_attempt
+):
+    rotate = Mock(return_value={"opened": False, "closed": 1})
+    monkeypatch.setattr(failure, "rotate_failed_challenge_target", rotate)
+    call_failure()
+    assert rotate.call_args.kwargs["open_replacement"] is True
+    call_failure()
+    assert rotate.call_args.kwargs["open_replacement"] is False
+    saved = store._load_fallback_state()
+    assert saved["consecutive_failures"] == 2
+    assert saved["solver_cooldown_until"] == 1180.0
+    assert saved["slider_next_attempt_at"] is None
+    assert failed_attempt.browse.call_count == 1
+    failed_attempt.report.assert_not_called()

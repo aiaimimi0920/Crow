@@ -5,8 +5,6 @@ import logging
 from copy import deepcopy
 from typing import Any, Callable, Dict
 
-from src.archive_json_io import read_records, write_records
-
 from .adapters.generic_product import GenericProductAdapter
 from .contracts import CollectionAdapter
 from .search_bootstrap import (
@@ -71,7 +69,10 @@ class SeedCollectionService:
             return
         if not (self.repository and getattr(self.repository, "enabled", False)):
             return
-        if getattr(self.repository, "count_search_tasks", None) and self.repository.count_search_tasks() > 0:
+        if (
+            getattr(self.repository, "count_search_tasks", None)
+            and self.repository.count_search_tasks() > 0
+        ):
             return
 
         snapshots = iter_job_snapshots(self.jobs_dir) if self.jobs_dir else []
@@ -80,7 +81,9 @@ class SeedCollectionService:
             self.repository.import_search_task_snapshots(snapshots)
 
         if all_codes:
-            self.repository.ensure_seed_search_tasks(all_codes, DEFAULT_CATEGORIES, sort_param="2")
+            self.repository.ensure_seed_search_tasks(
+                all_codes, DEFAULT_CATEGORIES, sort_param="2"
+            )
 
     def next_task(self, session_id: str, *, paused: bool = False) -> Dict[str, Any]:
         if paused:
@@ -105,7 +108,10 @@ class SeedCollectionService:
             task.setdefault("session_id", session_id)
             return {
                 "task": task,
-                "location": {"code": task.get("location_code"), "name": task.get("location_code")},
+                "location": {
+                    "code": task.get("location_code"),
+                    "name": task.get("location_code"),
+                },
                 "is_resume": task.get("is_resume", False),
                 "message": task.get("desc", "Task assigned"),
             }
@@ -128,10 +134,14 @@ class SeedCollectionService:
                 url=url,
                 page_num=int(payload.get("page_num", 1) or 1),
                 has_next=bool(payload.get("has_next", True)),
-                max_page=int(payload.get("total_pages")) if payload.get("total_pages") else None,
+                max_page=int(payload.get("total_pages"))
+                if payload.get("total_pages")
+                else None,
                 zero_bid_detected=bool(payload.get("zero_bid_detected", False)),
                 task_key=str(task_key) if task_key else None,
-                next_url=str(payload.get("next_url")) if payload.get("next_url") else None,
+                next_url=str(payload.get("next_url"))
+                if payload.get("next_url")
+                else None,
                 session_id=str(session_id) if session_id else None,
                 policy=policy,
             )
@@ -163,14 +173,18 @@ class SeedCollectionService:
         get_flat_item: Callable[[str], Dict[str, Any] | None],
         get_data_path: Callable[[Any], str],
         update_file_global: Callable[[str, str, Dict[str, Any]], None],
-        persist_item_to_db: Callable[[Dict[str, Any], str, Dict[str, Any] | None], None],
+        persist_item_to_db: Callable[
+            [Dict[str, Any], str, Dict[str, Any] | None], None
+        ],
         evict_runtime_item: Callable[[str], None],
         archive_list_payload: Callable[[Any, datetime.datetime], str | None],
         set_seen: Callable[[str, Dict[str, Any]], None],
         queue_pending: Callable[[str], bool],
     ) -> Dict[str, Any]:
         items = data.get("items", [])
-        source_page_url = data.get("source_page_url") or data.get("page_url") or data.get("url")
+        source_page_url = (
+            data.get("source_page_url") or data.get("page_url") or data.get("url")
+        )
         list_payload_path = None
         try:
             list_payload_path = archive_list_payload(
@@ -278,31 +292,33 @@ class SeedCollectionService:
                     (item_id, entry, event_payload)
                 )
 
+        failed_count = 0
         for file_path, entries in items_by_path.items():
-            current_file_data = read_records(file_path)
-            archived_by_id = {
-                str(record.get("id")): record for record in current_file_data
-            }
-            for item_id, entry, _ in entries:
-                archived = archived_by_id.get(item_id)
-                if archived is None:
-                    current_file_data.append(entry["data"])
-                else:
-                    for key, value in entry["data"].items():
-                        if value not in (None, "") and archived.get(key) in (None, ""):
-                            archived[key] = value
-                    self.adapter.sync_record(archived)
-                    entry["data"] = archived
-            write_records(file_path, current_file_data)
             for item_id, entry, event_payload in entries:
                 prepared_item = entry["data"]
-                persist_item_to_db(prepared_item, "sniff_saved", event_payload)
+                try:
+                    # 顺序修正：DB 是唯一事实源，先提交；归档侧改走持锁 upsert，
+                    # 不再对整文件做无锁 read-modify-write（会与 update_file_global 互相覆盖）。
+                    persist_item_to_db(prepared_item, "sniff_saved", event_payload)
+                    update_file_global(file_path, item_id, prepared_item, merge=True)
+                except Exception:
+                    failed_count += 1
+                    logger.exception(
+                        "Seed persist failed item=%s file=%s", item_id, file_path
+                    )
+                    continue
                 if not prefer_db_task_reads():
                     set_seen(item_id, entry)
                     if not prepared_item.get("is_processed"):
                         queue_pending(item_id)
-                if prefer_db_task_reads():
+                else:
                     evict_runtime_item(item_id)
                 new_count += 1
 
+        if failed_count:
+            logger.warning("Seed batch new=%s failed=%s", new_count, failed_count)
+            # 部分失败也不能 ACK；采集端只有收到成功才可推进该页进度。
+            raise RuntimeError(
+                f"seed batch: {failed_count} record(s) failed to persist; saved={new_count}"
+            )
         return {"status": "ok", "new": new_count}

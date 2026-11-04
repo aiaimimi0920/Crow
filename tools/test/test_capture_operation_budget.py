@@ -6,6 +6,7 @@ import pytest
 
 from tools import capture_budget as budget
 from tools.detail_browser_attached import capture_attached_detail
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 
 def fixture(
@@ -19,12 +20,13 @@ def fixture(
     navigation_error=None,
     close_error=None,
 ):
+    install_owned_page_fixture(monkeypatch)
     clock = SimpleNamespace(now=0)
     events, timeouts = [], []
     monkeypatch.setattr(budget.time, "monotonic", lambda: clock.now)
 
     class Page:
-        url = "https://example.test/detail/1"
+        url = "https://sf-item.taobao.com/sf_item/3001.htm"
 
         def goto(self, _url, *, wait_until, timeout):
             events.append("navigate")
@@ -42,7 +44,7 @@ def fixture(
                 raise close_error
 
     class ExistingPage:
-        url = "https://taobao.com/"
+        url = "https://sf-item.taobao.com/sf_item/3001.htm"
 
         def content(self):
             clock.now += read_seconds
@@ -97,7 +99,7 @@ def fixture(
     def ready(_page):
         events.append("ready")
         clock.now += ready_seconds
-        return "<html>owned capture fixture</html>"
+        return '<html><input id="J_StartPrice" value="123"></html>'
 
     def capture():
         return capture_attached_detail(

@@ -11,10 +11,29 @@ from src.archive_json_io import write_json
 InputVersion = tuple[int, int]
 _MODEL_STAGES = {"capture", "extraction", "model_result", "risk_facts", "validation"}
 
+_MAX_ATTEMPTS_MODEL = 5  # 模型阶段原为 2 次，对瞬断/风控页几乎没有容错
+_BACKOFF_BASE_MODEL = 5.0  # 原实现固定 1s，等同于无退避
+_BACKOFF_BASE_DEFAULT = 30.0
+_BACKOFF_MAX = 300.0  # 与 auth_cookie_snapshot_retry 上限对齐
+
+
+def _retry_delay_seconds(stage: str, attempts: int) -> float:
+    """指数退避：base * 2**(attempts-1)，上限 _BACKOFF_MAX。"""
+    base = _BACKOFF_BASE_MODEL if stage in _MODEL_STAGES else _BACKOFF_BASE_DEFAULT
+    return min(base * (2 ** max(0, int(attempts) - 1)), _BACKOFF_MAX)
+
 
 def input_version(path: Path) -> InputVersion:
     stat = path.stat()
     return stat.st_size, stat.st_mtime_ns
+
+
+def content_unchanged(path: Path, content: str) -> bool:
+    """相同证据不替换文件，保留 mtime 身份和已有退避预算。"""
+    try:
+        return path.read_bytes() == content.encode("utf-8")
+    except (OSError, UnicodeEncodeError):
+        return False
 
 
 def read_capture(path: Path) -> tuple[str, InputVersion]:
@@ -70,8 +89,8 @@ class DetailFailures:
                 "error_type": type(error).__name__,
                 "input_version": list(version or ()),
                 "attempts": attempts,
-                "exhausted": stage in _MODEL_STAGES and attempts >= 2,
-                "retry_at": time.time() + (1 if stage in _MODEL_STAGES else 30),
+                "exhausted": stage in _MODEL_STAGES and attempts >= _MAX_ATTEMPTS_MODEL,
+                "retry_at": time.time() + _retry_delay_seconds(stage, attempts),
             },
         )
 

@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional
 
-DETAIL_BLOCKED_STATES = {"login_redirect", "anti_bot_gate", "empty_html"}
+DETAIL_BLOCKED_STATES = {
+    "login_redirect",
+    "anti_bot_gate",
+    "empty_html",
+    "detail_rejected",  # 终态墓碑：内容不足/模型判定未完成
+}
 DETAIL_FAILED_STATES = {
     "failed",
     "fetch_failed",
@@ -11,6 +16,13 @@ DETAIL_FAILED_STATES = {
     "http_error",
     "parse_error",
 }
+
+
+def detail_rejected(record: Mapping[str, Any]) -> bool:
+    """只有显式重放请求才能重新打开内容拒绝终态。"""
+    return record.get("detail_fetch_status") == "detail_rejected" and not (
+        record.get("detail_replay_requested_at") or record.get("detail_replay_reason")
+    )
 
 
 def _present(value: Any) -> bool:

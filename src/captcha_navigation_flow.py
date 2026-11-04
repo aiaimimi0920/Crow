@@ -233,6 +233,20 @@ def invalidate_navigation_trace(solver, sock):
         trace.state = "unavailable"
 
 
+def retain_navigation_connection(solver, local_mock_target):
+    """Keep a replay's owned socket, not its transient document/input binding."""
+    trace = getattr(solver, "_navigation_trace", None)
+    if (
+        not local_mock_target
+        and trace is not None
+        and solver.ws is trace.socket
+        and getattr(solver.ws, "connected", None) is True
+    ):
+        return True
+    solver._close_solver_ws()
+    return False
+
+
 def navigation_flow_fields(solver, frame):
     trace = getattr(solver, "_navigation_trace", None)
     if not isinstance(trace, NavigationTrace):

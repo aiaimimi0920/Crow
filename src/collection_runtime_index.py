@@ -7,6 +7,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from .collection.stage_state import detail_rejected
+
+
+def _detail_pending(entry: dict[str, object]) -> bool:
+    data = entry.get("data", {})
+    return not data.get("is_processed") and not detail_rejected(data)
+
 
 @dataclass
 class CollectionRuntimeIndex:
@@ -25,6 +32,8 @@ class CollectionRuntimeIndex:
 
     def queue_pending(self, item_id: str) -> bool:
         with self.lock:
+            if item_id in self.seen_ids and not _detail_pending(self.seen_ids[item_id]):
+                return False
             if item_id in self.pending_tasks:
                 return False
             self.pending_tasks.append(item_id)
@@ -55,9 +64,7 @@ class CollectionRuntimeIndex:
             self.pending_tasks[:] = [
                 item_id
                 for item_id in self.pending_tasks
-                if not self.seen_ids.get(item_id, {})
-                .get("data", {})
-                .get("is_processed")
+                if _detail_pending(self.seen_ids.get(item_id, {}))
             ]
             return before - len(self.pending_tasks)
 
@@ -67,8 +74,7 @@ class CollectionRuntimeIndex:
             self.pending_tasks[:] = [
                 item_id
                 for item_id in self.pending_tasks
-                if item_id in self.seen_ids
-                and not self.seen_ids[item_id].get("data", {}).get("is_processed")
+                if item_id in self.seen_ids and _detail_pending(self.seen_ids[item_id])
             ]
             return before - len(self.pending_tasks)
 
@@ -118,8 +124,7 @@ class CollectionRuntimeIndex:
             self.pending_tasks[:] = [
                 item_id
                 for item_id in self.pending_tasks
-                if item_id in self.seen_ids
-                and not self.seen_ids[item_id].get("data", {}).get("is_processed")
+                if item_id in self.seen_ids and _detail_pending(self.seen_ids[item_id])
             ]
             for item_id in self.pending_tasks:
                 dispatched_at = self.dispatched_tasks.get(item_id)
@@ -140,8 +145,7 @@ class CollectionRuntimeIndex:
             self.pending_tasks[:] = [
                 item_id
                 for item_id in self.pending_tasks
-                if item_id in self.seen_ids
-                and not self.seen_ids[item_id].get("data", {}).get("is_processed")
+                if item_id in self.seen_ids and _detail_pending(self.seen_ids[item_id])
             ]
             total_count = len(self.seen_ids)
             pending_count = len(self.pending_tasks)

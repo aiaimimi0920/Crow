@@ -73,3 +73,15 @@ test("manual auth remains available with active, absent or unknown challenges", 
     }
   }
 });
+
+test("zero unique growth exposes its window and does not claim workers are idle", () => {
+  const html = renderOverview({ status: { statistics: { valid: true, stale: false, minute_delta: [0, 0, 0], window_seconds: 69 },
+    collection_scopes: { seed: { paused: false }, detail: { paused: true, manual_required: true, manual_only: true,
+      node_solver_blocked: true, node_solver_blocked_reason: "repeated_solver_failures" } } } }, "待认证");
+  assert.match(html, />\+0</);
+  assert.match(html, /<div class="label">近 69 秒采样 · 去重净增量；重复扫描不计新增<\/div>/);
+  assert.match(html, /求解连续失败/);
+  assert.match(html, /PC2 下次尝试时间尚未上报/);
+  assert.match(html, /不证明 Worker 正常或持续产出/);
+  assert.doesNotMatch(html, /10 分钟|正在求解|已恢复|id="detailAuthButton"[^>]*disabled/);
+});

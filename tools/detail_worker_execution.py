@@ -141,7 +141,9 @@ def run_detail_worker_once(
             is_capture_navigation_timed_out,
             is_capture_proxy_unavailable,
         )
+        from tools.cdp_background_page import BackgroundPageCapacityError
 
+        is_browser_capacity = isinstance(exc, BackgroundPageCapacityError)
         is_challenge_error = _is_detail_challenge_error(exc)
         is_transient_dns = _is_transient_dns_error(exc)
         is_cdp_unreachable = isinstance(exc, CdpEndpointUnavailableError)
@@ -155,6 +157,7 @@ def run_detail_worker_once(
             )
             or is_cdp_unreachable
             or is_proxy_unavailable
+            or is_browser_capacity
         )
         captcha_solver_report: dict[str, Any] | None = None
         if (
@@ -181,7 +184,8 @@ def run_detail_worker_once(
                 }
         repository.mark_seed_detail_failed(
             item_id,
-            safe_exception_text(exc),
+            "Background collector page capacity reached"
+            if is_browser_capacity else safe_exception_text(exc),
             retryable=True,
             revert_attempt=preserve_retry_budget,
             restore_pending=preserve_retry_budget,
@@ -193,7 +197,9 @@ def run_detail_worker_once(
         summary = {
             "decision": "detail_item_retryable_failure",
             "reason": (
-                "detail_stale_challenge_ignored"
+                "detail_browser_page_capacity"
+                if is_browser_capacity
+                else "detail_stale_challenge_ignored"
                 if stale_challenge_suppressed
                 else "detail_challenge_page"
                 if is_challenge_error
@@ -210,8 +216,9 @@ def run_detail_worker_once(
                 else "exception"
             ),
             "item_id": item_id,
-            "error": safe_exception_text(exc),
-            "traceback": safe_exception_traceback(exc),
+            "error": "Background collector page capacity reached"
+            if is_browser_capacity else safe_exception_text(exc),
+            "traceback": "" if is_browser_capacity else safe_exception_traceback(exc),
             **worker_queue_statistics(repository),
             **observation,
         }

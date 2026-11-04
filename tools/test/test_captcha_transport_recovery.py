@@ -2,14 +2,28 @@
 
 import json
 from threading import Event
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 import websocket
 
+from src import captcha_preflight
 from src.captcha_budget import SolveBudget
 from src.captcha_solver import CaptchaSolver
 from tools import pc2_solver_execution
+
+
+def virtual_loading_wait(monkeypatch, solver):
+    clock = [0.0]
+    monkeypatch.setattr(
+        captcha_preflight, "time", SimpleNamespace(monotonic=lambda: clock[0])
+    )
+    monkeypatch.setattr(
+        solver,
+        "_wait_interruptibly",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
 
 
 @pytest.mark.parametrize(
@@ -135,11 +149,12 @@ def test_preflight_never_promotes_a_failed_probe_to_manual(monkeypatch, late_fai
 
 def test_preflight_waits_for_a_loading_challenge_without_manual_handoff(monkeypatch):
     solver = CaptchaSolver()
+    virtual_loading_wait(monkeypatch, solver)
     monkeypatch.setattr(solver, "connect_tab", lambda: True)
     monkeypatch.setattr(
         solver,
         "_page_challenge_summary",
-        lambda: {"hardBlock": True, "readyState": "loading"},
+        lambda **_kwargs: {"hardBlock": True, "readyState": "loading"},
     )
     assert not solver._preflight_current_challenge()["manual_required"]
     assert solver.last_failure_reason == "challenge_loading"
@@ -207,14 +222,16 @@ def test_no_slider_handoff_requires_fresh_terminal_evidence(
 ):
     solver = CaptchaSolver()
     responses = iter(summaries)
+    virtual_loading_wait(monkeypatch, solver)
     monkeypatch.setattr(
         solver, "_preflight_current_challenge", lambda: {"connected": True}
     )
     monkeypatch.setattr(solver, "_find_slider", lambda **kwargs: None)
     monkeypatch.setattr(
-        solver, "_page_challenge_summary", lambda: next(responses, summaries[-1])
+        solver,
+        "_page_challenge_summary",
+        lambda **_kwargs: next(responses, summaries[-1]),
     )
-    monkeypatch.setattr(solver, "_wait_interruptibly", lambda _seconds: None)
     monkeypatch.setattr(solver, "_reset_failed_nc_challenge", lambda: False)
     monkeypatch.setattr(solver, "_bring_to_front", lambda: None)
     monkeypatch.setattr(solver, "_close_owned_target_tabs", lambda: None)

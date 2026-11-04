@@ -1,40 +1,16 @@
 from tools.test.live_batch_smoke_test_context import *  # noqa: F401,F403
 
 
-def test_fetch_browser_navigation_list_page_preserves_challenge_target_for_solver(monkeypatch) -> None:
-    closed_targets: list[str] = []
-    target = {
-        "id": "challenge-page",
-        "url": "https://sf.taobao.com/list/page=2",
-        "webSocketDebuggerUrl": "ws://cdp/challenge-page",
-    }
-
-    monkeypatch.setattr(taobao_login_health, "compact_cdp_pages_if_needed", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("tools.cdp_background_page.open_background_page", lambda *_args, **_kwargs: target)
-    monkeypatch.setattr(
-        live_batch_smoke,
-        "_read_cdp_list_target_html",
-        lambda *_args, **_kwargs: (
-            "<html><body>captcha challenge</body></html>",
-            "https://sec.taobao.com/_____tmd_____/punish?x5secdata=challenge",
-        ),
-    )
-    monkeypatch.setattr(
-        taobao_login_health,
-        "close_cdp_target",
-        lambda _endpoint, target_id: closed_targets.append(str(target_id)),
-    )
-
-    html, final_url = live_batch_smoke.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/page=2",
-    )
-
-    assert "challenge" in html
-    assert "/punish" in final_url
-    assert closed_targets == []
+def test_fetch_browser_navigation_list_page_preserves_challenge_target_for_solver(monkeypatch):
+    from tools.test.test_browser_target_capture import capture_fixture, CHALLENGE
+    capture, events, _ = capture_fixture(monkeypatch, live_batch_smoke, 'seed', fresh_html=CHALLENGE)
+    assert capture()[0] == CHALLENGE
+    assert 'close_owned' not in events
 
 def test_fetch_detail_with_browser_preserves_challenge_page_for_solver(monkeypatch) -> None:
+    from tools.test.browser_capture_fixtures import install_owned_page_fixture
+
+    install_owned_page_fixture(monkeypatch)
     from playwright.sync_api import Error
 
     fake_sync_api = types.ModuleType("playwright.sync_api")
@@ -215,7 +191,7 @@ def test_fetch_browser_list_page_falls_back_to_navigation_when_open_page_probe_c
 
     assert html == "<html>ok</html>"
     assert final_url == "https://sf.taobao.com/list/page=2"
-    assert events == ["open_page", "navigation_page"]
+    assert events == ["navigation_page"]
 
 def test_is_challenge_page_detects_challenge_url_without_summary_markers(monkeypatch) -> None:
     class _FakeProbe:
@@ -409,37 +385,11 @@ def test_fetch_browser_list_page_falls_back_to_navigation_after_login_html(monke
 
     assert html == "<html>ok</html>"
     assert final_url == "https://sf.taobao.com/list/page=9"
-    assert events == ["open_page", "navigation_page"]
+    assert events == ["navigation_page"]
 
-def test_fetch_browser_list_page_reuses_existing_challenge_without_navigation(monkeypatch) -> None:
-    challenge_page = (
-        "<html>_____tmd_____/punish challenge</html>",
-        "https://sf.taobao.com//list/page=9/_____tmd_____/punish?x5step=1",
-    )
-    calls: list[tuple[str, bool]] = []
-
-    def _open_page(
-        _cdp_endpoint: str,
-        _target_url: str,
-        *,
-        include_challenge: bool = False,
-    ):
-        calls.append(("open_page", include_challenge))
-        return challenge_page
-
-    monkeypatch.setattr(live_batch_smoke, "fetch_open_browser_list_page", _open_page)
-    monkeypatch.setattr(
-        live_batch_smoke,
-        "fetch_browser_navigation_list_page",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("an existing challenge page must not open another CDP target")
-        ),
-    )
-
-    result = live_batch_smoke.fetch_browser_list_page(
-        "http://127.0.0.1:9223",
-        "https://sf.taobao.com/list/page=9",
-    )
-
-    assert result == challenge_page
-    assert calls == [("open_page", True)]
+def test_fetch_browser_list_page_revalidates_existing_challenge_via_shared_engine(monkeypatch):
+    from tools.test.test_browser_target_capture import capture_fixture, CHALLENGE, TARGETS
+    capture, events, _ = capture_fixture(monkeypatch, live_batch_smoke, 'seed', old_url=TARGETS['seed'], fresh_html=CHALLENGE)
+    result = live_batch_smoke.fetch_browser_list_page('http://fixture', TARGETS['seed'])
+    assert result[0] == CHALLENGE
+    assert events.count('fresh_request') == events.count('close_owned') == 1

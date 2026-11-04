@@ -53,7 +53,7 @@ def bind_detail_dispatch(host: DetailDispatchHost) -> DetailDispatchHandlers:
         if not accepted:
             return
         if host._collection_scope_effectively_paused("detail"):
-            handler.send_json({"tasks": []})
+            handler.send_json({"tasks": [], "state": "paused", "retry_after": 60})
             return
         batch_size = 300
         if host._prefer_db_task_reads():
@@ -100,7 +100,15 @@ def bind_detail_dispatch(host: DetailDispatchHost) -> DetailDispatchHandlers:
                 host._utc_now(), host.DISPATCH_COOLDOWN_SECONDS, batch_size
             )
         )
-        handler.send_json({"tasks": tasks, "total": total_count, "done": done_count})
+        if not tasks and total_count and done_count >= total_count:
+            state = "done"
+        elif not tasks:
+            state = "empty"
+        else:
+            state = "ok"
+        handler.send_json(
+            {"tasks": tasks, "state": state, "total": total_count, "done": done_count}
+        )
         host.logger.info(
             "Dispatched detail tasks count=%s batch_limit=%s pending=%s",
             len(tasks),
@@ -132,12 +140,22 @@ def bind_detail_dispatch(host: DetailDispatchHost) -> DetailDispatchHandlers:
                     details={"error": str(error)},
                 )
                 return
-            handler.send_json(next_task if next_task else {})
+            if next_task:
+                payload = dict(next_task)
+                payload["state"] = "ok"
+                handler.send_json(payload)
+            else:
+                handler.send_json({"state": "empty", "retry_after": 5})
             return
         now = host._utc_now()
         item = runtime_index.claim_next_pending(now, host.DISPATCH_COOLDOWN_SECONDS)
         next_task = {"url": item.get("url")} if item is not None else None
-        handler.send_json(next_task if next_task else {})
+        if next_task:
+            payload = dict(next_task)
+            payload["state"] = "ok"
+            handler.send_json(payload)
+        else:
+            handler.send_json({"state": "empty", "retry_after": 5})
 
     def _post_detail_next_visit(handler: DetailDispatchHandler) -> None:
         runtime_index = host._collection_runtime_index()

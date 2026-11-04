@@ -14,7 +14,7 @@ from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
 from .contracts import CollectionAdapter
 from .detail_execution import DetailModels, DetailRuntime, DetailStorage
-from .detail_failures import DetailFailures
+from .detail_failures import DetailFailures, content_unchanged
 from .detail_location import DetailLocationInference
 from .detail_processor import DetailProcessor
 
@@ -333,6 +333,7 @@ class DetailCollectionService(DetailLocationInference):
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
+            newline="\n",
             dir=html_dir,
             prefix=".pending-",
             suffix=".tmp",
@@ -368,12 +369,16 @@ class DetailCollectionService(DetailLocationInference):
                 evict_runtime_item(item_id)
 
         with self._dispatch_lock:
-            staged_path.replace(html_path)
-            DetailFailures(self.data_root).clear(item_id)
+            html_unchanged = content_unchanged(html_path, html_content)
+            if html_unchanged:
+                staged_path.unlink()
+            else:
+                staged_path.replace(html_path)
+                DetailFailures(self.data_root).clear(item_id)
             (self.retry_dir / f"item-{item_id}.html.retry").unlink(missing_ok=True)
         logger.info("Saved HTML to %s", html_path)
         if status and str(status).strip().lower().startswith("failed_"):
-            return {"status": "queued"}
+            return {"status": "queued", "retry_after": 30}
 
         submit_task(str(html_path))
         return {"status": "queued"}

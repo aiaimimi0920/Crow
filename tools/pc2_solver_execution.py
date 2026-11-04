@@ -314,13 +314,18 @@ def close_stale_challenge_probe_target(
 
 
 def rotate_failed_challenge_target(
-    cdp_endpoint: str, target_url: str, probe_target: dict[str, object] | None = None
+    cdp_endpoint: str,
+    target_url: str,
+    probe_target: dict[str, object] | None = None,
+    *,
+    open_replacement: bool = True,
 ) -> dict[str, object]:
     """Replace rejected challenge tabs with one fresh canonical request.
 
     Keep the scope pause in place, close only non-login challenge pages bound
     to this canonical request, and open one target for the next scheduled solve.
     Another worker's same-scope page is not a duplicate of the failed request.
+    During cooldown, reclaim the rejected pages without preloading a replacement.
     """
     canonical_target = canonical_manual_challenge_target(target_url)
     scope = _challenge_scope_for_url(canonical_target)
@@ -358,7 +363,8 @@ def rotate_failed_challenge_target(
             "error_type": type(exc).__name__,
         }
 
-    for tab in tabs if isinstance(tabs, list) else []:
+    rejected_ids = []
+    for tab in tabs:
         if not isinstance(tab, dict) or tab.get("type") != "page":
             continue
         target_id = str(tab.get("id") or "").strip()
@@ -371,8 +377,33 @@ def rotate_failed_challenge_target(
             continue
         if not closer._is_challenge_tab(tab):
             continue
+        rejected_ids.append(target_id)
+
+    if not open_replacement and rejected_ids:
+        retained_page = any(
+            tab.get("type") == "page" and tab["id"].strip() not in rejected_ids
+            for tab in tabs
+        )
+        if not retained_page and not closer._open_keepalive_tab():
+            return {
+                "attempted": True,
+                "opened": False,
+                "closed": 0,
+                "scope": scope,
+                "reason": "cooldown_keepalive_unavailable",
+            }
+    for target_id in rejected_ids:
         if closer._close_cdp_target(target_id):
             closed += 1
+
+    if not open_replacement:
+        return {
+            "attempted": True,
+            "opened": False,
+            "closed": closed,
+            "scope": scope,
+            "reason": "rejected_challenge_closed_for_cooldown",
+        }
 
     # The internal marker distinguishes this single solver-owned navigation
     # without carrying x5secdata or any other rejected challenge query.

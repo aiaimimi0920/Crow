@@ -16,6 +16,7 @@ from src.detail_artifacts import extract_detail_artifacts, get_detail_archive_pa
 from .contracts import CollectionAdapter, Record
 from .detail_execution import DetailModels, DetailRuntime, DetailStorage
 from .detail_failures import DetailFailures, InputVersion, input_version, read_capture
+from .stage_state import detail_rejected
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,10 @@ class DetailProcessor:
             original_record = storage.get_working_item(item_id, True)
             if original_record is None:
                 raise LookupError("Collection seed is unavailable")
+            if detail_rejected(original_record.get("data", {})):
+                # 保留迟到证据供显式重放；终态不再自动消耗模型预算。
+                logger.info("Skipping rejected detail item=%s", item_id)
+                return
             logger.info("Processing detail item=%s", item_id)
             started_at = time.time()
             stage = "extraction"
@@ -210,20 +215,34 @@ class DetailProcessor:
             )
 
             stage = "validation"
+            record["detail_replay_requested_at"] = None
+            record["detail_replay_reason"] = None
             if not self.adapter.accepts_detail(record):
                 logger.warning(
-                    "AI rejected item=%s; removing it from collection storage", item_id
-                )
-                stage = "json"
-                storage.remove_item_from_json(target_json_path, item_id)
-                stage = "database"
-                storage.mark_item_deleted_in_db(
+                    "AI rejected item=%s; writing blocked tombstone instead of deleting",
                     item_id,
-                    "detail_not_done",
-                    {"item_id": item_id, "target_json_path": target_json_path},
+                )
+                # 墓碑：保留归档与 DB 行，只把抓取状态推进到 blocked。
+                # 旧实现删 JSON + is_deleted=True，会让粗采集去重双 miss，
+                # 进而「删除→重插→再抓→再拒」无限复活并持续消耗模型预算。
+                # detail_rejected 属于 DETAIL_BLOCKED_STATES → detail_status=blocked，
+                # 不在 _pending_detail_statuses → 派发窗口不再命中。
+                record["detail_fetch_status"] = "detail_rejected"
+                record["detail_last_error"] = "detail_not_done"
+                stage = "json"
+                storage.update_item_in_json(target_json_path, item_id, record)
+                stage = "database"
+                storage.persist_item_to_db(
+                    record,
+                    "detail_rejected",
+                    {
+                        "item_id": item_id,
+                        "target_json_path": target_json_path,
+                        "reason": "detail_not_done",
+                    },
                 )
                 stage = "runtime"
-                runtime.evict_runtime_item(item_id)
+                runtime.completed(item_id, target_json_path, record)
             else:
                 retry_reason = self.adapter.retry_reason(record)
                 if retry_reason and self._schedule_retry(
@@ -232,6 +251,7 @@ class DetailProcessor:
                 ):
                     return
                 self.adapter.finalize_detail_record(record)
+                record["detail_fetch_status"] = "captured"
                 stage = "json"
                 storage.update_item_in_json(target_json_path, item_id, record)
                 stage = "database"

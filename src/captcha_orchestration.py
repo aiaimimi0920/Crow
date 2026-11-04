@@ -5,9 +5,10 @@ import random
 
 from .captcha_deferral import TargetNavigationUnconfirmed, preserve_unconfirmed_target
 from .captcha_nc_retry import NCRetryDeferred
+from .captcha_navigation_flow import retain_navigation_connection
 from .captcha_slider_geometry import SliderEndpointReached
 from .captcha_target_diagnostics import log_missing_slider, log_target_binding
-from .captcha_verification import ready_target_matches
+from .captcha_challenge_binding import input_target_matches
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ class CaptchaOrchestrationMixin:
                     return finish(False)
                 logger.info("[SOLVER] Attempt %s/%s", attempt, max_attempts)
 
-                # 每一轮都重新连接目标页签，避免 ws 失效后卡死
+                # 仅复用当前导航链的存活连接；其余情况重新连接。
                 if connected_for_first_attempt:
                     connected_for_first_attempt = False
                 elif not self.connect_tab():
@@ -230,16 +231,18 @@ class CaptchaOrchestrationMixin:
                                 return finish(True)
                             if challenge_summary.get("hasSlider"):
                                 if not local_mock_target:
-                                    if not ready_target_matches(
-                                        challenge_summary, self.target_url
-                                    ):
+                                    if not input_target_matches(self, challenge_summary):
                                         self._preflight_retryable_failure("slider_not_found")
                                         return finish(False, preserve_target=True)
                                     # Recovery spent no drag attempt. Reuse it only
                                     # within the existing bounded NC replay budget.
                                     nc_retry_replays += 1
                                     attempt = max(attempt - 1, 0)
-                                self._close_solver_ws()
+                                    # Reconnect would discard this owned navigation
+                                    # chain. Re-read geometry on the current socket.
+                                    connected_for_first_attempt = retain_navigation_connection(self, local_mock_target)
+                                else:
+                                    self._close_solver_ws()
                                 continue
                             if challenge_summary.get("hardBlock"):
                                 logger.warning("[SOLVER] Unsupported hard block detected; manual verification required.")
@@ -311,6 +314,9 @@ class CaptchaOrchestrationMixin:
                     )
 
                     # Step 3: Execute drag
+                    if slider_info.get("_challenge_binding") and not self._os_mouse_enabled():
+                        self._preflight_retryable_failure("execution_unavailable")
+                        return finish(False, preserve_target=True)
                     self._bring_to_front()
                     self._wait_interruptibly(0.05 if local_mock_target else random.uniform(0.2, 0.5))
                     if local_mock_target:
@@ -331,7 +337,8 @@ class CaptchaOrchestrationMixin:
                         if drag_result is None:
                             os_drag_failure = str(self.last_failure_reason or "")
                             unsafe_os_failure = (
-                                os_drag_failure == "window_focus_failed"
+                                bool(slider_info.get("_challenge_binding"))
+                                or os_drag_failure == "window_focus_failed"
                                 or os_drag_failure == "mouse_drag_exception"
                                 or os_drag_failure.startswith("screen_mapping_")
                                 or os_drag_failure in {"os_cursor_position_unverified", "os_button_state_unverified"}
@@ -441,9 +448,7 @@ class CaptchaOrchestrationMixin:
                         ) == "loading" and not challenge_summary.get("hasSlider"):
                             self._preflight_retryable_failure("challenge_loading")
                             return finish(False, preserve_target=True)
-                        if challenge_summary.get("hasSlider") and not ready_target_matches(
-                            challenge_summary, self.target_url
-                        ):
+                        if challenge_summary.get("hasSlider") and not input_target_matches(self, challenge_summary):
                             self._preflight_retryable_failure("slider_not_found")
                             return finish(False, preserve_target=True)
                     logger.info(
@@ -472,7 +477,7 @@ class CaptchaOrchestrationMixin:
                             "without spending a main attempt "
                             f"({nc_retry_replays}/{nc_retry_replay_limit})."
                         )
-                        self._close_solver_ws()
+                        connected_for_first_attempt = retain_navigation_connection(self, local_mock_target)
                         attempt = max(attempt - 1, 0)
                         self._wait_interruptibly(random.uniform(0.4, 0.9))
                         continue
@@ -498,7 +503,7 @@ class CaptchaOrchestrationMixin:
                                 if not challenge_summary.get("explicitFailure"):
                                     restored = bool(
                                         challenge_summary.get("hasSlider")
-                                        and ready_target_matches(challenge_summary, self.target_url)
+                                        and input_target_matches(self, challenge_summary)
                                     )
                                     if not restored:
                                         self._preflight_retryable_failure("slider_not_found")
@@ -510,7 +515,10 @@ class CaptchaOrchestrationMixin:
                                     f"replaying drag without spending a main attempt "
                                     f"({nc_retry_replays}/{nc_retry_replay_limit})."
                                 )
-                                self._close_solver_ws()
+                                if local_mock_target:
+                                    self._close_solver_ws()
+                                else:
+                                    connected_for_first_attempt = retain_navigation_connection(self, local_mock_target)
                                 attempt = max(attempt - 1, 0)
                                 continue
                         if not local_mock_target and challenge_summary.get("retryableFailure"):

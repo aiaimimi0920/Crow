@@ -44,6 +44,17 @@ def same_auth_target(scope: str, left: str, right: str) -> bool:
         return False
 
 
+def browser_target_matches(scope: str, target_url: str, current_url: str) -> bool:
+    """Match challenge routes without losing the collection identity."""
+    try:
+        return same_auth_target(
+            scope, canonical_auth_target(scope, target_url),
+            canonical_auth_target(scope, current_url),
+        )
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def seed_payload_is_authenticated(payload: object, summary: object, *, final_url: str, target_url: str) -> bool:
     """An empty list is valid proof; a blank, malformed or unrelated page is not."""
     return (

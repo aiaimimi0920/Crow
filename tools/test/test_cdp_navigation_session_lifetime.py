@@ -6,11 +6,13 @@ import pytest
 
 from tools import live_smoke_browser as browser
 from tools import live_smoke_cdp as cdp
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 TARGET = "https://sf-item.taobao.com/sf_item/123.htm"
 
 
 def capture_fixture(monkeypatch, *, failure=None):
+    install_owned_page_fixture(monkeypatch)
     events = []
     state = {"attached": False}
 
@@ -84,7 +86,7 @@ def capture_fixture(monkeypatch, *, failure=None):
         events.append("document_ready")
         if failure == "readiness":
             raise RuntimeError("readiness failed")
-        return "<html><body>Owned detail capture fixture</body></html>"
+        return '<html><input id="J_StartPrice" value="123"></html>'
 
     monkeypatch.setattr("playwright.sync_api.sync_playwright", Playwright)
     monkeypatch.setattr(browser, "connect_browser_over_cdp", lambda *_a: attached)

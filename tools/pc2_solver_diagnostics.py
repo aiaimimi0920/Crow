@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from tools.pc2_solver_transport import log_event
 from tools.solver_binding_evidence import BINDING_ENUMS
+from src.captcha_challenge_binding import INPUT_BINDING_RESULTS
 
 _LOGGERS = (
     "src.captcha_orchestration",
@@ -21,6 +22,7 @@ _LOGGERS = (
 _NUMBER = r"-?\d{1,6}(?:\.\d{1,3})?"
 _BOOL = r"True|False|None"
 _PATTERNS = (
+    ("input_binding", r"\[SOLVER\] Slider input binding: result=(?P<binding_result>[a-z_]{1,40})"),
     (
         "target_binding",
         (
@@ -127,6 +129,7 @@ _PATTERNS = (
     ),
 )
 _ENUMS = {
+    "binding_result": INPUT_BINDING_RESULTS,
     **BINDING_ENUMS,
     "candidate_kind": {
         "widget_centerline",

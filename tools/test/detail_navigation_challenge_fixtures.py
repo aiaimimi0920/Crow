@@ -9,6 +9,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from tools import capture_budget as budget
 from tools import live_batch_smoke as smoke
 from tools.test.test_detail_http_error_challenge import CHALLENGE, URL
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 
 def navigation_fixture(
@@ -26,6 +27,7 @@ def navigation_fixture(
     detach_seconds=0,
     detach_error=None,
 ):
+    install_owned_page_fixture(monkeypatch)
     events, timeouts = [], []
     clock = SimpleNamespace(now=0)
     monkeypatch.setattr(budget.time, "monotonic", lambda: clock.now)

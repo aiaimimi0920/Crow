@@ -39,15 +39,12 @@ def test_read_list_html_does_not_activate_target(monkeypatch, module):
 @pytest.mark.parametrize("module", [live_smoke_cdp, live_batch_smoke])
 def test_capacity_stays_retryable_instead_of_cdp_unreachable(monkeypatch, module):
     from tools import cdp_background_page, live_smoke_browser
-
+    from tools.test.test_browser_target_capture import capture_fixture
     browser_module = live_smoke_browser if module is live_smoke_cdp else module
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [])
-
-    def full(*_):
-        raise cdp_background_page.BackgroundPageCapacityError("capacity reached")
-
-    monkeypatch.setattr(cdp_background_page, "open_background_page", full)
+    capture, events, _ = capture_fixture(monkeypatch, browser_module, 'seed')
+    def full(*args):
+        raise cdp_background_page.BackgroundPageCapacityError('capacity reached')
+    monkeypatch.setattr('tools.browser_target_capture.owned_background_page', full)
     with pytest.raises(cdp_background_page.BackgroundPageCapacityError):
-        browser_module.fetch_browser_navigation_list_page(
-            "http://fixture", "https://sf.taobao.com/list/page=1"
-        )
+        capture()
+    assert 'fresh_request' not in events and 'close_owned' not in events

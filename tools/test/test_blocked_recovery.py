@@ -132,11 +132,8 @@ def test_existing_processed_data_is_preserved(repository: PropertyRepository, re
         session.add(PropertyAudit(item_id="123", is_processed=True, detail_captured=True,
                                   analysis_ready=ready))
     result = recover(repository, apply=True)
-    if ready:
-        assert result["target_status"] == "detail_completed"
-        assert result["reason"] == "existing_completed_data"
-    else:
-        assert result["skip"] == "processed_requires_review"
+    # Readiness and historical processed flags alone do not prove a final report.
+    assert result["skip"] == "processed_requires_review"
     with repository.session_factory() as session:
         assert session.get(PropertyListing, "123").area_sqm == 72
         assert session.get(PropertyListing, "123").record_schema_version is None
@@ -144,4 +141,4 @@ def test_existing_processed_data_is_preserved(repository: PropertyRepository, re
         seed = session.get(FapaiSeedItem, "123")
         assert seed.detail_attempt_count == 3
         assert seed.source_payload["_analysis_attempt_count"] == 3
-        assert seed.status == ("detail_completed" if ready else "analysis_blocked")
+        assert seed.status == "analysis_blocked"

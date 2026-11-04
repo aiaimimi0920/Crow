@@ -302,6 +302,7 @@ def _detail_challenge_should_break_batch(
         return False
     if result.get("reason") in {
         "detail_cdp_unreachable",
+        "detail_browser_page_capacity",
         "detail_browser_proxy_unavailable",
         "detail_navigation_connection_closed",
         "detail_navigation_timed_out",

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from tools import live_batch_smoke as smoke
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 
 URL = "https://sf-item.taobao.com/sf_item/3001.htm"
 CHALLENGE = "<html>x5secdata=fixture</html>"
@@ -12,6 +13,7 @@ DETAIL = '<html><input id="J_StartPrice"></html>'
 
 
 def capture_fixture(monkeypatch, transition, *, fresh_html=CHALLENGE):
+    install_owned_page_fixture(monkeypatch)
     events = []
 
     class ExistingPage:

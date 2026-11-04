@@ -19,6 +19,11 @@ export function authScopeChallenge(value: unknown, scope: AuthScope): boolean | 
     || ["running", "queued", "manual_required"].includes(String(selected.last_status)));
 }
 
+export function authScopeRetryBlocked(value: unknown, scope: AuthScope): boolean {
+  const selected = authScopeState(value, scope);
+  return selected?.node_solver_blocked === true && selected.node_solver_blocked_reason === "repeated_solver_failures";
+}
+
 export function authScopeTarget(value: unknown, scope: AuthScope, itemId: unknown = ""): string {
   const request = object(authScopeState(value, scope)?.last_request);
   const candidate = request.challenge_target_url || request.target_url || request.url;
