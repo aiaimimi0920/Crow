@@ -32,12 +32,11 @@ export function minuteGrowth(counts: number[], now: number): (number | null)[] {
 
 export function challengeActive(value: unknown): boolean | null {
   const data = object(value);
+  if ((["seed", "detail"] as AuthScope[]).some((scope) => authScopeChallenge(data, scope) === true)) return true;
   const solverValue = object(data.status).captcha_solver;
   if (!solverValue || typeof solverValue !== "object") return null;
   const solver = object(solverValue);
-  const scopes = Object.values(object(solver.scopes || solver.collection_scopes)).map(object);
   return Boolean(solver.running || solver.queued || solver.manual_required || solver.force_unlock_flag_exists
-    || scopes.some((scope) => scope.paused || scope.manual_required || scope.force_reset_required)
     || (solver.paused && ["captcha_solver", "manual_required"].includes(String(solver.pause_reason))));
 }
 

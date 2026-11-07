@@ -29,3 +29,24 @@ test("zero unique growth and node failures remain truthful in both views", async
   await expect(page.locator("#operationsSnapshot")).toContainText("PC2 下次尝试时间尚未上报，不代表正在求解");
   await expect(page.locator("#operationsDetailAuth")).toBeEnabled();
 });
+
+test("an unpaused challenge remains visible behind an empty top-level scope map", async ({ page, baseURL }) => {
+  await page.context().route("**/*", (route) => route.request().url().startsWith(`${baseURL}/`) ? route.continue() : route.abort());
+  await page.route("**/api/collection/overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.status.collection_scopes = {};
+    data.status.captcha_solver = {
+      running: false, queued: false, paused: false, manual_required: false,
+      scopes: {
+        seed: { challenge_id: "fixture-active-challenge", paused: false, last_status: "idle" },
+        detail: { challenge_id: null, paused: false, last_status: "idle" },
+      },
+    };
+    await route.fulfill({ json: data });
+  });
+  await page.goto(baseURL!);
+  await expect(page.locator(".auth-stage-row").first()).toContainText("待认证");
+  await expect(page.locator(".auth-stage-row").last()).toContainText("未报告挑战");
+  await expect(page.locator("#seedAuthButton")).toBeEnabled();
+});

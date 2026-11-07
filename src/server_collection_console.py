@@ -115,6 +115,7 @@ class AuthCompletion:
                 completion_scope in CHALLENGE_SCOPES
                 and not self.scope_status(completion_scope).get("challenge_id")
                 and reported_completion_id
+                and reported_completion_id
                 == str(self.runtime().recovery.snapshot().challenge_id or "").strip()
             ):
                 completion_scope = None

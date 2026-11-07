@@ -7,14 +7,17 @@ export const scopeLabel = (scope: AuthScope): string => scope === "seed" ? "é“¾æ
 export function authScopeState(value: unknown, scope: AuthScope): Record<string, unknown> | null {
   const status = object(object(value).status);
   const solver = object(status.captcha_solver);
-  const scopes = object(status.collection_scopes || solver.scopes || solver.collection_scopes);
-  return scopes[scope] && typeof scopes[scope] === "object" ? object(scopes[scope]) : null;
+  for (const value of [status.collection_scopes, solver.scopes, solver.collection_scopes]) {
+    const selected = object(value)[scope];
+    if (selected && typeof selected === "object" && !Array.isArray(selected)) return object(selected);
+  }
+  return null;
 }
 
 export function authScopeChallenge(value: unknown, scope: AuthScope): boolean | null {
   const selected = authScopeState(value, scope);
   if (!selected) return null;
-  return Boolean(selected.manual_required || selected.force_reset_required || selected.node_solver_blocked
+  return Boolean(selected.challenge_id || selected.manual_required || selected.force_reset_required || selected.node_solver_blocked
     || (selected.paused && selected.pause_reason !== "operator")
     || ["running", "queued", "manual_required"].includes(String(selected.last_status)));
 }

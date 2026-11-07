@@ -40,6 +40,7 @@ test("disconnects resets and invalid counters never invent positive growth", () 
 });
 
 test("active challenge is independent from runtime and historic challenge rate", () => {
+  assert.equal(challengeActive({ status: { collection_scopes: { detail: { challenge_id: "active", paused: false } } } }), true);
   assert.equal(challengeActive({ runtime_state: "运行中", status: { captcha_solver: { scopes: { detail: { manual_required: true } } } } }), true);
   assert.equal(challengeActive({ status: { captcha_solver: { running: true } } }), true);
   assert.equal(challengeActive({ challenge_metrics: { recent_challenge_hit_rate: 1 }, status: { captcha_solver: { paused: true, pause_reason: "operator" } } }), false);

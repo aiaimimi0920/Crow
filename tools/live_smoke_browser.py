@@ -279,7 +279,17 @@ def _wait_for_list_ready(page):
     )
 
 def fetch_browser_list_page(cdp_endpoint: str, target_url: str) -> tuple[str, str] | None:
-    return fetch_browser_navigation_list_page(cdp_endpoint, target_url)
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return fetch_browser_navigation_list_page(cdp_endpoint, target_url)
+    # Playwright Sync API refuses a running caller loop. A previous driver
+    # failure must not make all later browser fallbacks fail in that thread.
+    from tools.list_browser_capture import capture_list_with_deadline
+
+    return capture_list_with_deadline(target_url, cdp_endpoint=cdp_endpoint)
 
 def recover_browser_list_page_after_challenge(
     cdp_endpoint: str,
@@ -348,7 +358,6 @@ def fetch_list_page(
             timeout=list_http_timeout_seconds(),
             allow_redirects=True,
         )
-        response.raise_for_status()
         if is_challenge_page(response.text, response.url):
             if not browser_fallback_enabled:
                 if solver_requested:
@@ -375,9 +384,20 @@ def fetch_list_page(
                         manual_only=is_login_page(response.text, response.url),
                     )
                 return response.text, response.url, response.status_code, "http_cookie_challenge_browser_capacity"
+            except Exception:
+                # A failed browser fallback cannot erase the positive HTTP
+                # evidence. Return that challenge, never a successful payload.
+                if solver_requested and initial_page is None:
+                    report_list_challenge(
+                        request_captcha_solver, cdp_endpoint, target_url,
+                        api_base_url=api_base_url,
+                        manual_only=is_login_page(response.text, response.url),
+                    )
+                return response.text, response.url, response.status_code, "http_cookie_challenge_browser_error"
             if browser_page is not None:
                 html, final_url = browser_page
                 return html, final_url, None, "browser_page_after_http_challenge"
+        response.raise_for_status()
         return response.text, response.url, response.status_code, "http_cookie"
     except requests.RequestException:
         if not browser_fallback_enabled:
@@ -451,7 +471,14 @@ def fetch_detail_html(
     if is_challenge_page(html, response.url):
         if not detail_browser_fallback_enabled():
             raise DetailChallengeError("HTTP detail request", response.url)
-        return fetch_detail_with_browser(seed, cdp_endpoint=cdp_endpoint)
+        try:
+            return fetch_detail_with_browser(seed, cdp_endpoint=cdp_endpoint)
+        except DetailChallengeError:
+            raise
+        except Exception as error:
+            # Keep the original cause in-process; the worker must still report
+            # the independently observed HTTP challenge when fallback fails.
+            raise DetailChallengeError("HTTP detail request", response.url) from error
     response.raise_for_status()
     return html, response.url, len(response.content), "http_cookie"
 

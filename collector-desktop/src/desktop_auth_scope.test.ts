@@ -4,12 +4,20 @@ import { authScopeChallenge, authScopeRetryBlocked, authScopeState, authScopeTar
 
 test("stage statuses do not inherit the other stage or aggregate challenge", () => {
   const value = { status: { captcha_solver: { manual_required: true }, collection_scopes: {
-    seed: { manual_required: true, challenge_id: "seed" }, detail: { paused: false, challenge_id: "detail" },
+    seed: { manual_required: true, challenge_id: "seed" }, detail: { paused: false, challenge_id: null },
   } } };
   assert.equal(authScopeChallenge(value, "seed"), true);
   assert.equal(authScopeChallenge(value, "detail"), false);
-  assert.equal(authScopeState(value, "detail")?.challenge_id, "detail");
+  assert.equal(authScopeState(value, "detail")?.challenge_id, null);
   assert.equal(authScopeChallenge({}, "detail"), null);
+});
+
+test("a scoped challenge remains visible independently from its pause latch", () => {
+  const value = { status: { collection_scopes: {}, captcha_solver: { scopes: {
+    detail: { challenge_id: "observed", paused: false, last_status: "retrying" },
+  } } } };
+  assert.equal(authScopeChallenge(value, "detail"), true);
+  assert.equal(authScopeChallenge(value, "seed"), null);
 });
 
 test("retry blockage requires the same scope's explicit node failure report", () => {
