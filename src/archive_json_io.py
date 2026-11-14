@@ -1,11 +1,9 @@
 """Fail closed on unreadable archives and publish JSON or UTF-8 text atomically.
 
-归档写入采用「基文件 + 追加式 journal」：
-
-* 单条 upsert / delete 只追加一行 JSONL，写成本 O(1)，不再整文件
-  read-modify-write（原实现每更新一条记录都要 dumps 整个日分区再 fsync）；
-* **所有读取必须经由 read_records / read_json**，否则看不到尚未合并的 journal；
-* journal 行数达到阈值时自动 compact：把 journal 合并回基文件并截断。
+保留「基文件 + journal」的兼容读取和维护入口；生产 facade 仍发布完整快照。
+所有读取必须经由 read_records / read_json，否则看不到未合并的 journal。
+追加前检查既有 journal，损坏时保留证据并阻止写入，不承诺单次 O(1)。
+压缩、追加和 facade 的读改写使用同一事务协议；旧版本写者不受该协议保护。
 
 journal 文件名为 ``<archive>.json.journal``，不会被 ``*.json`` 的 glob 命中。
 """
@@ -14,9 +12,11 @@ import json
 import logging
 import os
 import tempfile
+from functools import wraps
 from pathlib import Path
 from typing import cast
 
+from src.archive_transaction import archive_transaction
 from src.runtime_json import load_json_file
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,17 @@ COMPACT_LINES = 256
 # 小于该字节数不统计行数，避免为了几行 journal 读整个文件。
 _COMPACT_MIN_BYTES = 4096
 _ID_KEY = "id"
+
+
+def _serialized(function):
+    @wraps(function)
+    def call(path, *args, **kwargs):
+        with archive_transaction(
+            path, read_only=function.__name__ in {"read_records", "read_json"}
+        ):
+            return function(path, *args, **kwargs)
+
+    return call
 
 
 def journal_path(path: str | Path) -> Path:
@@ -49,12 +60,9 @@ def _read_base(path: str | Path) -> list[dict[str, object]]:
 def _read_journal(path: str | Path) -> list[tuple[str, object]]:
     jp = journal_path(path)
     try:
-        with open(jp, "r", encoding="utf-8", errors="replace") as handle:
+        with open(jp, "r", encoding="utf-8") as handle:
             raw_lines = handle.read().splitlines()
     except FileNotFoundError:
-        return []
-    except OSError:
-        logger.exception("Journal unreadable, ignoring path=%s", jp)
         return []
     ops: list[tuple[str, object]] = []
     for lineno, line in enumerate(raw_lines, 1):
@@ -63,16 +71,16 @@ def _read_journal(path: str | Path) -> list[tuple[str, object]]:
             continue
         try:
             entry = json.loads(line)
-        except ValueError:
-            # 崩溃可能留下半行：跳过该行，而不是让整个归档不可读
-            logger.warning("Skip corrupt journal line=%s:%s", jp, lineno)
-            continue
+        except ValueError as error:
+            raise ValueError(f"Corrupt journal line={jp}:{lineno}") from error
         if not isinstance(entry, dict):
-            continue
-        if isinstance(entry.get("u"), dict):
+            raise ValueError(f"Invalid journal operation={jp}:{lineno}")  # noqa: TRY004 - invalid persisted schema
+        if set(entry) == {"u"} and isinstance(entry["u"], dict):
             ops.append(("u", entry["u"]))
-        elif "d" in entry:
+        elif set(entry) == {"d"} and isinstance(entry["d"], str):
             ops.append(("d", str(entry["d"])))
+        else:
+            raise ValueError(f"Invalid journal operation={jp}:{lineno}")
     return ops
 
 
@@ -105,6 +113,7 @@ def _apply_ops(
     return [row for row in result if row is not None]
 
 
+@_serialized
 def read_records(path: str | Path) -> list[dict[str, object]]:
     rows = _read_base(path)
     ops = _read_journal(path)
@@ -113,6 +122,7 @@ def read_records(path: str | Path) -> list[dict[str, object]]:
     return rows
 
 
+@_serialized
 def read_json(path: str | Path) -> object:
     """journal-aware 通用读取：list[dict] 合并 journal，其它类型原样返回。"""
     payload = load_json_file(path)
@@ -123,6 +133,7 @@ def read_json(path: str | Path) -> object:
     return payload
 
 
+@_serialized
 def append_journal(
     path: str | Path,
     *,
@@ -137,6 +148,7 @@ def append_journal(
     if not lines:
         return
     jp = journal_path(path)
+    _read_journal(path)  # Never append through unexplained corruption.
     payload = "\n".join(lines) + "\n"
     with open(jp, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(payload)
@@ -144,6 +156,7 @@ def append_journal(
         os.fsync(handle.fileno())
 
 
+@_serialized
 def upsert_records(
     path: str | Path, records: object, *, compact_after: int = COMPACT_LINES
 ) -> None:
@@ -154,6 +167,7 @@ def upsert_records(
     _maybe_compact(path, compact_after)
 
 
+@_serialized
 def delete_records(
     path: str | Path, item_ids: object, *, compact_after: int = COMPACT_LINES
 ) -> None:
@@ -177,12 +191,15 @@ def _maybe_compact(path: str | Path, threshold: int) -> None:
         return
     try:
         compact(path)
-    except Exception:  # noqa: BLE001 - journal 已落盘，压缩失败不影响正确性
+    except Exception:
         logger.exception("Compaction failed path=%s", path)
 
 
+@_serialized
 def compact(path: str | Path) -> None:
-    write_records(path, read_records(path), replay_journal=False)
+    # Replaying the same upserts/deletes after a crash is idempotent.
+    write_json(path, read_records(path))
+    _truncate_journal(path)
 
 
 def _truncate_journal(path: str | Path) -> None:
@@ -191,16 +208,15 @@ def _truncate_journal(path: str | Path) -> None:
         os.remove(jp)
     except FileNotFoundError:
         return
-    except OSError:
-        logger.exception("Journal truncate failed path=%s", jp)
 
 
+@_serialized
 def write_records(
     path: str | Path,
     records: object,
     *,
     indent: int = 4,
-    replay_journal: bool = True,
+    replay_journal: bool = False,
 ) -> None:
     rows = cast(list[dict[str, object]], records)
     if replay_journal:
@@ -209,8 +225,11 @@ def write_records(
         ops = _read_journal(path)
         if ops:
             rows = _apply_ops(rows, ops)
+    if journal_path(path).exists():
+        # Drain the OLD generation first. A crash must not replay old operations
+        # over a newly published replacement or resurrect its removed records.
+        compact(path)
     write_json(path, rows, indent=indent)
-    _truncate_journal(path)
 
 
 def write_json(path: str | Path, value: object, *, indent: int = 4) -> None:

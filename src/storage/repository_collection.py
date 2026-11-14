@@ -13,6 +13,7 @@ from .models import (
     PropertyRiskFlags,
 )
 from .repository_context import _parse_dt, _utc_now
+from .seed_merge import locked_listing, merge_seed
 
 
 class RepositoryCollectionMixin:
@@ -106,6 +107,10 @@ class RepositoryCollectionMixin:
         event_payload: Optional[Dict[str, Any]] = None,
         aux_data: Optional[Dict[str, Any]] = None,
     ) -> None:
+        listing = locked_listing(session, record["source"]["item_id"])
+        if event_type == "sniff_saved" and listing is not None:
+            aux_data = merge_seed(self, session, listing, aux_data or record)
+            record = self._build_collection_record(aux_data)
         source = record["source"]
         archive = record["archive"]
         auction = record["auction"]
@@ -116,7 +121,6 @@ class RepositoryCollectionMixin:
         audit = record["audit"]
         item_id = source["item_id"]
         now = _utc_now()
-        listing = session.get(PropertyListing, item_id)
         is_new = listing is None
         if listing is None:
             listing = PropertyListing(item_id=item_id)

@@ -99,12 +99,16 @@ class SolverRetryMonitor:
             )
             max_runtime_seconds = self.max_runtime()
             if elapsed_seconds >= max_runtime_seconds:
-                flag_error = self.mark_manual(
-                    scope=self.infer_scope(
-                        self.runtime().recovery.snapshot().last_request
+                with self.runtime().lock:
+                    if (
+                        self.runtime().recovery.snapshot() != recovery_before
+                        or self.runtime().control.snapshot() != control_before
+                        or self.runtime().solver.snapshot() != execution_before
+                    ):
+                        return {"queued": False, "reason": "state_changed"}
+                    flag_error = self.mark_manual(
+                        scope=self.infer_scope(recovery_before.last_request) or None
                     )
-                    or None
-                )
                 result: dict[str, object] = {
                     "queued": False,
                     "reason": "running_solver_timed_out",

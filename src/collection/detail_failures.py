@@ -1,6 +1,8 @@
 """Safe failure receipts and bounded automatic retry of unchanged captures."""
 
 import json
+import logging
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -15,12 +17,13 @@ _MAX_ATTEMPTS_MODEL = 5  # 模型阶段原为 2 次，对瞬断/风控页几乎�
 _BACKOFF_BASE_MODEL = 5.0  # 原实现固定 1s，等同于无退避
 _BACKOFF_BASE_DEFAULT = 30.0
 _BACKOFF_MAX = 300.0  # 与 auth_cookie_snapshot_retry 上限对齐
+logger = logging.getLogger(__name__)
 
 
 def _retry_delay_seconds(stage: str, attempts: int) -> float:
     """指数退避：base * 2**(attempts-1)，上限 _BACKOFF_MAX。"""
     base = _BACKOFF_BASE_MODEL if stage in _MODEL_STAGES else _BACKOFF_BASE_DEFAULT
-    return min(base * (2 ** max(0, int(attempts) - 1)), _BACKOFF_MAX)
+    return min(base * (2 ** min(10, max(0, int(attempts) - 1))), _BACKOFF_MAX)
 
 
 def input_version(path: Path) -> InputVersion:
@@ -52,27 +55,55 @@ class DetailFailures:
     def _load(self, item_id: str) -> dict[str, object]:
         try:
             value = json.loads(self.path(item_id).read_text(encoding="utf-8"))
-            return value if isinstance(value, dict) else {}
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return {}
+        if not isinstance(value, dict):
+            raise ValueError("Invalid detail failure receipt")  # noqa: TRY004 - invalid persisted schema
+        version = value.get("input_version")
+        attempts = value.get("attempts")
+        retry_at = value.get("retry_at")
+        if not (
+            isinstance(version, list)
+            and len(version) in (0, 2)
+            and all(type(part) is int and part >= 0 for part in version)
+            and type(attempts) is int
+            and attempts > 0
+            and type(value.get("exhausted")) is bool
+            and type(retry_at) in (int, float)
+            and math.isfinite(retry_at)
+            and retry_at >= 0
+        ):
+            raise ValueError("Invalid detail failure receipt fields")
+        return value
 
     def ready(self, file_path: str) -> bool:
         path = Path(file_path)
         item_id = path.stem.removeprefix("item-")
-        receipt = self._load(item_id)
         try:
+            receipt = self._load(item_id)
+            if not receipt:
+                return True
             if receipt.get("input_version") != list(input_version(path)):
                 return True
             return not receipt.get("exhausted") and time.time() >= float(
                 str(receipt.get("retry_at", 0))
             )
         except (OSError, ValueError):
-            return True
+            logger.exception(
+                "Detail retry blocked by unreadable evidence item=%s", item_id
+            )
+            return False
 
     def record(
         self, item_id: str, version: InputVersion | None, stage: str, error: Exception
     ) -> None:
-        previous = self._load(item_id)
+        try:
+            previous = self._load(item_id)
+        except (OSError, ValueError):
+            logger.exception(
+                "Detail failure receipt preserved for repair item=%s", item_id
+            )
+            return
         previous_attempts = previous.get("attempts", 0)
         attempts = (
             previous_attempts

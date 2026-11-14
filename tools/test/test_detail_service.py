@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.collection.adapters import GenericProductAdapter, TaobaoJudicialAuctionAdapter
 from src.collection.detail_execution import DetailModels, DetailRuntime, DetailStorage
 from src.collection.detail_extractors import CallableDetailExtractor
 from src.collection.detail_service import DetailCollectionService
 
 
-def _submit_detail_html(tmp_path: Path, *, status: str):
+def _submit_detail_html(tmp_path: Path, *, status: str, admission=None):
     item_id = "12345"
     state = {
         "pending_tasks": [item_id],
@@ -52,6 +54,7 @@ def _submit_detail_html(tmp_path: Path, *, status: str):
 
     def submit_task(path):
         state["submitted"].append(path)
+        return admission
 
     result = service.submit_html(
         item_id=item_id,
@@ -67,14 +70,58 @@ def _submit_detail_html(tmp_path: Path, *, status: str):
         prefer_db_task_reads=lambda: False,
         remove_pending=lambda candidate_id: state["pending_tasks"].remove(candidate_id),
     )
-    return result, state, tmp_path / "html" / f"item-{item_id}.html"
+    directory = "failed_capture" if status.startswith("failed_") else "html"
+    return result, state, tmp_path / directory / f"item-{item_id}.html"
+
+
+@pytest.mark.parametrize(
+    "admission", ["accepted", "duplicate", "not_ready", "error", None]
+)
+def test_capture_ack_reports_executor_admission(tmp_path, admission):
+    result, state, path = _submit_detail_html(tmp_path, status="", admission=admission)
+    assert path.exists()
+    assert state["submitted"] == [str(path)]
+    assert result["capture_saved"] is True
+    assert result["submission_state"] == (admission or "unknown")
+    assert result["processing_queued"] is (admission in {"accepted", "duplicate"})
+
+
+def test_old_html_for_failed_item_cannot_call_model(tmp_path):
+    from types import SimpleNamespace
+
+    path = tmp_path / "html" / "item-12345.html"
+    path.parent.mkdir()
+    path.write_text("<html>old capture</html>", encoding="utf-8")
+    service = DetailCollectionService(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("failed capture reached model or mutation")
+
+    storage = DetailStorage(
+        get_working_item=lambda *_: {"data": {"status": "failed_captcha"}},
+        update_item_in_json=forbidden,
+        remove_item_from_json=forbidden,
+        persist_item_to_db=forbidden,
+        mark_item_deleted_in_db=forbidden,
+    )
+    service.process_html_file(
+        str(path), storage=storage, runtime=SimpleNamespace(), models=SimpleNamespace()
+    )
+    assert path.read_text(encoding="utf-8") == "<html>old capture</html>"
 
 
 def test_failed_timeout_detail_html_persists_status_without_ai_queue(tmp_path: Path):
     result, state, html_path = _submit_detail_html(tmp_path, status="failed_timeout")
 
-    assert result == {"status": "queued", "retry_after": 30}
+    assert result == {
+        "status": "queued",
+        "retry_after": 30,
+        "capture_saved": True,
+        "processing_queued": False,
+        "submission_state": "blocked_status",
+    }
     assert html_path.exists()
+    assert not (tmp_path / "html" / html_path.name).exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_timeout"
     assert [event["event_type"] for event in state["persisted"]] == [
@@ -85,8 +132,15 @@ def test_failed_timeout_detail_html_persists_status_without_ai_queue(tmp_path: P
 def test_failed_captcha_detail_html_persists_status_without_ai_queue(tmp_path: Path):
     result, state, html_path = _submit_detail_html(tmp_path, status="failed_captcha")
 
-    assert result == {"status": "queued", "retry_after": 30}
+    assert result == {
+        "status": "queued",
+        "retry_after": 30,
+        "capture_saved": True,
+        "processing_queued": False,
+        "submission_state": "blocked_status",
+    }
     assert html_path.exists()
+    assert not (tmp_path / "html" / html_path.name).exists()
     assert state["submitted"] == []
     assert state["item"]["data"]["status"] == "failed_captcha"
     assert [event["event_type"] for event in state["persisted"]] == [

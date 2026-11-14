@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import logging
-import json
-from datetime import datetime
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk
 
+from src.archive_json_io import read_json
+from src.archive_transaction import archive_transaction
 from src.data_fixer_context import AI_AVAILABLE, FIELDS_SCHEMA, ToolTip
+
 try:
     from src.data_fixer_context import get_model_pool
 except ImportError:
@@ -243,7 +246,7 @@ class DataFixerAppPart02:
 
             # Workflow 2: If manual save, check missing -> sub-prompts -> save. No Final Verify.
             if AI_AVAILABLE and ((address and (needs_community or needs_bizarea)) or needs_area):
-                self.log(f"保存前自动补全数据...")
+                self.log("保存前自动补全数据...")
                 if 'approve_btn' in target_widget and target_widget['approve_btn'].winfo_exists():
                     target_widget['approve_btn'].config(state='disabled')
 
@@ -298,7 +301,7 @@ class DataFixerAppPart02:
                 self.display_items.remove(item)
             self.update_status()
         else:
-            self.log(f"保存失败，请检查日志")
+            self.log("保存失败，请检查日志")
 
     def batch_approve(self):
         to_approve = []
@@ -369,8 +372,8 @@ class DataFixerAppPart02:
                 if is_match(item):
                     # Load full item data from JSON
                     try:
-                        with open(item['json_file'], 'r', encoding='utf-8') as f:
-                            full_data = json.load(f)
+                        with archive_transaction(item['json_file'], read_only=True):
+                            full_data = read_json(item['json_file'])
                             if isinstance(full_data, list):
                                 for i in full_data:
                                     if str(i.get('id')) == str(item['id']):

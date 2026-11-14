@@ -86,6 +86,7 @@ def test_failed_archive_update_does_not_publish_collection_state(
     archive.write_text(json.dumps([record]), encoding="utf-8")
     original_bytes = archive.read_bytes()
     working = {"data": record, "file_path": str(archive), "cached": True}
+    committed_seeds = []
 
     def fail(*_args, **_kwargs):
         raise OSError("archive publication failed")
@@ -107,7 +108,7 @@ def test_failed_archive_update_does_not_publish_collection_state(
         "update_file_global": server_data_runtime.update_file_global,
         "persist_item_to_db": server_data_runtime.persist_item_to_db
         if failure == "database"
-        else forbidden,
+        else (lambda *args: committed_seeds.append(args)) if action == "seed" else forbidden,
         "evict_runtime_item": forbidden,
         "prefer_db_task_reads": lambda: False,
     }
@@ -151,6 +152,7 @@ def test_failed_archive_update_does_not_publish_collection_state(
 
     assert record == confirmed
     assert working["data"] is record
+    assert len(committed_seeds) == int(action == "seed" and failure != "database")
     if failure != "database":
         assert archive.read_bytes() == original_bytes
         assert len(list(tmp_path.glob("*.tmp"))) == 1
@@ -158,6 +160,7 @@ def test_failed_archive_update_does_not_publish_collection_state(
         assert len(json.loads(archive.read_text(encoding="utf-8"))) == 1
     if action == "html":
         assert not list((tmp_path / "html").glob("item-*.html"))
-        snapshots = list((tmp_path / "html").glob(".pending-*.tmp"))
+        assert not list((tmp_path / "failed_capture").glob("item-*.html"))
+        snapshots = list((tmp_path / "failed_capture").glob(".pending-*.tmp"))
         assert len(snapshots) == 1
         assert snapshots[0].read_text(encoding="utf-8") == "<html>evidence</html>"

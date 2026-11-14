@@ -1,11 +1,15 @@
 from __future__ import annotations
+
 import glob
 import json
 import os
 import re
 from urllib.parse import urlsplit
 
+from src.archive_json_io import read_json
+from src.archive_transaction import archive_transaction
 from src.data_fixer_context import AI_AVAILABLE, DATAS_DIR, HTTP_PORT
+
 try:
     from src.data_fixer_context import get_model_pool, simple_ai_call
 except ImportError:
@@ -78,7 +82,7 @@ class DataFixerAppPart03:
 
         # Use pool 1 (Inference Pool)
         pool_idx = 1 if len(get_model_pool()) > 1 else 0
-        self.log(f"执行全量推断 (Stage 1)...")
+        self.log("执行全量推断 (Stage 1)...")
 
         try:
             ai_result = simple_ai_call(prompt, pool_idx=pool_idx)
@@ -273,8 +277,8 @@ class DataFixerAppPart03:
                 # Load full if only partial
                 if 'json_file' in item:
                      try:
-                        with open(item['json_file'], 'r', encoding='utf-8') as f:
-                            full_data = json.load(f)
+                        with archive_transaction(item['json_file'], read_only=True):
+                            full_data = read_json(item['json_file'])
                             if isinstance(full_data, list):
                                 for i in full_data:
                                     if str(i.get('id')) == item_id:
@@ -297,8 +301,8 @@ class DataFixerAppPart03:
 
         for j_file in root_files + archive_files:
             try:
-                with open(j_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                with archive_transaction(j_file, read_only=True):
+                    data = read_json(j_file)
                     items = data if isinstance(data, list) else [data]
                     for i in items:
                         if str(i.get('id')) == item_id:
@@ -323,7 +327,6 @@ class DataFixerAppPart03:
         # Treat stored URLs as untrusted data.  Never pass them through a
         # shell command: quotes and cmd metacharacters would otherwise allow
         # command injection from a corrupted or externally supplied record.
-        from urllib.parse import urlsplit
         import webbrowser
 
         if any(ord(char) < 0x20 or ord(char) == 0x7F for char in str(url)):

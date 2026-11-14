@@ -116,7 +116,8 @@ def test_archive_failure_preserves_detail_input_and_completion_state(
         event["failure_reason"] == f"COLLECTION_DETAIL_{stage.upper()}_FAILED"
         for event in predictions
     )
-    if phase == "source" and previous_failure:
+    if previous_failure:
+        # An unreadable budget is evidence, not permission to reset attempts.
         assert marker.read_text(encoding="utf-8") == "prior extraction failure"
     elif phase != "source":
         assert json.loads(marker.read_text(encoding="utf-8"))["stage"] == stage

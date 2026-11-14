@@ -16,7 +16,9 @@ from .repository_context import _utc_now
 
 
 class RepositoryTaskEventsMixin:
-    def iter_pending_task_items(self, limit: int = 100) -> list[Dict[str, Any]]:
+    def iter_pending_task_items(
+        self, limit: int = 100, *, offset: int = 0
+    ) -> list[Dict[str, Any]]:
         if not self.enabled:
             return []
         self.initialize()
@@ -40,6 +42,7 @@ class RepositoryTaskEventsMixin:
                     PropertyListing.item_id.asc(),
                 )
                 .limit(limit)
+                .offset(offset)
             )
             rows = session.execute(stmt).all()
             return [
@@ -66,7 +69,9 @@ class RepositoryTaskEventsMixin:
             )
             return session.scalar(stmt) or 0
 
-    def iter_pending_flat_items(self, limit: int = 100) -> list[Dict[str, Any]]:
+    def iter_pending_flat_items(
+        self, limit: int = 100, *, offset: int = 0
+    ) -> list[Dict[str, Any]]:
         if not self.enabled:
             return []
         self.initialize()
@@ -95,6 +100,7 @@ class RepositoryTaskEventsMixin:
                     PropertyListing.item_id.asc(),
                 )
                 .limit(limit)
+                .offset(offset)
             ).all()
             return [
                 self._listing_payload_from_rows(listing, risk, legal, audit)

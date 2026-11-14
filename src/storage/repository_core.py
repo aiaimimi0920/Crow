@@ -98,7 +98,7 @@ class RepositoryCoreMixin:
             )
 
     def _apply_postgis_point(self, session: Session, item_id: str, latitude: Any, longitude: Any) -> None:
-        if self.engine.dialect.name != "postgresql":
+        if not self.settings.enable_postgis or self.engine.dialect.name != "postgresql":
             return
         if latitude in (None, "") or longitude in (None, ""):
             session.execute(text("UPDATE property_listing SET geom = NULL WHERE item_id = :item_id"), {"item_id": item_id})

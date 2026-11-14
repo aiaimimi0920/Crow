@@ -157,6 +157,9 @@ class DetailProcessor:
             original_record = storage.get_working_item(item_id, True)
             if original_record is None:
                 raise LookupError("Collection seed is unavailable")
+            if str(original_record.get("data", {}).get("status", "")).strip().lower().startswith("failed_"):
+                logger.info("Skipping failed-status capture item=%s", item_id)
+                return
             if detail_rejected(original_record.get("data", {})):
                 # 保留迟到证据供显式重放；终态不再自动消耗模型预算。
                 logger.info("Skipping rejected detail item=%s", item_id)

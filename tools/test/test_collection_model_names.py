@@ -48,10 +48,26 @@ def test_canonical_and_legacy_imports_are_the_same_mapped_class(legacy, canonica
 
 def test_postgres_and_sqlite_ddl_match_pre_rename_baseline():
     signature = {}
+    # Explicit migration 20261104_0014 added these two indexes after the rename.
+    # Assert the exact addition separately; keep the original schema golden.
+    additions = {
+        "ix_property_listing_status_auction_date": "status, auction_date",
+        "ix_property_listing_status_is_deleted": "status, is_deleted",
+    }
     for name, dialect in (
         ("postgresql", postgresql.dialect()),
         ("sqlite", sqlite.dialect()),
     ):
+        added = {
+            index.name: str(CreateIndex(index).compile(dialect=dialect))
+            for table in models.Base.metadata.sorted_tables
+            for index in table.indexes
+            if index.name in additions
+        }
+        assert added == {
+            index_name: f"CREATE INDEX {index_name} ON property_listing ({columns})"
+            for index_name, columns in additions.items()
+        }
         signature[name] = [
             str(CreateTable(table).compile(dialect=dialect))
             for table in models.Base.metadata.sorted_tables
@@ -59,6 +75,7 @@ def test_postgres_and_sqlite_ddl_match_pre_rename_baseline():
             str(CreateIndex(index).compile(dialect=dialect))
             for table in models.Base.metadata.sorted_tables
             for index in table.indexes
+            if index.name not in additions
         )
     serialized = json.dumps(signature, sort_keys=True, ensure_ascii=True)
     # Captured before class renaming on c2b9e944: includes every table, FK,

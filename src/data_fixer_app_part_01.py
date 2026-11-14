@@ -1,18 +1,27 @@
 from __future__ import annotations
-import logging
+
 import glob
-import json
+import logging
 import os
 import random
 import threading
-from datetime import datetime
-
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk
 
-from src.data_fixer_context import AI_AVAILABLE, DATAS_DIR, FIELDS_SCHEMA, INFERABLE_FIELDS, logger
-from src.collection.adapters.taobao_solver_target import _is_web_target_domain, _split_web_target_url
-
+from src.archive_json_io import read_json
+from src.archive_transaction import archive_transaction
+from src.collection.adapters.taobao_solver_target import (
+    _is_web_target_domain,
+    _split_web_target_url,
+)
+from src.data_fixer_context import (
+    AI_AVAILABLE,
+    DATAS_DIR,
+    FIELDS_SCHEMA,
+    INFERABLE_FIELDS,
+    logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,8 +181,8 @@ class DataFixerAppPart01:
                 continue
 
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                with archive_transaction(json_file, read_only=True):
+                    data = read_json(json_file)
 
                 items = data if isinstance(data, list) else [data]
 

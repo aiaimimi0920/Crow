@@ -1,16 +1,18 @@
 from __future__ import annotations
-import logging
+
 import glob
-import json
+import logging
 import os
-import re
 import threading
+from copy import deepcopy
 from http.server import HTTPServer
 
+from src.archive_json_io import read_json, write_json, write_records
+from src.archive_transaction import archive_transaction
 from src.data_fixer_context import (
-    AreaFixerHandler,
     DATAS_DIR,
     HTTP_PORT,
+    AreaFixerHandler,
     normalize_community_fields,
 )
 
@@ -158,8 +160,8 @@ class DataFixerAppPart05:
 
                 for j_file in root_files + archive_files:
                     try:
-                        with open(j_file, 'r', encoding='utf-8') as f:
-                            temp_data = json.load(f)
+                        with archive_transaction(j_file, read_only=True):
+                            temp_data = read_json(j_file)
                             temp_items = temp_data if isinstance(temp_data, list) else [temp_data]
                             for r in temp_items:
                                 # Strict ID match only
@@ -180,11 +182,12 @@ class DataFixerAppPart05:
                 return False
 
             if not item_id:
-                self.log(f"保存失败: 缺少有效的 item_id")
+                self.log("保存失败: 缺少有效的 item_id")
                 return False
 
-            with open(json_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            with archive_transaction(json_file, read_only=True):
+                data = read_json(json_file)
+            original = deepcopy(data)
 
             items = data if isinstance(data, list) else [data]
             updated = False
@@ -244,8 +247,13 @@ class DataFixerAppPart05:
                     break
 
             if updated:
-                with open(json_file, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                with archive_transaction(json_file):
+                    if read_json(json_file) != original:
+                        raise RuntimeError("数据已被其他写者更新，请重新加载后保存")
+                    if isinstance(data, list):
+                        write_records(json_file, data, indent=2)
+                    else:
+                        write_json(json_file, data, indent=2)
                 return True
             else:
                 self.log(f"保存失败: 未找到匹配的记录 (ID={item_id})")

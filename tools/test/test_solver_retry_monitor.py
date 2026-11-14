@@ -107,3 +107,38 @@ def test_retry_lock_is_released_when_live_runner_raises(retry_host, monkeypatch)
         trigger(now=100)
     assert retry_host.RUNTIME.retry_lock.acquire(blocking=False)
     retry_host.RUNTIME.retry_lock.release()
+
+
+@pytest.mark.parametrize("replacement", ["execution", "operator"])
+def test_timeout_does_not_mutate_replacement_owner(
+    retry_host, monkeypatch, replacement
+):
+    runtime = retry_host.RUNTIME
+    runtime.solver.begin(1, resume_epoch=0, cancel_epoch=0)
+    runtime.recovery.set_challenge("old", {"scope": "seed"})
+    marked = []
+
+    def max_runtime():
+        if replacement == "execution":
+            runtime.solver.begin(999, resume_epoch=0, cancel_epoch=0)
+            runtime.recovery.set_challenge("new", {"scope": "detail"})
+        else:
+            runtime.control.set_pause(True, "operator")
+        return 100
+
+    monkeypatch.setattr(retry_host, "_solver_max_runtime_seconds", max_runtime)
+    monkeypatch.setattr(
+        retry_host, "_mark_solver_manual_required", lambda **kw: marked.append(kw)
+    )
+    # Use the bound dependency object so the test cannot miss a facade alias.
+    from dataclasses import replace
+
+    monitor = replace(
+        retry_host._run_manual_solver_retry_if_due.__self__, max_runtime=max_runtime
+    )
+    assert monitor._run_manual_solver_retry_if_due(now=1000) == {
+        "queued": False,
+        "reason": "state_changed",
+    }
+    assert marked == []
+    assert not runtime.solver.current.cancelled.is_set()

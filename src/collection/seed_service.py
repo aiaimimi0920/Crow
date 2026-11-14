@@ -257,9 +257,13 @@ class SeedCollectionService:
                     if existing_entry and not prefer_db_task_reads()
                     else get_data_path(self.adapter.partition_key(merged))
                 )
-                update_file_global(target_file_path, item_id, merged)
                 event_payload["source_file"] = target_file_path
                 persist_item_to_db(merged, "sniff_saved", event_payload)
+                # Seed writes only enrich the current archive. A detail writer
+                # may have published since the runtime snapshot was captured.
+                published = update_file_global(target_file_path, item_id, merged, merge=True)
+                if isinstance(published, dict):
+                    merged = published
                 if existing_entry and not prefer_db_task_reads():
                     entry = {**existing_entry, "data": merged}
                     if set_seen is not None:
@@ -300,7 +304,9 @@ class SeedCollectionService:
                     # 顺序修正：DB 是唯一事实源，先提交；归档侧改走持锁 upsert，
                     # 不再对整文件做无锁 read-modify-write（会与 update_file_global 互相覆盖）。
                     persist_item_to_db(prepared_item, "sniff_saved", event_payload)
-                    update_file_global(file_path, item_id, prepared_item, merge=True)
+                    published = update_file_global(file_path, item_id, prepared_item, merge=True)
+                    if isinstance(published, dict):
+                        entry["data"] = prepared_item = published
                 except Exception:
                     failed_count += 1
                     logger.exception(

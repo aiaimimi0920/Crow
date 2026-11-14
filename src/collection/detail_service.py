@@ -4,7 +4,7 @@ import datetime
 import logging
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from datetime import timezone as _timezone
 from pathlib import Path
@@ -13,10 +13,13 @@ from typing import Any, ContextManager
 from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
 from .contracts import CollectionAdapter
+from .capture_submission import submission_receipt
 from .detail_execution import DetailModels, DetailRuntime, DetailStorage
 from .detail_failures import DetailFailures, content_unchanged
 from .detail_location import DetailLocationInference
 from .detail_processor import DetailProcessor
+from .pending_pages import expire_dispatches, pending_pages
+from .stage_state import detail_rejected
 
 # The dispatch map is shared by HTTP worker threads.  Keep the cooldown check
 # and timestamp update atomic even when repository iteration performs I/O.
@@ -93,28 +96,7 @@ class DetailCollectionService(DetailLocationInference):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    @staticmethod
-    def _expire_dispatches(
-        dispatched_tasks: dict[str, datetime.datetime],
-        now: datetime.datetime,
-        cooldown_seconds: int,
-    ) -> None:
-        # Only transient dispatch timestamps expire; archived records stay intact.
-        expired = [
-            item_id
-            for item_id, dispatched_at in dispatched_tasks.items()
-            if (
-                now
-                - (
-                    dispatched_at.replace(tzinfo=_timezone.utc)
-                    if dispatched_at.tzinfo is None
-                    else dispatched_at
-                )
-            ).total_seconds()
-            >= cooldown_seconds
-        ]
-        for item_id in expired:
-            dispatched_tasks.pop(item_id, None)
+    _expire_dispatches = staticmethod(expire_dispatches)
 
     def next_task(
         self,
@@ -133,7 +115,9 @@ class DetailCollectionService(DetailLocationInference):
             else:
                 self._expire_dispatches(dispatched_tasks, now, cooldown_seconds)
         if self.repository and getattr(self.repository, "enabled", False):
-            for candidate in self.repository.iter_pending_task_items(limit=100):
+            for candidate in pending_pages(
+                self.repository.iter_pending_task_items, 100
+            ):
                 tid = str(candidate["id"])
                 with lock:
                     last_time = (
@@ -177,9 +161,9 @@ class DetailCollectionService(DetailLocationInference):
                 prune_dispatched(now, cooldown_seconds)
             else:
                 self._expire_dispatches(dispatched_tasks, now, cooldown_seconds)
-        candidate_entries: list[tuple[str, dict[str, Any]]] = []
+        candidate_entries: Iterable[tuple[str, dict[str, Any]]] = []
         if self.repository and getattr(self.repository, "enabled", False):
-            candidate_entries = [
+            candidate_entries = (
                 (
                     str(item.get("id")),
                     {
@@ -189,14 +173,14 @@ class DetailCollectionService(DetailLocationInference):
                         }
                     },
                 )
-                for item in self.repository.iter_pending_flat_items(limit=500)
-            ]
+                for item in pending_pages(self.repository.iter_pending_flat_items, 500)
+            )
         elif legacy_entries is not None:
             candidate_entries = legacy_entries
 
         for item_id, entry in candidate_entries:
             data = entry.get("data", {})
-            if not data.get("url") or data.get("is_processed"):
+            if not data.get("url") or data.get("is_processed") or detail_rejected(data):
                 continue
             html_name = f"item-{item_id}.html"
             html_path = self.data_root / "html" / html_name
@@ -264,8 +248,8 @@ class DetailCollectionService(DetailLocationInference):
         if self.repository and getattr(self.repository, "enabled", False):
             counts = self.repository.counts_snapshot()
             total_count = counts["db_total_ids"]
-            pending_candidates = self.repository.iter_pending_task_items(
-                limit=batch_size * 3
+            pending_candidates = pending_pages(
+                self.repository.iter_pending_task_items, batch_size * 3
             )
             pending_count = counts["db_pending_ids"]
             done_count = max(0, total_count - pending_count)
@@ -318,7 +302,7 @@ class DetailCollectionService(DetailLocationInference):
             [dict[str, Any], str, dict[str, Any] | None], None
         ],
         evict_runtime_item: Callable[[str], None],
-        submit_task: Callable[[str], None],
+        submit_task: Callable[[str], str | None],
         prefer_db_task_reads: Callable[[], bool],
         remove_pending: Callable[[str], bool | None],
     ) -> dict[str, Any]:
@@ -326,7 +310,8 @@ class DetailCollectionService(DetailLocationInference):
         if not working_item:
             return {"status": "id_not_found"}
 
-        html_dir = self.data_root / "html"
+        failed_status = bool(status and str(status).strip().lower().startswith("failed_"))
+        html_dir = self.data_root / ("failed_capture" if failed_status else "html")
         html_dir.mkdir(parents=True, exist_ok=True)
         html_path = html_dir / f"item-{item_id}.html"
         # Unconfirmed status submissions must not be visible to the HTML scanner.
@@ -374,14 +359,15 @@ class DetailCollectionService(DetailLocationInference):
                 staged_path.unlink()
             else:
                 staged_path.replace(html_path)
-                DetailFailures(self.data_root).clear(item_id)
-            (self.retry_dir / f"item-{item_id}.html.retry").unlink(missing_ok=True)
+                if not failed_status:
+                    DetailFailures(self.data_root).clear(item_id)
+            if not failed_status:
+                (self.retry_dir / f"item-{item_id}.html.retry").unlink(missing_ok=True)
         logger.info("Saved HTML to %s", html_path)
-        if status and str(status).strip().lower().startswith("failed_"):
-            return {"status": "queued", "retry_after": 30}
+        if failed_status:
+            return submission_receipt("blocked_status")
 
-        submit_task(str(html_path))
-        return {"status": "queued"}
+        return submission_receipt(submit_task(str(html_path)))
 
     def apply_working_item_patch(
         self,

@@ -106,7 +106,7 @@ def test_item_update_rejects_corrupt_or_wrong_shape_without_overwriting(
     with pytest.raises(ValueError):
         native_archive.update_item_in_json(str(archive), "new", {"id": "new"})
     assert archive.read_bytes() == raw
-    assert list(tmp_path.iterdir()) == [archive]
+    assert set(tmp_path.iterdir()) == {archive, tmp_path / "archive.json.lock"}
 
 
 @pytest.mark.parametrize("failure", ["fsync", "replace"])

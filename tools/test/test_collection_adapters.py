@@ -49,7 +49,7 @@ def test_generic_adapter_collects_arbitrary_product_seed(tmp_path: Path) -> None
         get_seen_entry=lambda _item_id: None,
         get_flat_item=lambda _item_id: None,
         get_data_path=lambda _partition: str(target),
-        update_file_global=lambda *_args: None,
+        update_file_global=lambda *_args, **_kwargs: None,
         persist_item_to_db=lambda item, *_args: persisted.append(dict(item)),
         evict_runtime_item=lambda _item_id: None,
         archive_list_payload=lambda *_args: None,

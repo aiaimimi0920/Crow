@@ -31,7 +31,7 @@ class CollectionArchiveRecords:
         new_data: dict[str, object],
         *,
         merge: bool = False,
-    ) -> None:
+    ) -> dict[str, object]:
         """在全局 file_lock 内对分区归档做 upsert（修复无锁读改写）。
 
         1) 记录/文件缺失时不再静默丢弃，改为追加：原实现只有
@@ -40,7 +40,7 @@ class CollectionArchiveRecords:
            避免整文件 read-modify-write 绕过 file_lock 与加锁写者互相覆盖。
         """
         try:
-            with self.runtime().file_lock:
+            with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
                 if self.exists(file_path):
                     all_data = archive_json_io.read_records(file_path)
                 else:
@@ -67,6 +67,7 @@ class CollectionArchiveRecords:
                 else:
                     all_data[index] = target
                 archive_json_io.write_records(file_path, all_data)
+                return dict(target)
         except Exception:
             logger.exception("Global file write failed")
             raise
@@ -74,7 +75,7 @@ class CollectionArchiveRecords:
     def update_item_in_json(
         self, file_path: str | Path, item_id: object, new_data: dict[str, object]
     ) -> None:
-        with self.runtime().file_lock:
+        with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
             data_list = archive_json_io.read_records(file_path)
             for index, item in enumerate(data_list):
                 if str(item.get("id")) == str(item_id):
@@ -87,7 +88,7 @@ class CollectionArchiveRecords:
     def remove_item_from_json(self, file_path: str | Path, item_id: object) -> None:
         if not file_path:
             return
-        with self.runtime().file_lock:
+        with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
             try:
                 if not self.exists(file_path):
                     return

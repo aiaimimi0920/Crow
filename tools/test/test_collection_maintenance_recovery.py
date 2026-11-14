@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from src.collection import detail_archive_fetch, detail_backfill
+from src.collection import archive_records, detail_archive_fetch, detail_backfill
 from src.collection.adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
 from src.collection.detail_service import DetailCollectionService
 from src.storage import CollectionRepository, DatabaseSettings
@@ -155,6 +155,27 @@ def test_replay_db_failure_retries_published_marker(maintenance, monkeypatch):
     assert service.prepare_replay(dry_run=False)["prepared_count"] == 1
     assert repo.get_flat_item("2")["detail_replay_requested_at"]
     assert service.prepare_replay(dry_run=False)["prepared_count"] == 0
+
+
+def test_backfill_json_failure_does_not_commit_db_and_can_retry(
+    maintenance, monkeypatch
+):
+    root, path, repo, service = maintenance
+    before = repo.get_flat_item("1")
+    original = path.read_bytes()
+    writer = archive_records.write_records
+
+    def fail(*args, **kwargs):
+        raise OSError("isolated JSON publication failure")
+
+    monkeypatch.setattr(archive_records, "write_records", fail)
+    with pytest.raises(OSError, match="JSON publication"):
+        service.backfill_archived(limit=1, dry_run=False)
+    assert repo.get_flat_item("1") == before
+    assert path.read_bytes() == original
+    monkeypatch.setattr(archive_records, "write_records", writer)
+    assert service.backfill_archived(limit=1, dry_run=False)["updated_records"] == 1
+    assert repo.get_flat_item("1")["latitude"] == 31.2002
 
 
 def test_fetch_db_failure_retries_without_network_or_paid_extraction(

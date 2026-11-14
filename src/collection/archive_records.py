@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from src.archive_json_io import read_records, write_records
+from src.archive_json_io import read_json, read_records, write_records
 from src.collection_job_control import job_checkpoint
 
 from .contracts import Record
@@ -30,7 +30,7 @@ def discover_raw_record_files(data_root: Path) -> list[Path]:
 
 def load_json_payload(path: Path) -> object | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return read_json(path)
     except (json.JSONDecodeError, OSError):
         return None
 
