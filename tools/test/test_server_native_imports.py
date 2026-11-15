@@ -183,6 +183,8 @@ def test_server_bootstrap_defers_html_parser(tmp_path):
                 "assert 'sqlalchemy.dialects.postgresql' not in sys.modules; "
                 "assert 'sqlalchemy.dialects.sqlite' not in sys.modules; "
                 "assert server_context.llm_helper.filter_content('<p>ready</p>') == 'ready'; "
+                "from src.html_parse import parse_html; "
+                "assert parse_html('<p>parsed</p>').get_text() == 'parsed'; "
                 "assert 'bs4' in sys.modules"
             ),
         ],

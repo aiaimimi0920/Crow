@@ -420,6 +420,7 @@ PY
 solver_heartbeat_path="$(crow_env CROW_LOCAL_SOLVER_HEARTBEAT_PATH "/tmp/fapaifang-local-solver-heartbeat.json")"
 rm -f "$solver_heartbeat_path"
 python tools/pc2_solver_watchdog.py \
+  --browser-tab-guard \
   --heartbeat-path "$solver_heartbeat_path" \
   --stale-seconds "$(crow_env CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS "300")" \
   --startup-grace-seconds "$(crow_env CROW_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS "180")" \

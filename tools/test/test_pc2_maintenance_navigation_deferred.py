@@ -52,6 +52,17 @@ def test_live_request_route_supersedes_pending_navigation(monkeypatch, scope):
     assert run.probe.put.call_count == len(run.probe.socket.messages) == 1
 
 
+def test_lost_ack_redirect_does_not_allow_repeated_navigation_or_creation(monkeypatch):
+    run = deferred_recovery(monkeypatch)
+    pending = run.recover()["last_probe_target"]
+    run.directory[0]["url"] = "https://sf.taobao.com/"
+    for _ in range(3):
+        result = run.recover(pending)
+        assert result["last_probe_target"] == pending
+        assert run.events[-1]["reason"] == "target_navigation_pending"
+    assert run.probe.put.call_count == len(run.probe.socket.messages) == 1
+
+
 @pytest.mark.parametrize(
     "change", ["gone", "foreign_route", "target", "scope", "endpoint", "generation"]
 )

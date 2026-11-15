@@ -100,6 +100,9 @@ def test_seed_pause_bypass_requires_real_detail_identity(
 
 
 def test_data_fixer_scan_queues_only_real_taobao_sources(tmp_path):
+    from src.archive_json_io import read_json
+    from src.archive_transaction import archive_transaction
+
     # Execute the actual scan method with a synthetic data directory and tiny
     # schema, avoiding GUI/AI startup and any configured runtime-data location.
     source = Path(__file__).parents[2] / "src/data_fixer_app_part_01.py"
@@ -112,6 +115,8 @@ def test_data_fixer_scan_queues_only_real_taobao_sources(tmp_path):
     namespace = {
         "glob": glob,
         "json": json,
+        "read_json": read_json,
+        "archive_transaction": archive_transaction,
         "os": os,
         "logger": logging.getLogger(__name__),
         "DATAS_DIR": str(tmp_path),

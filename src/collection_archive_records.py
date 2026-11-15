@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from . import archive_json_io
+from .record_merge import fill_missing
 from .runtime_state import RuntimeState
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class CollectionArchiveRecords:
            避免整文件 read-modify-write 绕过 file_lock 与加锁写者互相覆盖。
         """
         try:
-            with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
+            with archive_json_io.archive_transaction(file_path):
                 if self.exists(file_path):
                     all_data = archive_json_io.read_records(file_path)
                 else:
@@ -55,10 +56,7 @@ class CollectionArchiveRecords:
                 if index is None:
                     target = new_data
                 elif merge:
-                    target = all_data[index]
-                    for key, value in new_data.items():
-                        if value not in (None, "") and target.get(key) in (None, ""):
-                            target[key] = value
+                    target = fill_missing(all_data[index], new_data)
                 else:
                     target = new_data
 
@@ -75,7 +73,7 @@ class CollectionArchiveRecords:
     def update_item_in_json(
         self, file_path: str | Path, item_id: object, new_data: dict[str, object]
     ) -> None:
-        with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
+        with archive_json_io.archive_transaction(file_path):
             data_list = archive_json_io.read_records(file_path)
             for index, item in enumerate(data_list):
                 if str(item.get("id")) == str(item_id):
@@ -88,7 +86,7 @@ class CollectionArchiveRecords:
     def remove_item_from_json(self, file_path: str | Path, item_id: object) -> None:
         if not file_path:
             return
-        with self.runtime().file_lock, archive_json_io.archive_transaction(file_path):
+        with archive_json_io.archive_transaction(file_path):
             try:
                 if not self.exists(file_path):
                     return

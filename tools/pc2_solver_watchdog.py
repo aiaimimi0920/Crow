@@ -6,15 +6,15 @@ import os
 import signal
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.project_environment import getenv as project_getenv
+from tools.pc2_solver_tab_guard import POLL_SECONDS, guard_iteration
 
 
 def heartbeat_age_seconds(path: Path, *, now: float | None = None) -> float | None:
@@ -62,9 +62,15 @@ def run_watchdog(
     startup_grace_seconds: float,
     poll_seconds: float,
     parent_pid: int,
+    browser_tab_guard: bool = False,
 ) -> int:
     started_at = time.time()
     while True:
+        if (
+            browser_tab_guard
+            and guard_iteration(parent_pid)["status"] == "restart_requested"
+        ):
+            return 0
         result = watchdog_iteration(
             heartbeat_path,
             started_at=started_at,
@@ -73,13 +79,21 @@ def run_watchdog(
             parent_pid=parent_pid,
         )
         if result["status"] == "restart_requested":
-            print(json.dumps({"kind": "local_solver_watchdog_restart", **result}), flush=True)
+            print(
+                json.dumps({"kind": "local_solver_watchdog_restart", **result}),
+                flush=True,
+            )
             return 0
-        time.sleep(max(1.0, poll_seconds))
+        interval = (
+            min(poll_seconds, POLL_SECONDS) if browser_tab_guard else poll_seconds
+        )
+        time.sleep(max(1.0, interval))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Restart the PC2 browser container when its solver loop stalls.")
+    parser = argparse.ArgumentParser(
+        description="Restart the PC2 browser container when its solver loop stalls."
+    )
     parser.add_argument(
         "--heartbeat-path",
         default=project_getenv(
@@ -90,12 +104,16 @@ def main() -> int:
     parser.add_argument(
         "--stale-seconds",
         type=float,
-        default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300")),
+        default=float(
+            project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STALE_SECONDS", "300")
+        ),
     )
     parser.add_argument(
         "--startup-grace-seconds",
         type=float,
-        default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS", "180")),
+        default=float(
+            project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_STARTUP_GRACE_SECONDS", "180")
+        ),
     )
     parser.add_argument(
         "--poll-seconds",
@@ -103,6 +121,7 @@ def main() -> int:
         default=float(project_getenv("CROW_LOCAL_SOLVER_WATCHDOG_POLL_SECONDS", "30")),
     )
     parser.add_argument("--parent-pid", type=int, default=os.getppid())
+    parser.add_argument("--browser-tab-guard", action="store_true")
     args = parser.parse_args()
     return run_watchdog(
         Path(args.heartbeat_path),
@@ -110,6 +129,7 @@ def main() -> int:
         startup_grace_seconds=args.startup_grace_seconds,
         poll_seconds=args.poll_seconds,
         parent_pid=args.parent_pid,
+        browser_tab_guard=args.browser_tab_guard,
     )
 
 

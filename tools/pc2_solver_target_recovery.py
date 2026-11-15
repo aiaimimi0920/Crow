@@ -4,6 +4,10 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from src.collection.adapters.taobao_solver_target import (
+    _is_taobao_target,
+    _split_web_target_url,
+)
 from tools.pc2_solver_maintenance import (
     MaintenanceNavigationUnconfirmed,
     pending_navigation_request_matches,
@@ -22,7 +26,7 @@ def rebuild_missing_challenge_target(
     *,
     solver_type: type[Any],
     read_json: Callable[..., object],
-    open_target: Callable[[Any], dict[str, object] | None],
+    open_target: Callable[..., dict[str, object] | None],
     pending_target: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Use a fresh directory for existence, never an uncertain reply as absence."""
@@ -54,6 +58,16 @@ def rebuild_missing_challenge_target(
             **({"probe_target": pending_target} if pending_target else {}),
         }
 
+    owned_tab = next(
+        (
+            tab
+            for tab in tabs
+            if pending_target
+            and tab.get("type") == "page"
+            and tab.get("id") == pending_target.get("_target_id")
+        ),
+        None,
+    )
     # Route evidence supersedes the pending blank-page record once navigation
     # becomes visible. An arbitrary unrelated blank page proves no ownership.
     for tab in tabs:
@@ -74,6 +88,15 @@ def rebuild_missing_challenge_target(
                     "_target_ws_url": str(
                         tab.get("webSocketDebuggerUrl") or ""
                     ).strip(),
+                    **(
+                        {
+                            "_maintenance_owned": True,
+                            "_target_cdp_endpoint": cdp_endpoint,
+                            "_target_url": canonical_target,
+                        }
+                        if tab is owned_tab
+                        else {}
+                    ),
                 },
             }
 
@@ -97,25 +120,63 @@ def rebuild_missing_challenge_target(
         )
     )
     opener = solver_type(cdp_endpoint=cdp_endpoint, target_url=fresh_target)
+    # Never navigate a borrowed page or a user login/unrelated page. A known
+    # maintenance-owned Taobao redirect is still our page, not a missing target.
+    reuse = bool(
+        owned_tab
+        and _is_taobao_target(_split_web_target_url(owned_tab.get("url")))
+        and not solver_type._is_login_url(str(owned_tab.get("url") or ""))
+    )
+    if (
+        owned_tab
+        and pending_target
+        and not reuse
+        and pending_target.get("_maintenance_owned")
+    ):
+        return {
+            "attempted": False,
+            "opened": False,
+            "scope": scope,
+            "reason": "owned_target_relocated",
+            "probe_target": pending_target,
+        }
     try:
-        opened = open_target(opener)
+        opened = (
+            open_target(opener, existing_target=owned_tab)
+            if reuse
+            else open_target(opener)
+        )
     except MaintenanceNavigationUnconfirmed as deferred:
-        return deferred.result(scope)
+        result = deferred.result(scope)
+        probe = result.get("probe_target")
+        if (
+            reuse
+            and pending_target
+            and pending_target.get("_maintenance_owned")
+            and isinstance(probe, dict)
+        ):
+            probe["_maintenance_owned"] = True
+        return result
     if not isinstance(opened, dict):
         return {
             "attempted": True,
             "opened": False,
             "scope": scope,
             "reason": "missing_target_open_failed",
+            **({"probe_target": pending_target} if pending_target else {}),
         }
     return {
         "attempted": True,
-        "opened": True,
+        "opened": not reuse,
         "scope": scope,
-        "reason": "missing_challenge_target_rebuilt",
+        "reason": "redirected_target_reused"
+        if reuse
+        else "missing_challenge_target_rebuilt",
         "probe_target": {
             "_target_id": str(opened.get("id") or "").strip(),
-            "_target_url": str(opened.get("url") or fresh_target).strip(),
+            "_target_url": canonical_target,
             "_target_ws_url": str(opened.get("webSocketDebuggerUrl") or "").strip(),
+            "_target_cdp_endpoint": cdp_endpoint,
+            "_maintenance_owned": True,
         },
     }

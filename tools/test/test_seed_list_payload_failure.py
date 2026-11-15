@@ -1,18 +1,19 @@
 """Invalid page data must not masquerade as an unavailable browser transport."""
 
 import json
+from contextlib import nullcontext
+from types import SimpleNamespace
 
 import pytest
 
 from src.collection.adapters import taobao_list_probe
 from tools import (
     browserless_seed_probe,
-    cdp_background_page,
     live_batch_smoke,
     live_smoke_browser,
     seed_collector,
-    taobao_login_health,
 )
+from tools.test.browser_capture_fixtures import install_owned_page_fixture
 from tools.test.seed_collector_test_context import _make_repo
 
 LIST_URL = "https://sf.taobao.com/list/50025969__2.htm?page=1"
@@ -20,35 +21,44 @@ BROKEN_HTML = '<script id="sf-item-list-data">{"data":[{"title":"unfinished}</sc
 EMPTY_HTML = '<script id="sf-item-list-data">{"data":[]}</script>'
 
 
-def _browser(monkeypatch, html, final_url=LIST_URL, error=None):
-    target = {
-        "id": "owned-list",
-        "type": "page",
-        "url": LIST_URL,
-        "webSocketDebuggerUrl": "ws://127.0.0.1/devtools/page/owned-list",
-    }
+def _browser(monkeypatch, html, final_url=None, error=None):
+    install_owned_page_fixture(monkeypatch)
     closed = []
-    monkeypatch.setattr(taobao_login_health, "list_cdp_targets", lambda _: [])
-    monkeypatch.setattr(
-        taobao_login_health, "compact_cdp_pages_if_needed", lambda *a, **k: None
+    page = SimpleNamespace(
+        url=final_url or LIST_URL,
+        close=lambda: closed.append("owned-list"),
     )
-    monkeypatch.setattr(taobao_login_health, "read_cdp_json", lambda *a, **k: target)
-    monkeypatch.setattr(
-        cdp_background_page, "open_background_page", lambda *a: dict(target)
-    )
-    monkeypatch.setattr(taobao_login_health, "activate_cdp_target", lambda *a: None)
 
-    def evaluate(*args):
+    def navigate(url, **kwargs):
+        page.url = final_url or url
+        return SimpleNamespace(status=200)
+
+    page.goto = navigate
+    context = SimpleNamespace(
+        pages=[],
+        new_page=lambda: page,
+        new_cdp_session=lambda _: SimpleNamespace(detach=lambda: None),
+    )
+    monkeypatch.setattr(
+        "playwright.sync_api.sync_playwright", lambda: nullcontext(object())
+    )
+
+    def ready(*args):
         if error is not None:
             raise error
-        return {"result": {"result": {"value": {"html": html, "url": final_url}}}}
+        return html
 
-    monkeypatch.setattr(taobao_login_health, "evaluate_cdp_expression", evaluate)
-    monkeypatch.setattr(
-        taobao_login_health,
-        "close_cdp_target",
-        lambda _, target_id: closed.append(target_id),
-    )
+    for module in (live_batch_smoke, live_smoke_browser):
+        monkeypatch.setattr(
+            module,
+            "connect_browser_over_cdp",
+            lambda *_: SimpleNamespace(contexts=[context]),
+        )
+        monkeypatch.setattr(module, "detach_attached_cdp_browser", lambda _: None)
+        monkeypatch.setattr(
+            module, "configure_browser_identity_before_navigation", lambda *a, **k: None
+        )
+        monkeypatch.setattr(module, "_wait_for_list_ready", ready)
     return closed
 
 
@@ -81,12 +91,15 @@ def test_navigation_does_not_confuse_payload_failure_with_cdp_failure(
 ):
     closed = _browser(monkeypatch, html, final_url)
 
-    assert module.fetch_browser_navigation_list_page(
-        "http://127.0.0.1:9224", LIST_URL
-    ) == (
-        html,
-        final_url,
-    )
+    if html == BROKEN_HTML and not preserve:
+        with pytest.raises(
+            RuntimeError, match="browser list payload was not confirmed"
+        ):
+            module.fetch_browser_navigation_list_page("http://127.0.0.1:9224", LIST_URL)
+    else:
+        assert module.fetch_browser_navigation_list_page(
+            "http://127.0.0.1:9224", LIST_URL
+        ) == (html, final_url)
     assert closed == ([] if preserve else ["owned-list"])
 
 
@@ -95,15 +108,15 @@ def test_navigation_does_not_confuse_payload_failure_with_cdp_failure(
     "error",
     [TimeoutError("transport timed out"), json.JSONDecodeError("wire JSON", "{", 1)],
 )
-def test_actual_transport_errors_keep_cdp_unreachable_classification(
+def test_actual_transport_errors_propagate_without_payload_reclassification(
     monkeypatch, module, error
 ):
     closed = _browser(monkeypatch, EMPTY_HTML, error=error)
 
-    with pytest.raises(live_batch_smoke.CdpEndpointUnavailableError) as raised:
+    with pytest.raises(type(error)) as raised:
         module.fetch_browser_navigation_list_page("http://127.0.0.1:9224", LIST_URL)
 
-    assert raised.value.__cause__ is error
+    assert raised.value is error
     assert closed == ["owned-list"]
 
 
@@ -148,7 +161,7 @@ def test_collector_requeues_bad_json_instead_of_pausing_or_completing(
         if html == BROKEN_HTML:
             assert summary["decision"] == "seed_page_retryable_failure"
             assert summary["reason"] == "exception"
-            assert "JSONDecodeError" in summary["error"]
+            assert summary["error"] == "RuntimeError: runtime_error"
             assert "auth_probe" not in summary
             retry = repo.claim_seed_scan_page("seed-json-retry", lease_seconds=30)
             assert retry is not None and retry["page"] == 1

@@ -1,7 +1,6 @@
 """Seed enrichment never replaces detail evidence from a newer committed row."""
 
-from copy import deepcopy
-
+from ..record_merge import fill_missing
 from .models import (
     PropertyAudit,
     PropertyLegalContext,
@@ -21,17 +20,6 @@ def locked_listing(session, item_id):
     return session.get(
         PropertyListing, item_id, with_for_update=True, populate_existing=True
     )
-
-
-def fill_missing(current, incoming):
-    result = deepcopy(current)
-    for key, value in incoming.items():
-        existing = result.get(key)
-        if isinstance(existing, dict) and isinstance(value, dict):
-            result[key] = fill_missing(existing, value)
-        elif existing in (None, "", []) and value not in (None, "", []):
-            result[key] = deepcopy(value)
-    return result
 
 
 def merge_seed(repository, session, listing, incoming):

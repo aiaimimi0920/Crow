@@ -64,12 +64,12 @@ def test_http_pool_is_thread_and_credential_isolated():
 
 
 def test_fast_parser_propagates_unexpected_errors(monkeypatch):
-    from src import html_parse
+    import bs4
 
     def broken(*args):
         raise RuntimeError("unexpected parser failure")
 
-    monkeypatch.setattr(html_parse, "BeautifulSoup", broken)
+    monkeypatch.setattr(bs4, "BeautifulSoup", broken)
     with pytest.raises(RuntimeError, match="unexpected parser failure"):
         parse_html("<p>test</p>")
 

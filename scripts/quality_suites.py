@@ -296,6 +296,7 @@ SUITES = {
         "test_detail_service.py",
     ),
     "collection-detail": (
+        "test_pending_detail_publication_recovery.py",
         "test_detail_commit_recovery.py",
         "test_collection_application.py",
         "test_detail_persistence_failure.py",
@@ -308,6 +309,7 @@ SUITES = {
         "test_generic_collection_runtime.py",
     ),
     "collection-runtime": (
+        "test_html_parse.py",
         "test_project_environment_pc2.py",
         "test_project_environment_workers.py",
         "test_collection_application.py",
@@ -319,6 +321,8 @@ SUITES = {
         "test_server_native_imports.py",
     ),
     "collection-storage": (
+        "test_collection_publication_consistency.py",
+        "test_seed_publication_recovery.py",
         "test_collection_record_independence.py",
         "test_generic_collection_repository.py",
         "test_collection_adapters.py",

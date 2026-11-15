@@ -12,9 +12,12 @@ from tools.test.maintenance_deferral_fixtures import CDP
 from tools.test.pc2_maintenance_budget_fixtures import TARGETS
 
 
-@pytest.mark.parametrize("generation_changed", [False, True])
+@pytest.mark.parametrize(
+    "generation_changed,scope_roundtrip", [(False, False), (True, False), (False, True)]
+)
+@pytest.mark.parametrize("owned_success", [False, True])
 def test_two_polls_preserve_pending_identity_only_for_current_generation(
-    monkeypatch, generation_changed
+    monkeypatch, generation_changed, scope_roundtrip, owned_success
 ):
     class StopPoll(BaseException):
         pass
@@ -36,6 +39,9 @@ def test_two_polls_preserve_pending_identity_only_for_current_generation(
         "_challenge_id": "one",
         "_navigation_unconfirmed": True,
     }
+    if owned_success:
+        pending.pop("_navigation_unconfirmed")
+        pending["_maintenance_owned"] = True
     monkeypatch.setenv("FAPAI_REAL_TAOBAO_AUTO_SOLVER_ENABLED", "1")
     monkeypatch.setattr(loop, "hold_manual_window", lambda _: False)
     monkeypatch.setattr(loop, "prepare_solver_browser", lambda *_: None)
@@ -69,16 +75,25 @@ def test_two_polls_preserve_pending_identity_only_for_current_generation(
 
     def recover(*_args, **kwargs):
         received.append(deepcopy(kwargs.get("last_probe_target")))
+        current = deepcopy(pending)
+        current["_challenge_id"] = status["challenge_id"]
+        current["_target_url"] = TARGETS[status["scope"]]
         return {
             "handled": True,
-            "last_probe_target": pending,
+            "last_probe_target": current,
             "last_auth_confirmed_at": 0,
             "reset_probe_counter": True,
         }
 
     def sleep(_):
-        if len(received) == 2:
+        if len(received) == (3 if scope_roundtrip else 2):
             raise StopPoll
+        if scope_roundtrip:
+            scope = "seed" if len(received) == 1 else "detail"
+            status.update(
+                scope=scope, challenge_id="seed-one" if scope == "seed" else "one"
+            )
+            status["last_request"]["target_url"] = TARGETS[scope]
         if generation_changed:
             status["challenge_id"] = "two"
 
@@ -86,5 +101,10 @@ def test_two_polls_preserve_pending_identity_only_for_current_generation(
     monkeypatch.setattr(loop.time, "sleep", sleep)
     with pytest.raises(StopPoll):
         loop.local_solver_loop(cdp_endpoint=CDP, poll_seconds=1, expected_node_id="pc2")
-    assert received == [None, None if generation_changed else pending]
+    expected = (
+        [None, None, pending]
+        if scope_roundtrip
+        else [None, None if generation_changed else pending]
+    )
+    assert received == expected
     assert state["slider_attempts"] == state["consecutive_failures"] == 0

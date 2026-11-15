@@ -16,6 +16,7 @@ from src.detail_artifacts import extract_detail_artifacts, get_detail_archive_pa
 from .contracts import CollectionAdapter, Record
 from .detail_execution import DetailModels, DetailRuntime, DetailStorage
 from .detail_failures import DetailFailures, InputVersion, input_version, read_capture
+from .publication import detail_publication, pending_marker
 from .stage_state import detail_rejected
 
 logger = logging.getLogger(__name__)
@@ -157,10 +158,17 @@ class DetailProcessor:
             original_record = storage.get_working_item(item_id, True)
             if original_record is None:
                 raise LookupError("Collection seed is unavailable")
-            if str(original_record.get("data", {}).get("status", "")).strip().lower().startswith("failed_"):
+            recovering_publication = pending_marker(
+                original_record["file_path"], item_id
+            ).exists()
+            if not recovering_publication and str(
+                original_record.get("data", {}).get("status", "")
+            ).strip().lower().startswith("failed_"):
                 logger.info("Skipping failed-status capture item=%s", item_id)
                 return
-            if detail_rejected(original_record.get("data", {})):
+            if not recovering_publication and detail_rejected(
+                original_record.get("data", {})
+            ):
                 # 保留迟到证据供显式重放；终态不再自动消耗模型预算。
                 logger.info("Skipping rejected detail item=%s", item_id)
                 return
@@ -233,17 +241,19 @@ class DetailProcessor:
                 record["detail_fetch_status"] = "detail_rejected"
                 record["detail_last_error"] = "detail_not_done"
                 stage = "json"
-                storage.update_item_in_json(target_json_path, item_id, record)
-                stage = "database"
-                storage.persist_item_to_db(
-                    record,
-                    "detail_rejected",
-                    {
-                        "item_id": item_id,
-                        "target_json_path": target_json_path,
-                        "reason": "detail_not_done",
-                    },
-                )
+                with detail_publication(target_json_path, item_id):
+                    stage = "json"
+                    storage.update_item_in_json(target_json_path, item_id, record)
+                    stage = "database"
+                    storage.persist_item_to_db(
+                        record,
+                        "detail_rejected",
+                        {
+                            "item_id": item_id,
+                            "target_json_path": target_json_path,
+                            "reason": "detail_not_done",
+                        },
+                    )
                 stage = "runtime"
                 runtime.completed(item_id, target_json_path, record)
             else:
@@ -256,17 +266,19 @@ class DetailProcessor:
                 self.adapter.finalize_detail_record(record)
                 record["detail_fetch_status"] = "captured"
                 stage = "json"
-                storage.update_item_in_json(target_json_path, item_id, record)
-                stage = "database"
-                storage.persist_item_to_db(
-                    record,
-                    "detail_enriched",
-                    {
-                        "item_id": item_id,
-                        "file_path": file_path,
-                        "source_file": file_path,
-                    },
-                )
+                with detail_publication(target_json_path, item_id):
+                    stage = "json"
+                    storage.update_item_in_json(target_json_path, item_id, record)
+                    stage = "database"
+                    storage.persist_item_to_db(
+                        record,
+                        "detail_enriched",
+                        {
+                            "item_id": item_id,
+                            "file_path": file_path,
+                            "source_file": file_path,
+                        },
+                    )
                 stage = "runtime"
                 runtime.completed(item_id, target_json_path, record)
                 logger.info("Detail saved item=%s path=%s", item_id, target_json_path)

@@ -14,7 +14,7 @@ class CollectionWriteRepository(Protocol):
         item: dict[str, object],
         event_type: str,
         event_payload: dict[str, object] | None = None,
-    ) -> None: ...
+    ) -> dict[str, object] | None: ...
 
     def mark_deleted(
         self,
@@ -39,9 +39,9 @@ class CollectionDatabaseWrites:
         item: dict[str, object],
         event_type: str,
         event_payload: dict[str, object] | None = None,
-    ) -> None:
+    ) -> dict[str, object] | None:
         try:
-            self.repository().upsert_flat_item(
+            return self.repository().upsert_flat_item(
                 item, event_type=event_type, event_payload=event_payload
             )
         except Exception as error:

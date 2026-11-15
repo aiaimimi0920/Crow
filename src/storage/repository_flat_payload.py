@@ -19,7 +19,7 @@ class RepositoryFlatPayloadMixin:
         item: Dict[str, Any],
         event_type: str,
         event_payload: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    ) -> Dict[str, Any] | None:
         if not self.enabled:
             return
         self.initialize()
@@ -27,6 +27,12 @@ class RepositoryFlatPayloadMixin:
         self.upsert_collection_record(
             record, event_type=event_type, event_payload=event_payload, aux_data=item
         )
+        committed = self.get_flat_item(record["source"]["item_id"])
+        if committed is None:
+            raise RuntimeError(
+                "Committed collection record is unavailable for publication"
+            )
+        return committed
 
     def upsert_flat_items(
         self,

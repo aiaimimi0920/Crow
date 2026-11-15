@@ -116,3 +116,36 @@ After activation, check real report acknowledgements and cooldown resume events.
 跨轮计数 `solver_cooldown_cycles` 保存于现有 fallback state，重启、挑战换代、
 过期 receipt 或恢复调度 ACK 不会清除；当前挑战的认证成功 ACK 才恢复初始额度。
 此退避不启用人工接管、不改变 Cookie 或代理，也不保证站点接受自动验证。
+
+### browser-solver Tab 堆积保护
+
+PC2 启动器为独立心跳 watchdog 启用 `--browser-tab-guard`。它不等待 solver
+主循环，在正常本地 CDP 响应下每 5 秒检查一次容器内部 `127.0.0.1:9223`；
+只计 `type=page` 的 Tab（包括空白页、登录页和参考页），不计 iframe 或 worker。
+恰好 4 个不处理，超过 4 个时尝试关闭全部页面，而不是仅关闭超出的页面。
+
+关闭使用 10 秒共享预算和单次最多 2 秒 socket timeout；失败或预算耗尽仍触发
+现有 supervisor 退出，再由 Docker `unless-stopped` 重启 browser-solver 全部受管
+进程。因而旧 solver 调用和并发新增页面也随本容器退出释放；不是在旧调用仍运行
+时直接开新一轮。网络 timeout 不是严格 wall-clock 上限，不能承诺卡死时的恢复时限。
+
+该紧急恢复会关闭本容器的登录/验证码页面，但不访问 PC1 CDP，不删除 profile、
+Cookie、凭据或 fallback state，不清除退避预算，也不调整采集 Worker 数。
+`browser_tab_overflow` 与 `browser_tab_overflow_restart` 日志记录检测数、关闭 ACK、
+失败数和未尝试数，不记录页面 URL。关闭 ACK 不等于浏览器已退出；部署后仍须验证
+容器重启、Tab 数和 solver 心跳。CDP 读取失败不猜测 Tab 溢出，既有心跳 watchdog
+仍负责停滞检测。回归入口：`tools/test/test_pc2_browser_tab_guard.py`。
+
+### 缺失挑战页恢复不重复分配 Tab
+
+补建页面的导航 ACK 只表示命令被接受，页面之后仍可能重定向。恢复循环按阶段与
+挑战 generation 保留已创建页面的 exact ID、请求身份和 CDP endpoint；同一请求的
+已知自有页面仍存在但重定向到其他淘宝路由时，复用该页面执行原有 identity-first
+导航和超时预算，不再每轮分配新 Tab。页面确实消失后才重新创建。
+
+不导航借用页面，不将首页当作认证成功；自有页面进入登录或外部网站时保留且不再
+额外开页。丢失导航 ACK 的同站页面继续等待确认，不重放未知结果。链接与详情交替
+调度不会丢失各自的页面身份，其他请求、endpoint 或 challenge generation 不继承
+旧权限。恢复日志包含 `target_id` 和 `redirected_target_reused` 原因，便于核对复用。
+回归：`test_pc2_redirected_target_recovery.py`、`test_pc2_pending_navigation_loop.py`、
+`test_pc2_maintenance_navigation_deferred.py`。

@@ -40,7 +40,7 @@ from tools.pc2_solver_loop_failure import (
     record_failed_attempt,
 )
 from tools.pc2_solver_loop_probe import prepare_solver_browser, probe_requested_targets
-from tools.pc2_solver_maintenance import pending_navigation_probe
+from tools.pc2_solver_maintenance import RecoveryTargets, maintenance_target_probe
 from tools.pc2_solver_manual_handoff import (
     attempt_or_manual_handoff,
     report_execution_block,
@@ -98,6 +98,7 @@ def local_solver_loop(
         api_base_url, cdp_endpoint, poll_seconds, max_attempts, expected_node_id
     )
     last_probe_target = None
+    recovery_targets = RecoveryTargets()
     last_auth_confirmed_at = 0.0
     probe_counter = 0
     idle_pointer = IdlePointer(cdp_endpoint)
@@ -322,7 +323,7 @@ def local_solver_loop(
                     paused=paused,
                 )
                 cdp_trigger = bool(probe_target)
-                if probe_target or not pending_navigation_probe(last_probe_target):
+                if probe_target or not maintenance_target_probe(last_probe_target):
                     last_probe_target = probe_target
 
             if api_trigger and not cdp_trigger:
@@ -333,9 +334,12 @@ def local_solver_loop(
                     requested_target_urls,
                     expected_node_id,
                     last_auth_confirmed_at,
-                    last_probe_target=last_probe_target,
+                    last_probe_target=recovery_targets.select(
+                        solver_status, last_probe_target
+                    ),
                 )
                 last_probe_target = recovery["last_probe_target"]
+                recovery_targets.remember(solver_status, last_probe_target)
                 last_auth_confirmed_at = recovery["last_auth_confirmed_at"]
                 if recovery["reset_probe_counter"]:
                     probe_counter = 0

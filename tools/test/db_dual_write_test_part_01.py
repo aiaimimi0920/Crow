@@ -1,3 +1,4 @@
+from src.collection.publication import publish_record
 from tools.test.db_dual_write_test_context import *  # noqa: F401,F403
 
 
@@ -117,8 +118,8 @@ def test_dual_write_keeps_json_snapshot_and_db_row_on_single_item_upsert(tmp_pat
 
     first_item = _make_flat_item()
     sync_collection_record(first_item)
-    server_module.update_item_in_json(str(json_path), "9001", first_item)
-    server_module.persist_item_to_db(first_item, event_type="sniff_saved", event_payload={"seq": 1})
+    publish_record(str(json_path), "9001", first_item, "sniff_saved", {"seq": 1},
+                   persist=server_module.persist_item_to_db, publish=server_module.update_item_in_json)
 
     second_item = _make_flat_item(
         title="Dual Write Updated",
@@ -128,8 +129,8 @@ def test_dual_write_keeps_json_snapshot_and_db_row_on_single_item_upsert(tmp_pat
         avm_risk_features={"is_occupied": "no"},
     )
     sync_collection_record(second_item)
-    server_module.update_item_in_json(str(json_path), "9001", second_item)
-    server_module.persist_item_to_db(second_item, event_type="sniff_saved", event_payload={"seq": 2})
+    publish_record(str(json_path), "9001", second_item, "detail_saved", {"seq": 2},
+                   persist=server_module.persist_item_to_db, publish=server_module.update_item_in_json)
 
     stored_items = json.loads(json_path.read_text(encoding="utf-8"))
     assert len(stored_items) == 1
@@ -153,7 +154,7 @@ def test_dual_write_keeps_json_snapshot_and_db_row_on_single_item_upsert(tmp_pat
         assert float(listing.transaction_price) == pytest.approx(1_135_000.0)
         assert listing.bid_count == 10
         assert session.scalar(select(func.count()).select_from(PropertyListing)) == 1
-        business_event_payloads = [event.event_payload for event in events if event.event_type == "sniff_saved"]
+        business_event_payloads = [event.event_payload for event in events if event.event_type in {"sniff_saved", "detail_saved"}]
         assert business_event_payloads == [{"seq": 1}, {"seq": 2}]
 
 def test_sync_collection_record_applies_standardized_community_fields():

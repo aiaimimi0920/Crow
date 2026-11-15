@@ -12,13 +12,14 @@ from typing import Any, ContextManager
 
 from .adapters.generic_product import GenericProductAdapter
 from .adapters.taobao_judicial import TaobaoJudicialAuctionAdapter
-from .contracts import CollectionAdapter
 from .capture_submission import submission_receipt
+from .contracts import CollectionAdapter
 from .detail_execution import DetailModels, DetailRuntime, DetailStorage
 from .detail_failures import DetailFailures, content_unchanged
 from .detail_location import DetailLocationInference
 from .detail_processor import DetailProcessor
 from .pending_pages import expire_dispatches, pending_pages
+from .publication import detail_publication
 from .stage_state import detail_rejected
 
 # The dispatch map is shared by HTTP worker threads.  Keep the cooldown check
@@ -299,7 +300,7 @@ class DetailCollectionService(DetailLocationInference):
         reset_structured_sections_for_resync: Callable[[dict[str, Any]], None],
         update_file_global: Callable[[str, str, dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [dict[str, Any], str, dict[str, Any] | None], None
+            [dict[str, Any], str, dict[str, Any] | None], dict[str, Any] | None
         ],
         evict_runtime_item: Callable[[str], None],
         submit_task: Callable[[str], str | None],
@@ -310,7 +311,9 @@ class DetailCollectionService(DetailLocationInference):
         if not working_item:
             return {"status": "id_not_found"}
 
-        failed_status = bool(status and str(status).strip().lower().startswith("failed_"))
+        failed_status = bool(
+            status and str(status).strip().lower().startswith("failed_")
+        )
         html_dir = self.data_root / ("failed_capture" if failed_status else "html")
         html_dir.mkdir(parents=True, exist_ok=True)
         html_path = html_dir / f"item-{item_id}.html"
@@ -333,17 +336,18 @@ class DetailCollectionService(DetailLocationInference):
             apply_flat_override_patch(working_data, {"status": status})
             reset_structured_sections_for_resync(working_data)
             self.adapter.sync_record(working_data)
-            update_file_global(working_item["file_path"], item_id, working_data)
-            event_type = "analyze_html_status"
-            persist_item_to_db(
-                working_data,
-                event_type,
-                {
-                    "item_id": item_id,
-                    "status": status,
-                    "source_file": working_item["file_path"],
-                },
-            )
+            with detail_publication(working_item["file_path"], item_id):
+                update_file_global(working_item["file_path"], item_id, working_data)
+                event_type = "analyze_html_status"
+                persist_item_to_db(
+                    working_data,
+                    event_type,
+                    {
+                        "item_id": item_id,
+                        "status": status,
+                        "source_file": working_item["file_path"],
+                    },
+                )
             normalized_status = str(status).strip().lower()
             working_item["data"].clear()
             working_item["data"].update(working_data)
@@ -380,7 +384,7 @@ class DetailCollectionService(DetailLocationInference):
         reset_structured_sections_for_resync: Callable[[dict[str, Any]], None],
         update_file_global: Callable[[str, str, dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [dict[str, Any], str, dict[str, Any] | None], None
+            [dict[str, Any], str, dict[str, Any] | None], dict[str, Any] | None
         ],
         evict_runtime_item: Callable[[str], None],
         prefer_db_task_reads: Callable[[], bool],
@@ -405,10 +409,11 @@ class DetailCollectionService(DetailLocationInference):
         self.adapter.sync_record(current_data)
 
         file_path = working_item["file_path"]
-        update_file_global(file_path, item_id, current_data)
-        persist_item_to_db(
-            current_data, event_type, {"item_id": item_id, "source_file": file_path}
-        )
+        with detail_publication(file_path, item_id):
+            update_file_global(file_path, item_id, current_data)
+            persist_item_to_db(
+                current_data, event_type, {"item_id": item_id, "source_file": file_path}
+            )
         working_item["data"].clear()
         working_item["data"].update(current_data)
 

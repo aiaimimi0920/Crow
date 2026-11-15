@@ -27,7 +27,7 @@ from tools.pc2_solver_fallback import (
 )
 from tools.pc2_solver_maintenance import (
     bind_pending_navigation,
-    pending_navigation_probe,
+    maintenance_target_probe,
 )
 from tools.pc2_solver_retry_state import _reset_fallback_state
 from tools.pc2_solver_scope import close_challenge_pages_for_scope, notify_force_reset
@@ -325,7 +325,7 @@ def recover_stale_pause(
     ):
         pending_navigation = (
             last_probe_target
-            if pending_navigation_probe(last_probe_target)
+            if maintenance_target_probe(last_probe_target)
             and last_probe_target.get("_challenge_id") == solver_status["challenge_id"]
             else None
         )
@@ -349,6 +349,9 @@ def recover_stale_pause(
                 "scope": rebuild.get("scope"),
                 "reason": rebuild.get("reason"),
                 "error_type": rebuild.get("error_type"),
+                "target_id": probe.get("_target_id")
+                if isinstance(probe, dict)
+                else None,
             }
         )
     else:

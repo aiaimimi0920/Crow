@@ -5,8 +5,10 @@ import logging
 from copy import deepcopy
 from typing import Any, Callable, Dict
 
+from ..record_merge import fill_missing
 from .adapters.generic_product import GenericProductAdapter
 from .contracts import CollectionAdapter
+from .publication import publish_record
 from .search_bootstrap import (
     DEFAULT_CATEGORIES,
     DEFAULT_SORT_ORDER,
@@ -174,7 +176,7 @@ class SeedCollectionService:
         get_data_path: Callable[[Any], str],
         update_file_global: Callable[[str, str, Dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [Dict[str, Any], str, Dict[str, Any] | None], None
+            [Dict[str, Any], str, Dict[str, Any] | None], Dict[str, Any] | None
         ],
         evict_runtime_item: Callable[[str], None],
         archive_list_payload: Callable[[Any, datetime.datetime], str | None],
@@ -190,7 +192,7 @@ class SeedCollectionService:
             list_payload_path = archive_list_payload(
                 data.get("raw_payload"), datetime.datetime.now(datetime.timezone.utc)
             )
-        except Exception as archive_error:
+        except Exception:
             logger.exception("List payload archive failed")
 
         new_count = 0
@@ -218,9 +220,7 @@ class SeedCollectionService:
 
             if item_id in staged_new:
                 staged_record = staged_new[item_id]["data"]
-                for key, value in prepared_item.items():
-                    if value not in (None, "") and staged_record.get(key) in (None, ""):
-                        staged_record[key] = value
+                staged_record.update(fill_missing(staged_record, prepared_item))
                 self.adapter.sync_record(staged_record)
                 continue
 
@@ -248,9 +248,7 @@ class SeedCollectionService:
                 merged = deepcopy(
                     (existing_entry or {}).get("data", {}) or db_existing_item or {}
                 )
-                for key, value in prepared_item.items():
-                    if value not in (None, "") and merged.get(key) in (None, ""):
-                        merged[key] = value
+                merged = fill_missing(merged, prepared_item)
                 self.adapter.sync_record(merged)
                 target_file_path = (
                     existing_entry["file_path"]
@@ -258,12 +256,16 @@ class SeedCollectionService:
                     else get_data_path(self.adapter.partition_key(merged))
                 )
                 event_payload["source_file"] = target_file_path
-                persist_item_to_db(merged, "sniff_saved", event_payload)
-                # Seed writes only enrich the current archive. A detail writer
-                # may have published since the runtime snapshot was captured.
-                published = update_file_global(target_file_path, item_id, merged, merge=True)
-                if isinstance(published, dict):
-                    merged = published
+                merged = publish_record(
+                    target_file_path,
+                    item_id,
+                    merged,
+                    "sniff_saved",
+                    event_payload,
+                    persist=persist_item_to_db,
+                    publish=update_file_global,
+                    seed=True,
+                )
                 if existing_entry and not prefer_db_task_reads():
                     entry = {**existing_entry, "data": merged}
                     if set_seen is not None:
@@ -301,12 +303,16 @@ class SeedCollectionService:
             for item_id, entry, event_payload in entries:
                 prepared_item = entry["data"]
                 try:
-                    # 顺序修正：DB 是唯一事实源，先提交；归档侧改走持锁 upsert，
-                    # 不再对整文件做无锁 read-modify-write（会与 update_file_global 互相覆盖）。
-                    persist_item_to_db(prepared_item, "sniff_saved", event_payload)
-                    published = update_file_global(file_path, item_id, prepared_item, merge=True)
-                    if isinstance(published, dict):
-                        entry["data"] = prepared_item = published
+                    entry["data"] = prepared_item = publish_record(
+                        file_path,
+                        item_id,
+                        prepared_item,
+                        "sniff_saved",
+                        event_payload,
+                        persist=persist_item_to_db,
+                        publish=update_file_global,
+                        seed=True,
+                    )
                 except Exception:
                     failed_count += 1
                     logger.exception(
