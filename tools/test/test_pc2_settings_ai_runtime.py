@@ -168,7 +168,7 @@ def test_ai_replacement_failures_roll_back_without_deleting(tmp_path, failure):
         assert row["State"]["Running"]
 
 
-def test_non_ai_change_still_rejects_service_wide_compose_with_backups(tmp_path):
+def test_interval_change_uses_exact_ids_with_retained_backups(tmp_path):
     docker = ExactDocker()
     # Retained analysis backup sharing the target labels.
     backup = deepcopy(
@@ -179,8 +179,52 @@ def test_non_ai_change_still_rejects_service_wide_compose_with_backups(tmp_path)
     docker.rows[backup["Id"]] = backup
     runtime, request = setup_runtime(tmp_path, docker)
     request["config"]["intervals"]["analysis"] = 17
+    assert runtime.apply(request) == "applied"
+    assert runtime.snapshot()["effective"] == request["config"]
+    assert docker.rows[backup["Id"]] == backup
+    assert not any("compose" in call and "up" in call for call in docker.calls)
+
+
+def test_worker_count_change_still_rejects_service_wide_compose_with_backups(tmp_path):
+    docker = ExactDocker()
+    backup = deepcopy(next(row for row in docker.rows.values() if row["Name"] == "/fapaifang-pc2-analysis-1"))
+    backup.update(Id="c" * 64, Name=backup["Name"] + "-retained")
+    backup["State"] = {"Status": "exited", "Running": False}
+    docker.rows[backup["Id"]] = backup
+    runtime, request = setup_runtime(tmp_path, docker)
+    request["config"]["workers"]["links"] = 2
     assert runtime.apply(request) == "rejected"
     assert not docker.api_calls
+
+
+@pytest.mark.parametrize("stage", ["links", "details", "analysis"])
+def test_each_stage_interval_uses_exact_replacement_without_touching_browser(tmp_path, stage):
+    docker = ExactDocker()
+    runtime, request = setup_runtime(tmp_path, docker)
+    request["config"] = deepcopy(request["previous"])
+    request["config"]["intervals"][stage] += 7
+    assert runtime.apply(request) == "applied"
+    assert runtime.snapshot()["effective"] == request["config"]
+    for row in runtime.inspect().values():
+        if row["Id"] in docker.original:
+            assert row == docker.original[row["Id"]]
+    assert docker.rows["b" * 64] == docker.original["b" * 64]
+    assert not any("compose" in call and "up" in call for call in docker.calls)
+
+
+def test_gpt_disable_keeps_saved_route_and_preserves_every_other_setting(tmp_path):
+    docker = ExactDocker()
+    runtime, request = setup_runtime(tmp_path, docker)
+    assert runtime.apply(request) == "applied"
+    disabled = deepcopy(request["config"])
+    disabled["ai"].pop("allow_gpt")
+    assert runtime.apply({**request, "request_id": "settings-gpt-off-0002", "previous": request["config"], "config": disabled}) == "applied"
+    assert runtime.snapshot()["effective"] == disabled
+    for service in runtime.inspect().values():
+        if "analysis" in service["Name"]:
+            env = dict(value.split("=", 1) for value in service["Config"]["Env"])
+            assert env["OPENAI_MODEL"] == "gpt-6.1-sol"
+            assert env["CROW_ANALYSIS_ALLOW_GPT"] == env["FAPAI_ANALYSIS_ALLOW_GPT"] == "0"
 
 
 def test_preflight_identity_drift_never_stops_a_worker(tmp_path):

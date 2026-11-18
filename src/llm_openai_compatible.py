@@ -9,7 +9,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from src.llm_analysis_policy import require_non_gpt_analysis_model
+from src.llm_analysis_policy import (
+    require_non_gpt_analysis_model,
+    validate_analysis_model_route,
+)
 from src.llm_config import get_model_pool
 from src.llm_model_selector import (
     AUTH_INVALID_ERROR_CODES,
@@ -50,7 +53,7 @@ def _get_openai_compatible_config():
     for candidate in [primary_model, *re.split(r"[;,]", candidate_text)]:
         normalized = str(candidate or "").strip()
         if normalized:
-            normalized = require_non_gpt_analysis_model(
+            normalized = validate_analysis_model_route(
                 normalized,
                 setting="OPENAI_MODEL/OPENAI_MODEL_CANDIDATES",
             )

@@ -82,7 +82,8 @@ export default async function settingsSmoke(page, { origin, artifactDir }) {
   check(!await page.locator('[id="setting-ai.allow_gpt"]').isChecked(), "legacy effective config keeps GPT disabled");
   await page.locator('[id="setting-ai.model"]').fill("gpt-6.1-sol");
   await page.locator("#settingsSaveDraft").click();
-  await page.locator("#settingsStatus").filter({ hasText: "请先开启允许使用 GPT" }).waitFor();
+  await page.locator("#settingsStatus").filter({ hasText: "草稿已保存到本机" }).waitFor();
+  check(!await page.locator('[id="setting-ai.allow_gpt"]').isChecked(), "saving a GPT preference does not grant GPT permission");
   await page.locator('[id="setting-ai.allow_gpt"]').check();
   await page.locator('[id="setting-ai.reasoning_effort"]').selectOption("low");
   await page.locator('[id="setting-workers.details"]').fill("2");
@@ -107,7 +108,8 @@ export default async function settingsSmoke(page, { origin, artifactDir }) {
   check(await page.locator('[id="setting-ai.allow_gpt"]').isChecked(), "GPT permission restored from successful effective config");
   await page.locator('[id="setting-ai.allow_gpt"]').uncheck();
   await page.locator("#settingsSaveDraft").click();
-  await page.locator("#settingsStatus").filter({ hasText: "请先开启允许使用 GPT" }).waitFor();
+  await page.locator("#settingsStatus").filter({ hasText: "草稿已保存到本机" }).waitFor();
+  check(await page.locator('[id="setting-ai.model"]').inputValue() === "gpt-6.1-sol", "disabling GPT does not require changing the saved route");
   await page.locator('[id="setting-ai.model"]').fill("deepseek-fixture");
   await page.locator('[id="setting-ai.reasoning_effort"]').selectOption("none");
   await page.locator("#settingsSaveDraft").click();
@@ -145,8 +147,9 @@ export default async function settingsSmoke(page, { origin, artifactDir }) {
   await page.locator('[id="setting-workers.details"]').fill("3");
   state = { ...state, revision: 5 };
   await page.locator("#settingsApply").click();
-  await page.locator("#settingsStatus").filter({ hasText: "线上配置版本或控制地址已变化" }).waitFor();
-  check(submissions.length === 1, "stale draft cannot overwrite a newer live revision");
+  await page.locator("#settingsApplyRevision").filter({ hasText: "从 4 变为 5" }).waitFor();
+  check(submissions.length === 1, "stale draft cannot overwrite a newer revision without explicit review");
+  await page.locator('#settingsApplyDialog button[value="cancel"]').click();
   check(await page.locator(".settings-control-address").evaluate((label) => getComputedStyle(label).display === "grid"), "settings labels override connection toolbar layout");
   await page.locator("main").evaluate((main) => { main.scrollTop = 0; });
   await page.screenshot({ path: `${artifactDir}/settings-1120.png`, fullPage: true });

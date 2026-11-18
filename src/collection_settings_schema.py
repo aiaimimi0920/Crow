@@ -54,7 +54,7 @@ def validate(value):
     model = ai["model"].strip()
     if not model or len(model) > 200 or any(char.isspace() for char in model):
         reject("Invalid AI model route")
-    from .llm_analysis_policy import require_non_gpt_analysis_model
+    from .llm_analysis_policy import validate_analysis_model_route
     allow_gpt = ai.get("allow_gpt", False)
     if type(allow_gpt) is not bool:
         reject("AI GPT permission must be a boolean")
@@ -62,9 +62,9 @@ def validate(value):
     if not isinstance(effort, str) or effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
         reject("Invalid AI reasoning effort")
     try:
-        require_non_gpt_analysis_model(model, setting="ai.model", allow_gpt=allow_gpt)
+        validate_analysis_model_route(model, setting="ai.model")
     except ValueError:
-        reject("Enable the GPT switch before selecting a GPT analysis model")
+        reject("AI model must use a non-GPT route or gpt-6.1-sol or gpt-6-luna")
     # Preserve the old canonical shape for missing/default-off settings and receipts.
     if not allow_gpt:
         ai.pop("allow_gpt", None)

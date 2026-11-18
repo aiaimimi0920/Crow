@@ -1,6 +1,5 @@
 // Isolated local fixtures: never forwards requests to NAS, PC2 or an AI provider.
-async (page) => {
-  const origin = "http://127.0.0.1:1436";
+export default async function applyRaceSmoke(page, { origin }) {
   const checks = [];
   const check = (value, name) => { if (!value) throw new Error(name); checks.push(name); };
   await page.context().route("**/*", (route) => route.request().url().startsWith(`${origin}/`) ? route.continue() : route.abort());
@@ -39,13 +38,14 @@ async (page) => {
   await page.locator('#settingsApplyDialog button[value="confirm"]').click();
   await postEntered;
   await page.locator("#restartToken").fill("synthetic-replacement-token");
+  await page.locator("#restartToken").press("Tab");
   check(await page.locator("#settingsApply").isDisabled(), "credential change cannot unlock an in-flight POST");
   check(await page.locator('[id="setting-workers.details"]').isEnabled(), "in-flight POST does not freeze draft editing");
   releasePost();
   await page.waitForFunction(() => !document.querySelector("#settingsStatusRefresh").disabled);
   check((await page.locator("#settingsStatus").textContent()).includes("连接或授权已变化"), "stale POST receipt cannot overwrite new credential state");
   await page.locator("#settingsStatusRefresh").click();
-  await page.locator("#settingsStatus").filter({ hasText: "参数已应用" }).waitFor();
+  await page.locator("#settingsStatus").filter({ hasText: "应用成功" }).waitFor();
   check(submissions === 1, "credential changes never automatically replay a POST");
   dropResponse = true;
   postEntered = new Promise((resolve) => { enteredPost = resolve; });
@@ -56,7 +56,7 @@ async (page) => {
   releasePost();
   await page.locator("#settingsStatus").filter({ hasText: "提交结果需刷新确认" }).waitFor();
   check(await page.locator("#settingsApply").isDisabled(), "lost POST response blocks duplicate apply");
-  await page.locator("#settingsStatus").filter({ hasText: "参数已应用" }).waitFor({ timeout: 10000 });
+  await page.locator("#settingsStatus").filter({ hasText: "应用成功" }).waitFor({ timeout: 10000 });
   check(await page.locator("#settingsApply").isEnabled(), "automatic status polling reconciles a lost POST response");
   check(submissions === 2, "response loss does not cause POST replay");
   return { checks };

@@ -122,10 +122,10 @@ class SettingsRuntime:
         old, new = workers(before), workers(after)
         changed = sorted(name for name in new if name not in old or new[name] != old[name])
         removed = sorted(set(old) - set(new))
-        from .pc2_settings_ai_runtime import ai_only, apply_ai
-        exact_ai = ai_only(before, after, changed, removed)
+        from .pc2_settings_ai_runtime import apply_workers, environment_only
+        exact_workers = environment_only(before, after, changed, removed)
         try:
-            if not exact_ai:
+            if not exact_workers:
                 self.require_compose_safe(set(changed) | set(removed))
         except ValueError:
             return "rejected"
@@ -134,8 +134,8 @@ class SettingsRuntime:
         old_path, new_path = directory / "before.json", directory / "after.json"
         write_private(old_path, literal_compose(before))
         write_private(new_path, literal_compose(after))
-        if exact_ai:
-            return apply_ai(self, before, after, rows, changed, directory, write_private)
+        if exact_workers:
+            return apply_workers(self, before, after, rows, changed, directory, write_private)
         self.compose(old_path, ["config", "--quiet"])
         self.compose(new_path, ["config", "--quiet"])
         attempted = False

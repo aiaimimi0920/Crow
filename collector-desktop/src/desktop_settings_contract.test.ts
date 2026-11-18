@@ -29,13 +29,14 @@ test("GPT permission and effort roundtrip as typed settings, defaulting off", ()
   const read = () => readConfig((key) => values[key]);
   assert.equal(read().ai.allow_gpt, undefined);
   values["ai.model"] = "gpt-6.1-sol";
-  assert.throws(read, /GPT/);
+  assert.equal(read().ai.model, "gpt-6.1-sol");
   values["ai.allow_gpt"] = "true";
   values["ai.reasoning_effort"] = "low";
   assert.equal(read().ai.allow_gpt, true);
   assert.equal(read().ai.reasoning_effort, "low");
   values["ai.allow_gpt"] = "false";
-  assert.throws(read, /GPT/);
+  assert.equal(read().ai.allow_gpt, undefined);
+  assert.equal(read().ai.model, "gpt-6.1-sol");
   values["ai.model"] = "deepseek-fixture";
   values["ai.reasoning_effort"] = "none";
   assert.equal(read().ai.allow_gpt, undefined);

@@ -1,4 +1,4 @@
-"""AI-environment-only exact-ID replacement, with stopped containers retained."""
+"""Exposed worker-environment exact-ID replacement, retaining stopped containers."""
 
 import os
 import subprocess
@@ -9,19 +9,18 @@ from src.collection_settings_schema import environment_changes
 from src.project_environment import set_env
 
 from .pc2_docker_api import DockerAPI, clone_payload
-from .pc2_settings_model import inventory, workers
+from .pc2_settings_model import STAGES, inventory, workers
 
 
-def ai_only(before, after, changed, removed):
+def environment_only(before, after, changed, removed):
     if removed or not changed or set(workers(before)) != set(workers(after)):
         return False
-    allowed = {"OPENAI_API_KEY": ""}
-    for key in environment_changes(inventory(after)["effective"], "analysis"):
-        if key.startswith("OPENAI_") or key == "CROW_ANALYSIS_ALLOW_GPT":
-            set_env(key, "", environ=allowed)
+    effective = inventory(after)["effective"]
     for name in changed:
-        if not name.startswith("pc2-analysis-"):
-            return False
+        stage = next(stage for stage, role in STAGES.items() if name.startswith("pc2-" + role + "-"))
+        allowed = {"OPENAI_API_KEY": ""} if stage == "analysis" else {}
+        for key in environment_changes(effective, stage):
+            set_env(key, "", environ=allowed)
         old, new = deepcopy(before["services"][name]), deepcopy(after["services"][name])
         left, right = old.pop("environment"), new.pop("environment")
         if old != new or any(
@@ -33,7 +32,7 @@ def ai_only(before, after, changed, removed):
     return True
 
 
-def apply_ai(runtime, before, after, rows, changed, directory, write_private):
+def apply_workers(runtime, before, after, rows, changed, directory, write_private):
     api = runtime.docker_api if runtime.docker_api is not None else DockerAPI()
     token = uuid.uuid4().hex[:16]
     entries = []
@@ -57,7 +56,7 @@ def apply_ai(runtime, before, after, rows, changed, directory, write_private):
                 or any(row.get(field) != rows[name].get(field) for field in fields)
                 or order_mounts(row) != order_mounts(rows[name])
             ):
-                raise ValueError("AI container changed during settings apply")
+                raise ValueError("Worker container changed during settings apply")
             payload = clone_payload(
                 row, dict(item.split("=", 1) for item in row["Config"]["Env"])
             )
@@ -107,13 +106,13 @@ def apply_ai(runtime, before, after, rows, changed, directory, write_private):
                 or created["Config"] != expected_config
                 or created["HostConfig"] != expected_host
             ):
-                raise ValueError("AI candidate did not preserve its container contract")
+                raise ValueError("Worker candidate did not preserve its container contract")
             fresh = api.inspect(entry["old"])
             if (
                 fresh["Name"] != "/" + entry["name"]
                 or fresh["Config"] != entry["config"]
             ):
-                raise ValueError("AI canonical identity drifted")
+                raise ValueError("Worker canonical identity drifted")
             api.action(
                 entry["old"],
                 "update",
@@ -127,7 +126,7 @@ def apply_ai(runtime, before, after, rows, changed, directory, write_private):
             api.action(entry["new"], "start")
             journal()
         if not runtime.wait_ready(after):
-            raise RuntimeError("AI settings readiness failed")
+            raise RuntimeError("Worker settings readiness failed")
         for entry in entries:
             api.action(entry["new"], "update", {"RestartPolicy": entry["restart"]})
         staged = directory / "active.json"

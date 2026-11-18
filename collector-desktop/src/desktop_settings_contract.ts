@@ -48,7 +48,5 @@ export function readConfig(read: (id: string) => string): Config {
   const effort = read("ai.reasoning_effort") || "none";
   if (!["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort)) throw new Error("不支持的推理强度");
   if (effort !== "none") result.ai.reasoning_effort = effort;
-  const model = String(result.ai.model);
-  if (!result.ai.allow_gpt && (/gpt|codex/i.test(model) || /(?:^|[/:._-])o\d+(?:[/:._-]|$)/i.test(model))) throw new Error("请先开启允许使用 GPT；关闭时请改用非 GPT 模型");
   return result;
 }

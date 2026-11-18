@@ -67,8 +67,25 @@ def test_settings_explicit_boolean_roundtrip_does_not_follow_server_environment(
         restored["services"]["pc2-analysis-1"]["environment"]["CROW_ANALYSIS_ALLOW_GPT"]
         == "0"
     )
-    with pytest.raises(RestartError):
-        validate({**new, "ai": {**new["ai"], "allow_gpt": False}})
+    disabled = {**new, "ai": {**new["ai"], "allow_gpt": False}}
+    normalized = validate(disabled)
+    assert normalized["ai"]["model"] == "gpt-6.1-sol"
+    assert "allow_gpt" not in normalized["ai"]
+    assert inventory(render(render(model, new), disabled))["effective"] == normalized
+
+
+def test_disabled_saved_gpt_preference_does_not_block_config_or_admit_requests(monkeypatch):
+    from src.llm_openai_compatible import _get_openai_compatible_config
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://invalid.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6.1-sol")
+    monkeypatch.setenv("CROW_ANALYSIS_ALLOW_GPT", "0")
+    monkeypatch.delenv("FAPAI_ANALYSIS_ALLOW_GPT", raising=False)
+    assert _get_openai_compatible_config()["model"] == "gpt-6.1-sol"
+    assert not eligible_model("gpt-6.1-sol")
+    with pytest.raises(ValueError):
+        require_non_gpt_analysis_model("gpt-6.1-sol", setting="request")
 
 
 def test_disabling_filters_existing_qualified_cache_and_live_pool(

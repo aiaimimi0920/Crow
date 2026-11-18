@@ -7,6 +7,7 @@ import { settingsTemplate } from "./desktop_settings_template.ts";
 import { installedControlOrigin, settingsRequest } from "./desktop_settings_transport.ts";
 import { settingsWaitExpired } from "./desktop_settings_wait.ts";
 import { renderOperationsConfig } from "./desktop_operations_config.ts";
+import { settingsChanges, settingsStateSummary } from "./desktop_settings_review.ts";
 
 export function initializeSettings(apiBase: () => string, showDialog: (dialog: HTMLDialogElement) => void): () => void {
   element("runtimeSettings").innerHTML = settingsTemplate;
@@ -93,8 +94,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
   const showState = (value: Record<string, unknown>) => {
     if (value.effective) element("operationsConfig").innerHTML = renderOperationsConfig(value);
     const receipt = object(value.request);
-    const labels: Record<string, string> = { requested: "已保存，等待 PC2 应用", applying: "PC2 正在应用配置", succeeded: "参数已应用，容器健康检查通过（不代表 AI 推理成功）", failed: "应用失败，请检查结果和生效配置", expired: "请求已过期，未被 PC2 领取", unknown: "应用结果未确认，需检查 PC2，不能继续提交" };
-    status(`${value.available ? "PC2 控制器在线" : "PC2 控制器离线"} · 配置版本 ${value.revision ?? "未知"}${receipt.status ? ` · ${labels[String(receipt.status)] || "未知状态"}` : ""}`);
+    status(settingsStateSummary(value));
     pending = ["requested", "applying", "unknown"].includes(String(receipt.status));
     polling = ["requested", "applying"].includes(String(receipt.status));
     if (operationId !== String(receipt.id || "")) {
@@ -134,7 +134,7 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
       // contract problem and must not consume the transient poll retry budget.
       pollFailureEligible = false;
       const effective = liveConfig(value);
-      if (populate) {
+      if (populate || (!dirty && !pending && editVersion === edits)) {
         if (editVersion !== edits) throw new Error("读取期间编辑内容已变化；已保留编辑内容，请重试");
         fill(effective); baseline = { origin, revision: Number(value.revision) }; secret().value = "";
         localStorage.removeItem(draftKey(apiBase())); dirty = false;
@@ -181,12 +181,19 @@ export function initializeSettings(apiBase: () => string, showDialog: (dialog: H
       const origin = endpoint();
       const value = await request("");
       if (id !== generation) return;
-      showState(value); liveConfig(value);
+      showState(value);
+      const effective = liveConfig(value);
       if (pending) throw new Error("已有配置操作未完成，请刷新应用状态；草稿可继续编辑");
       if (value.available !== true) throw new Error("PC2 控制器离线，未应用；草稿已保留");
-      if (baseline && (baseline.origin !== origin || baseline.revision !== value.revision)) throw new Error("线上配置版本或控制地址已变化，请读取线上配置后重新编辑；未覆盖线上配置");
+      if (baseline && baseline.origin !== origin) throw new Error("控制地址已变化，请读取线上配置后重新编辑；未跨地址应用草稿");
       if (editVersion !== edits) throw new Error("校验期间编辑内容已变化，请重新保存并应用");
+      element("settingsApplyRevision").textContent = baseline && baseline.revision !== value.revision
+        ? `线上版本已从 ${baseline.revision} 变为 ${value.revision}；请核对下列差异，确认后按当前线上版本应用草稿。`
+        : `将应用到线上版本 ${value.revision}。`;
+      element("settingsApplyChanges").textContent = settingsChanges(effective, edited) || "非密钥配置无变化。";
+      if (secret().value) element("settingsApplyChanges").textContent += "\nAI API Key：更换（不显示密钥）";
       if (!await confirm("settingsApplyDialog") || id !== generation) return;
+      if (editVersion !== edits) throw new Error("确认期间编辑内容已变化，请重新保存并应用");
       const body = { request_id: crypto.randomUUID(), expected_revision: value.revision, config: edited, api_key: secret().value || null };
       secret().value = ""; submitted = true; pending = true; polling = true; pollFailures = 0;
       const result = await request("/apply", body);
