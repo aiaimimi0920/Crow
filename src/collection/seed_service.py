@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Callable, Dict
+from typing import Any
 
 from ..record_merge import fill_missing
 from .adapters.generic_product import GenericProductAdapter
@@ -34,13 +35,14 @@ class SeedCollectionService:
         self.jobs_dir = jobs_dir
         self.data_root = data_root
         self.adapter = adapter or GenericProductAdapter()
+        self._bootstrapped_repository: Any = None
 
     def build_seed_stub(
         self,
-        item: Dict[str, Any],
+        item: dict[str, Any],
         parse_price: Callable[[Any], Any],
         safe_int: Callable[[Any], Any],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return self.adapter.build_seed_record(
             item,
             parse_number=parse_price,
@@ -49,7 +51,7 @@ class SeedCollectionService:
 
     def register_search_task(
         self,
-        task: Dict[str, Any],
+        task: dict[str, Any],
         *,
         leased_by: str | None = None,
         lease_seconds: int = 90,
@@ -71,10 +73,13 @@ class SeedCollectionService:
             return
         if not (self.repository and getattr(self.repository, "enabled", False)):
             return
+        if self._bootstrapped_repository is self.repository:
+            return
         if (
             getattr(self.repository, "count_search_tasks", None)
             and self.repository.count_search_tasks() > 0
         ):
+            self._bootstrapped_repository = self.repository
             return
 
         snapshots = iter_job_snapshots(self.jobs_dir) if self.jobs_dir else []
@@ -86,8 +91,10 @@ class SeedCollectionService:
             self.repository.ensure_seed_search_tasks(
                 all_codes, DEFAULT_CATEGORIES, sort_param="2"
             )
+        if snapshots or all_codes:
+            self._bootstrapped_repository = self.repository
 
-    def next_task(self, session_id: str, *, paused: bool = False) -> Dict[str, Any]:
+    def next_task(self, session_id: str, *, paused: bool = False) -> dict[str, Any]:
         if paused:
             return {"task": None, "message": "Paused (Captcha)"}
         if not (self.repository and getattr(self.repository, "enabled", False)):
@@ -119,7 +126,7 @@ class SeedCollectionService:
             }
         return {"task": None, "message": "所有嗅探任务已完成"}
 
-    def report_progress(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def report_progress(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = payload.get("url")
         task_key = payload.get("task_key")
         session_id = payload.get("session_id")
@@ -150,7 +157,7 @@ class SeedCollectionService:
 
         return {"status": "ok"}
 
-    def counts_snapshot(self) -> Dict[str, int]:
+    def counts_snapshot(self) -> dict[str, int]:
         if self.repository and getattr(self.repository, "enabled", False):
             try:
                 return self.repository.search_task_counts()
@@ -166,23 +173,23 @@ class SeedCollectionService:
 
     def submit_batch(
         self,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         *,
         parse_price: Callable[[Any], Any],
         safe_int: Callable[[Any], Any],
         prefer_db_task_reads: Callable[[], bool],
         get_seen_entry: Callable[[str], Any],
-        get_flat_item: Callable[[str], Dict[str, Any] | None],
+        get_flat_item: Callable[[str], dict[str, Any] | None],
         get_data_path: Callable[[Any], str],
-        update_file_global: Callable[[str, str, Dict[str, Any]], None],
+        update_file_global: Callable[[str, str, dict[str, Any]], None],
         persist_item_to_db: Callable[
-            [Dict[str, Any], str, Dict[str, Any] | None], Dict[str, Any] | None
+            [dict[str, Any], str, dict[str, Any] | None], dict[str, Any] | None
         ],
         evict_runtime_item: Callable[[str], None],
         archive_list_payload: Callable[[Any, datetime.datetime], str | None],
-        set_seen: Callable[[str, Dict[str, Any]], None],
+        set_seen: Callable[[str, dict[str, Any]], None],
         queue_pending: Callable[[str], bool],
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         items = data.get("items", [])
         source_page_url = (
             data.get("source_page_url") or data.get("page_url") or data.get("url")
@@ -196,8 +203,8 @@ class SeedCollectionService:
             logger.exception("List payload archive failed")
 
         new_count = 0
-        staged_new: Dict[str, Dict[str, Any]] = {}
-        items_by_path: Dict[str, list[tuple[str, Dict[str, Any], Dict[str, Any]]]] = {}
+        staged_new: dict[str, dict[str, Any]] = {}
+        items_by_path: dict[str, list[tuple[str, dict[str, Any], dict[str, Any]]]] = {}
 
         for item in items:
             item_id = self.adapter.item_id(item)

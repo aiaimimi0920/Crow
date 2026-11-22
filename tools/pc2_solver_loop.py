@@ -23,7 +23,6 @@ from tools.pc2_solver_execution import (
     run_solver_local_with_deadline,
 )
 from tools.pc2_solver_fallback import (
-    _manual_fallback_latch_active,
     _mark_collection_resume_pending,
     _retry_pending_collection_resume,
 )
@@ -37,6 +36,7 @@ from tools.pc2_solver_loop_control import (
 from tools.pc2_solver_loop_failure import (
     log_solver_cooldown_active,
     log_solver_cooldown_started,
+    reconcile_manual_latch,
     record_failed_attempt,
 )
 from tools.pc2_solver_loop_probe import prepare_solver_browser, probe_requested_targets
@@ -53,7 +53,6 @@ from tools.pc2_solver_retry_state import (
     _node_solver_cooldown_can_resume,
     _node_solver_cooldown_matches,
     _record_slider_attempt_started,
-    _reset_fallback_state,
     _slider_retry_due,
     _solver_cooldown_active,
     _sync_challenge_state,
@@ -101,6 +100,7 @@ def local_solver_loop(
     recovery_targets = RecoveryTargets()
     last_auth_confirmed_at = 0.0
     probe_counter = 0
+    last_cooldown_log = None
     idle_pointer = IdlePointer(cdp_endpoint)
     while True:
         if hold_manual_window(poll_seconds):
@@ -153,6 +153,7 @@ def local_solver_loop(
                 expected_node_id,
             )
             fallback_state = _load_fallback_state()
+            loaded_fallback = dict(fallback_state)
             solver_status = select_solver_work_status(
                 solver_status,
                 fallback_state,
@@ -232,8 +233,11 @@ def local_solver_loop(
                 api_base_url, solver_status, fallback_state, expected_node_id
             )
             if _solver_cooldown_active(fallback_state):
-                _save_fallback_state(fallback_state)
-                log_solver_cooldown_active(fallback_state)
+                if not cooldown_started and fallback_state != loaded_fallback:
+                    _save_fallback_state(fallback_state)
+                last_cooldown_log = log_solver_cooldown_active(
+                    fallback_state, last_log=last_cooldown_log
+                )
                 time.sleep(poll_seconds)
                 continue
             cooldown_until = float(fallback_state.get("solver_cooldown_until") or 0)
@@ -283,28 +287,9 @@ def local_solver_loop(
                     )
                 time.sleep(poll_seconds)
                 continue
-            if fallback_state.get("manual_pushed"):
-                if not manual_required:
-                    # PC1 manual auth completed/cleared; reset fallback state
-                    log_event({"kind": "fallback_manual_resolved"})
-                    _reset_fallback_state()
-                elif _manual_fallback_latch_active(fallback_state, manual_required):
-                    log_event(
-                        {
-                            "kind": "fallback_waiting_manual_auth",
-                            "manual_required": manual_required,
-                        }
-                    )
-                    time.sleep(poll_seconds)
-                    continue
-                else:
-                    log_event(
-                        {
-                            "kind": "fallback_manual_latch_bypassed",
-                            "manual_required": manual_required,
-                        }
-                    )
-                    _reset_fallback_state()
+            if reconcile_manual_latch(fallback_state, manual_required):
+                time.sleep(poll_seconds)
+                continue
             # Primary trigger: API says paused + not running (standard flow)
             api_trigger = paused and not running
             last_request = solver_status.get("last_request")

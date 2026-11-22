@@ -51,7 +51,9 @@ def test_watchdog_allows_missing_heartbeat_during_startup_grace(tmp_path) -> Non
 def test_watchdog_terminates_parent_for_stale_heartbeat(tmp_path) -> None:
     heartbeat_path = tmp_path / "heartbeat.json"
     _write_heartbeat(heartbeat_path, 600.0)
+    order: list[str] = []
     signals: list[tuple[int, int]] = []
+    events: list[dict[str, object]] = []
 
     result = pc2_solver_watchdog.watchdog_iteration(
         heartbeat_path,
@@ -60,7 +62,11 @@ def test_watchdog_terminates_parent_for_stale_heartbeat(tmp_path) -> None:
         startup_grace_seconds=180.0,
         parent_pid=1,
         now=1000.0,
-        terminate=lambda pid, sig: signals.append((pid, sig)),
+        terminate=lambda pid, sig: (
+            order.append("terminate"),
+            signals.append((pid, sig)),
+        ),
+        log=lambda event: (order.append("log"), events.append(event)),
     )
 
     assert result == {
@@ -69,6 +75,8 @@ def test_watchdog_terminates_parent_for_stale_heartbeat(tmp_path) -> None:
         "parent_pid": 1,
     }
     assert signals == [(1, signal.SIGTERM)]
+    assert order == ["log", "terminate"]
+    assert events[0]["kind"] == "local_solver_watchdog_restart"
 
 
 def test_browser_healthcheck_rejects_stale_or_missing_heartbeat(tmp_path) -> None:

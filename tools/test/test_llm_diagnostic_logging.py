@@ -199,3 +199,13 @@ def test_auto_tuner_failure_omits_traceback_and_value(selector, monkeypatch, cap
     server_auto_tuning.auto_tuner_thread(stop)
     assert "Error kind=invalid_data" in caplog.text and PRIVATE not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_auto_tuner_empty_pool_skips_without_invalid_data_error(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    empty_selector = llm_model_selector.ModelSelector([])
+    monkeypatch.setattr(llm_model_selector, "get_model_selector", lambda: empty_selector)
+    waits = iter([False, True])
+    stop = SimpleNamespace(is_set=lambda: False, wait=lambda _: next(waits))
+    server_auto_tuning.auto_tuner_thread(stop)
+    assert "Error kind=" not in caplog.text

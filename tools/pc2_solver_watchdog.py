@@ -38,6 +38,7 @@ def watchdog_iteration(
     parent_pid: int,
     now: float | None = None,
     terminate: Callable[[int, int], None] = os.kill,
+    log: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     current_time = time.time() if now is None else float(now)
     age = heartbeat_age_seconds(heartbeat_path, now=current_time)
@@ -47,12 +48,16 @@ def watchdog_iteration(
     if age is not None and age <= max(1.0, stale_seconds):
         return {"status": "healthy", "heartbeat_age_seconds": age}
 
-    terminate(parent_pid, signal.SIGTERM)
-    return {
+    result: dict[str, object] = {
         "status": "restart_requested",
         "heartbeat_age_seconds": age,
         "parent_pid": parent_pid,
     }
+    if log is not None:
+        # Emit before SIGTERM: parent teardown stops this watchdog process too.
+        log({"kind": "local_solver_watchdog_restart", **result})
+    terminate(parent_pid, signal.SIGTERM)
+    return result
 
 
 def run_watchdog(
@@ -71,18 +76,24 @@ def run_watchdog(
             and guard_iteration(parent_pid)["status"] == "restart_requested"
         ):
             return 0
+        emitted = False
+
+        def emit_restart(event: dict[str, object]) -> None:
+            nonlocal emitted
+            emitted = True
+            print(json.dumps(event), flush=True)
+
         result = watchdog_iteration(
             heartbeat_path,
             started_at=started_at,
             stale_seconds=stale_seconds,
             startup_grace_seconds=startup_grace_seconds,
             parent_pid=parent_pid,
+            log=emit_restart,
         )
         if result["status"] == "restart_requested":
-            print(
-                json.dumps({"kind": "local_solver_watchdog_restart", **result}),
-                flush=True,
-            )
+            if not emitted:
+                emit_restart({"kind": "local_solver_watchdog_restart", **result})
             return 0
         interval = (
             min(poll_seconds, POLL_SECONDS) if browser_tab_guard else poll_seconds

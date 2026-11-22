@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--after-id", default="")
     parser.add_argument("--item-id", action="append")
     parser.add_argument("--max-rounds", type=int, default=1)
+    parser.add_argument("--allow-processed-recapture", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.limit <= 100:
         parser.error("limit must be in 1..100")
@@ -42,8 +43,14 @@ def main() -> int:
                 .order_by(CollectionSeedItem.item_id)
                 .limit(args.limit)
             ))
-    results = requeue_blocked_items(repository, ids, recovery_id=args.recovery_id,
-                                   apply=args.apply, max_rounds=args.max_rounds)
+    results = requeue_blocked_items(
+        repository,
+        ids,
+        recovery_id=args.recovery_id,
+        apply=args.apply,
+        max_rounds=args.max_rounds,
+        allow_processed_recapture=args.allow_processed_recapture,
+    )
     counts = Counter(str(result.get("skip") or result.get("target_status")) for result in results)
     print(json.dumps({"apply": args.apply, "recovery_id": args.recovery_id,
                       "next_after_id": max(ids) if ids else None,

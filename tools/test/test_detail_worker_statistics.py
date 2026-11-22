@@ -101,3 +101,41 @@ def test_failed_refresh_is_marked_stale_and_not_retried_for_every_item(clock):
     assert owner.worker_queue_statistics(other)["counts"] == {
         "seed_occurrence_total": 99
     }
+
+
+def test_seed_collector_once_uses_cached_queue_statistics_on_paused_polls(
+    tmp_path, clock, monkeypatch
+):
+    from tools import seed_collector
+
+    monkeypatch.setattr(
+        seed_collector,
+        "_collection_pause_state_with_retry",
+        lambda _url: {"paused": True, "reason": "collection_paused"},
+    )
+    calls = []
+    repo = SimpleNamespace(
+        seed_queue_counts=lambda: calls.append(1) or {"seed_scan_job_pending": 5}
+    )
+    cfg = seed_collector.SeedCollectorConfig(
+        job_key="j1",
+        province="P",
+        city="C",
+        district="D",
+        location_code="110101",
+        category="50025969",
+        sort_specs=seed_collector.parse_seed_sort_specs("bid_desc:2:x"),
+        max_page=10,
+        cdp_endpoint="http://127.0.0.1:9223",
+        output_dir=tmp_path,
+        worker_id="seed-1",
+    )
+    for _ in range(10):
+        res = seed_collector.run_seed_collector_once(
+            cfg,
+            repository=repo,
+            http_session=object(),
+            browserless_seed_probe=object(),
+        )
+        assert res["counts"] == {"seed_scan_job_pending": 5}
+    assert len(calls) == 1

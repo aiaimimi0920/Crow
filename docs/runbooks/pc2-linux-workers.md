@@ -122,7 +122,7 @@ After activation, check real report acknowledgements and cooldown resume events.
 PC2 启动器为独立心跳 watchdog 启用 `--browser-tab-guard`。它不等待 solver
 主循环，在正常本地 CDP 响应下每 5 秒检查一次容器内部 `127.0.0.1:9223`；
 只计 `type=page` 的 Tab（包括空白页、登录页和参考页），不计 iframe 或 worker。
-恰好 4 个不处理，超过 4 个时尝试关闭全部页面，而不是仅关闭超出的页面。
+默认上限与 `DEFAULT_CDP_PAGE_TARGET_LIMIT` 对齐为 12 个（可通过 `CROW_BROWSER_TAB_GUARD_MAX_TABS` 覆盖，至少为 4），避免「初始页 + 2 参考页 + seed/detail 双挑战页 + 采集临时页」正常并发误触发整容器重启；不超过上限时不处理，超过上限时尝试关闭全部页面，而不是仅关闭超出的页面。
 
 关闭使用 10 秒共享预算和单次最多 2 秒 socket timeout；失败或预算耗尽仍触发
 现有 supervisor 退出，再由 Docker `unless-stopped` 重启 browser-solver 全部受管

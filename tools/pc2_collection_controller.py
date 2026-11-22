@@ -15,11 +15,60 @@ from .pc2_engine_controller import (
     ControllerError,
     EngineController,
     MailboxClient,
+    run_docker,
     validate_command,
 )
 from .pc2_settings_controller import SettingsClient, SettingsController
 from .pc2_settings_runtime import SettingsRuntime, write_private
+from .pc2_settings_runtime import run as run_stdout
 from .pc2_worker_watchdog import WorkerWatchdog
+
+
+class StepDockerCache:
+    """Deduplicate bulk Compose inventory reads within one controller step."""
+
+    def __init__(self, *, process_runner=run_docker, text_runner=run_stdout):
+        self._process_runner = process_runner
+        self._text_runner = text_runner
+        self._cache: dict[tuple[str, ...], str] = {}
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+    @staticmethod
+    def _bulk_read_key(arguments: list[str]) -> tuple[str, ...] | None:
+        key = tuple(arguments)
+        if key[:2] == ("ps", "-aq"):
+            return key
+        if key[:1] == ("inspect",) and len(key) > 2:
+            return key
+        return None
+
+    def run_text(self, arguments: list[str], timeout: int = 60) -> str:
+        cache_key = self._bulk_read_key(arguments)
+        if cache_key is not None and cache_key in self._cache:
+            return self._cache[cache_key]
+        if arguments and arguments[0] not in {"ps", "inspect", "exec", "compose"}:
+            self._cache.clear()
+        output = self._text_runner(arguments, timeout=timeout)
+        if cache_key is not None:
+            self._cache[cache_key] = output
+        return output
+
+    def run_process(
+        self, arguments: list[str], *, timeout: int
+    ) -> subprocess.CompletedProcess[str]:
+        cache_key = self._bulk_read_key(arguments)
+        if cache_key is not None and cache_key in self._cache:
+            return subprocess.CompletedProcess(
+                ["docker", *arguments], 0, stdout=self._cache[cache_key], stderr=""
+            )
+        if arguments and arguments[0] not in {"ps", "inspect", "exec", "compose"}:
+            self._cache.clear()
+        completed = self._process_runner(arguments, timeout=timeout)
+        if cache_key is not None:
+            self._cache[cache_key] = completed.stdout
+        return completed
 
 
 def unavailable_event(error):
@@ -128,20 +177,26 @@ def main():
     for path in args.env_file:
         compose.extend(["--env-file", str(path.resolve(strict=True))])
     compose.extend(["-f", str(args.compose_file.resolve(strict=True))])
-    runtime = SettingsRuntime(args.runtime_root.resolve(), compose)
+    docker_cache = StepDockerCache()
+    runtime = SettingsRuntime(
+        args.runtime_root.resolve(), compose, runner=docker_cache.run_text
+    )
     settings = SettingsController(
         SettingsClient(args.api_base, args.token_file, ca_file=args.ca_file), runtime
     )
     restart = RestartController(
         MailboxClient(args.api_base, args.token_file, ca_file=args.ca_file),
-        EngineController(),
+        EngineController(run=docker_cache.run_process),
         runtime.root,
     )
-    watchdog = CollectionWatchdog(runtime.root)
-    progress_watchdog = CollectionProgressWatchdog(runtime.root)
-    worker_watchdog = WorkerWatchdog(runtime.root)
+    watchdog = CollectionWatchdog(runtime.root, runner=docker_cache.run_text)
+    progress_watchdog = CollectionProgressWatchdog(
+        runtime.root, runner=docker_cache.run_text
+    )
+    worker_watchdog = WorkerWatchdog(runtime.root, runner=docker_cache.run_text)
     with operation_lock(runtime.root, name="controller.lock"):
         while True:
+            docker_cache.clear()
             try:
                 step(
                     runtime.root,

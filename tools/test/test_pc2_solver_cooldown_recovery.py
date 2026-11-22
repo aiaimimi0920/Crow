@@ -98,3 +98,87 @@ def test_scoped_cooldown_survives_manual_escalation(
         solver.local_solver_loop(poll_seconds=1, expected_node_id="pc2")
     assert expected in events
     assert bool(resumed) is (expected == "collection_resume_pending")
+
+
+def test_cooldown_log_rate_limited_and_unchanged_state_not_rewritten(monkeypatch):
+    from tools import pc2_solver_loop_failure as failure
+
+    logged = []
+    monkeypatch.setattr(failure, "log_event", lambda event: logged.append(event["kind"]))
+    sample = {
+        "challenge_id": "ch-1",
+        "solver_cooldown_until": 2000.0,
+        "solver_cooldown_reason": "repeated_solver_failures",
+        "consecutive_failures": 1,
+    }
+    marker = failure.log_solver_cooldown_active(sample, last_log=None, now=1000.0)
+    marker = failure.log_solver_cooldown_active(sample, last_log=marker, now=1005.0)
+    marker = failure.log_solver_cooldown_active(sample, last_log=marker, now=1059.0)
+    marker = failure.log_solver_cooldown_active(sample, last_log=marker, now=1060.0)
+    assert logged == ["solver_cooldown_active", "solver_cooldown_active"]
+
+
+def test_solver_cdp_accepts_existing_locale_override_without_invalidating_trace(
+    caplog,
+):
+    import json
+
+    from src.captcha_cdp_command import CaptchaCDPCommandMixin
+
+    replies = iter(
+        [
+            json.dumps(
+                {
+                    "id": 1,
+                    "error": {
+                        "code": -32000,
+                        "message": "Another locale override is already in effect",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "id": 2,
+                    "error": {
+                        "code": -32601,
+                        "message": "Another locale override is already in effect",
+                    },
+                }
+            ),
+        ]
+    )
+
+    class DummySock:
+        connected = True
+
+        def gettimeout(self):
+            return 5.0
+
+        def settimeout(self, _value):
+            pass
+
+        def send(self, _payload):
+            pass
+
+        def recv(self):
+            return next(replies)
+
+    class DummySolver(CaptchaCDPCommandMixin):
+        ws = DummySock()
+        message_id = 1
+
+        def _stop_if_cancelled(self):
+            return False
+
+        def _bounded_io_timeout(self, value):
+            return value
+
+    instance = DummySolver()
+    assert (
+        instance._send_cdp("Emulation.setLocaleOverride", {"locale": "zh-CN"}) == {}
+    )
+    assert not any("CDP Error" in record.message for record in caplog.records)
+    assert (
+        instance._send_cdp("Emulation.setLocaleOverride", {"locale": "zh-CN"}) is None
+    )
+    assert any("CDP Error" in record.message for record in caplog.records)

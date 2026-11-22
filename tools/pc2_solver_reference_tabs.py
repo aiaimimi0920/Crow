@@ -14,10 +14,18 @@ SITES = (
 )
 
 
-def site_present(targets, domain):
+def site_present(targets, domain, *, tracked_target_id=None):
     for target in targets:
         if target.get("type") != "page":
             continue
+        target_id = target.get("id")
+        if (
+            isinstance(tracked_target_id, str)
+            and tracked_target_id
+            and isinstance(target_id, str)
+            and target_id == tracked_target_id
+        ):
+            return True
         parsed = urlsplit(str(target.get("url") or ""))
         host = (parsed.hostname or "").lower()
         if parsed.scheme in {"http", "https"} and (
@@ -66,11 +74,31 @@ def record_failed_drags(endpoint, failures, *, allow_open=True):
         save_reference_state(state)
         if count < 3 or not allow_open:
             return
+        raw_ids = state.get("target_ids")
+        target_ids = (
+            {
+                str(k): str(v)
+                for k, v in raw_ids.items()
+                if isinstance(k, str) and isinstance(v, str) and v
+            }
+            if isinstance(raw_ids, dict)
+            else {}
+        )
+        ids_changed = False
         for domain, url in SITES:
-            # Re-read after every creation; retries never knowingly duplicate a tab.
-            if site_present(list_cdp_targets(endpoint), domain):
+            # Re-read after every creation; retries never knowingly duplicate a tab,
+            # even when an unreachable site remains on about:blank or chrome-error://.
+            targets = list_cdp_targets(endpoint)
+            if site_present(
+                targets, domain, tracked_target_id=target_ids.get(domain)
+            ):
                 continue
-            open_background_page(endpoint, url)
+            created = open_background_page(endpoint, url)
+            if isinstance(created, dict):
+                created_id = created.get("id")
+                if isinstance(created_id, str) and created_id.strip():
+                    target_ids[domain] = created_id.strip()
+                    ids_changed = True
             log_event(
                 {
                     "kind": "solver_reference_tab_opened",
@@ -78,8 +106,12 @@ def record_failed_drags(endpoint, failures, *, allow_open=True):
                     "failed_drags": count,
                 }
             )
+        if ids_changed:
+            state["target_ids"] = target_ids
         if not state.get("tabs_ready"):
             state.update(tabs_ready=True, post_open_failures=0)
+            save_reference_state(state)
+        elif ids_changed:
             save_reference_state(state)
     except Exception as exc:  # noqa: BLE001 -- optional tabs must not change challenge outcome
         log_event(

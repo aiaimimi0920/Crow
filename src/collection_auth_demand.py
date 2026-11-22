@@ -23,7 +23,7 @@ def collection_workers_available(*, root=None, now=None):
     )
     try:
         with closing(
-            sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)
+            sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
         ) as db:
             row = db.execute("SELECT heartbeat FROM controller WHERE id=1").fetchone()
         seen = float(row[0]) if row else float("nan")

@@ -43,6 +43,10 @@ def auto_tuner_thread(stop_event: Event | None = None) -> None:
             continue
 
         try:
+            if not model_selector.pool:
+                continue
+            for model in model_selector.pool:
+                stable_count.setdefault(model["name"], 0)
             stats = model_selector.get_stats()
 
             logger.info("[AUTO-TUNER] Analysis @ %s", time.strftime("%H:%M:%S"))
@@ -107,7 +111,7 @@ def auto_tuner_thread(stop_event: Event | None = None) -> None:
                     }
 
             # Check stability
-            if min(stable_count.values()) >= STABLE_ROUNDS:
+            if stable_count and min(stable_count.values()) >= STABLE_ROUNDS:
                 is_stable = True
                 logger.info("[AUTO-TUNER] Stable; models=%s", len(model_selector.pool))
                 for index, model in enumerate(model_selector.pool, start=1):

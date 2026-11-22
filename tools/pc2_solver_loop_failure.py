@@ -12,6 +12,7 @@ from tools.pc2_solver_failure_guard import failure_mutation_block_reason
 from tools.pc2_solver_fallback import (
     FALLBACK_FAIL_THRESHOLD,
     FALLBACK_STALL_SECONDS,
+    _manual_fallback_latch_active,
     _report_manual_captcha,
     manual_fallback_enabled,
 )
@@ -21,6 +22,7 @@ from tools.pc2_solver_maintenance import (
 )
 from tools.pc2_solver_retry_state import (
     _record_slider_attempt_failure,
+    _reset_fallback_state,
 )
 from tools.pc2_solver_state_store import _load_fallback_state, _save_fallback_state
 from tools.pc2_solver_transport import log_event, read_solver_status
@@ -39,7 +41,23 @@ def log_solver_cooldown_started(state: dict[str, object], now: float) -> None:
     )
 
 
-def log_solver_cooldown_active(state: dict[str, object]) -> None:
+COOLDOWN_LOG_INTERVAL_SECONDS = 60.0
+
+
+def log_solver_cooldown_active(
+    state: dict[str, object],
+    *,
+    last_log: tuple[object, object, float] | None = None,
+    now: float | None = None,
+) -> tuple[object, object, float]:
+    current = time.time() if now is None else float(now)
+    key = (state.get("challenge_id"), state.get("solver_cooldown_until"))
+    if (
+        last_log is not None
+        and (last_log[0], last_log[1]) == key
+        and 0 <= current - last_log[2] < COOLDOWN_LOG_INTERVAL_SECONDS
+    ):
+        return last_log
     log_event(
         {
             "kind": "solver_cooldown_active",
@@ -48,6 +66,35 @@ def log_solver_cooldown_active(state: dict[str, object]) -> None:
             "consecutive_failures": state.get("consecutive_failures", 0),
         }
     )
+    return (key[0], key[1], current)
+
+
+def reconcile_manual_latch(
+    fallback_state: dict[str, object], manual_required: bool
+) -> bool:
+    """Return True when the loop must continue waiting on an active manual latch."""
+    if not fallback_state.get("manual_pushed"):
+        return False
+    if not manual_required:
+        log_event({"kind": "fallback_manual_resolved"})
+        _reset_fallback_state()
+        return False
+    if _manual_fallback_latch_active(fallback_state, manual_required):
+        log_event(
+            {
+                "kind": "fallback_waiting_manual_auth",
+                "manual_required": manual_required,
+            }
+        )
+        return True
+    log_event(
+        {
+            "kind": "fallback_manual_latch_bypassed",
+            "manual_required": manual_required,
+        }
+    )
+    _reset_fallback_state()
+    return False
 
 
 def record_failed_attempt(

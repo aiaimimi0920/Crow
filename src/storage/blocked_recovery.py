@@ -1,14 +1,19 @@
 """Explicit, bounded recovery of blocked collection work; never rewrite listings."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
 from .blocked_completion import existing_collection_completion
 from .models import CollectionSeedItem, PropertyAudit
-from .repository_context import _coerce_naive_utc, _resolve_collection_artifact_path, _utc_now
+from .repository_context import (
+    _coerce_naive_utc,
+    _resolve_collection_artifact_path,
+    _utc_now,
+)
 
 if TYPE_CHECKING:
     from .repository import PropertyRepository
@@ -21,6 +26,7 @@ def requeue_blocked_items(
     recovery_id: str,
     apply: bool = False,
     max_rounds: int = 1,
+    allow_processed_recapture: bool = False,
 ) -> list[dict[str, object]]:
     """Dry-run by default. Missing raw evidence requires recapture, not another AI call.
 
@@ -69,7 +75,8 @@ def requeue_blocked_items(
             audit = session.get(PropertyAudit, item_id)
             processed = audit is not None and audit.is_processed is True
             completed = processed and existing_collection_completion(session, repository, row, audit)
-            if processed and not completed:
+            reviewed_processed = processed and not completed
+            if reviewed_processed and not allow_processed_recapture:
                 result["skip"] = "processed_requires_review"
                 continue
             artifacts = repository._seed_artifacts_from_row(row)
@@ -81,9 +88,20 @@ def requeue_blocked_items(
                 continue
             analyze = row.status == "analysis_blocked" and has_raw
             target = "detail_completed" if completed else "analysis_failed" if analyze else "detail_failed"
-            result.update({"previous_status": row.status, "target_status": target,
-                           "reason": "existing_completed_data" if completed else
-                           "raw_available" if analyze else "recapture_required"})
+            reason = (
+                "existing_completed_data"
+                if completed
+                else (
+                    "reviewed_processed_raw_available"
+                    if (reviewed_processed and analyze)
+                    else "reviewed_processed_recapture_required"
+                    if reviewed_processed
+                    else "raw_available"
+                    if analyze
+                    else "recapture_required"
+                )
+            )
+            result.update({"previous_status": row.status, "target_status": target, "reason": reason})
             if not apply:
                 continue
             receipt = {
@@ -95,6 +113,8 @@ def requeue_blocked_items(
                 "analysis_attempts": payload.get("_analysis_attempt_count", 0),
                 "target_status": target,
             }
+            if reviewed_processed:
+                receipt["reviewed_processed"] = True
             payload["_blocked_recovery"] = [*history, receipt]
             # Preserve original, portable paths and prior artifacts even on recapture.
             if completed:

@@ -114,3 +114,23 @@ def test_production_host_requires_worker_evidence_but_keeps_auth_pause(
         assert not host.NAS_AUTH_RECOVERY.snapshot()["automatic_auth_allowed"]
     finally:
         host.executor.shutdown(wait=True)
+
+
+def test_mailbox_uses_wal_so_concurrent_writer_does_not_starve_liveness_read(tmp_path):
+    mailbox = RestartMailbox(tmp_path, now=lambda: 100)
+    mailbox.poll()
+    writer = sqlite3.connect(
+        tmp_path / "control" / "pc2-engine-restart.sqlite3",
+        isolation_level=None,
+        timeout=5,
+    )
+    try:
+        assert writer.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE controller SET heartbeat = 105 WHERE id = 1")
+        # In WAL mode, an uncommitted write transaction must still allow readers to see
+        # the last committed heartbeat (100) without failing closed with database locked.
+        assert collection_workers_available(root=tmp_path, now=120) is True
+        writer.execute("ROLLBACK")
+    finally:
+        writer.close()

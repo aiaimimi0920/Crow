@@ -69,6 +69,8 @@ class RestartMailbox:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=10000")
         connection.execute("CREATE TABLE IF NOT EXISTS controller (id INTEGER PRIMARY KEY, heartbeat REAL NOT NULL)")
         connection.execute("""CREATE TABLE IF NOT EXISTS requests (
             id TEXT PRIMARY KEY, status TEXT NOT NULL, created REAL NOT NULL,

@@ -1,13 +1,13 @@
 """Offline process recovery boundaries: never touch real Docker or credentials."""
-from copy import deepcopy
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 
-from tools.pc2_collection_watchdog import CollectionWatchdog
 from tools.pc2_collection_controller import step
-from tools.pc2_engine_controller import EngineController, ControllerError
+from tools.pc2_collection_watchdog import CollectionWatchdog
+from tools.pc2_engine_controller import ControllerError, EngineController
 from tools.pc2_settings_runtime import SettingsRuntime
 from tools.test.collection_settings_fixtures import FakeDocker
 from tools.test.test_pc2_engine_controller import containers, output
@@ -117,7 +117,7 @@ def test_watchdog_recovers_locally_before_nas_poll_and_skips_unresolved_operatio
         calls.append("nas")
         raise OSError("offline fixture")
     settings = SimpleNamespace(step=unavailable, journal=tmp_path / "settings.json")
-    restart = SimpleNamespace(journal=tmp_path / "restart.json")
+    restart = SimpleNamespace(step=unavailable, journal=tmp_path / "restart.json")
     watcher = SimpleNamespace(step=lambda: calls.append("watchdog"))
     with pytest.raises(OSError):
         step(tmp_path, settings, restart, watcher)

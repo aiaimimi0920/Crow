@@ -1,6 +1,6 @@
-from copy import deepcopy
 import json
 import os
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -68,3 +68,25 @@ def test_release_rebase_keeps_settings_key_and_mounts_but_adopts_code():
     target["services"]["pc2-detail-1"]["volumes"][0]["source"] = "/changed/data"
     with pytest.raises(ValueError):
         rebase(active, target)
+
+
+def test_step_docker_cache_deduplicates_bulk_inventory_but_keeps_single_rechecks():
+    from tools.pc2_collection_controller import StepDockerCache
+
+    calls = []
+
+    def fake_text(args, timeout=60):
+        calls.append(tuple(args))
+        return f"out-{len(calls)}"
+
+    cache = StepDockerCache(text_runner=fake_text)
+    assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-1"
+    assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-1"
+    assert cache.run_text(["inspect", "id1", "id2"]) == "out-2"
+    assert cache.run_text(["inspect", "id1", "id2"]) == "out-2"
+    # Single-container pre-restart identity rechecks must never be cached.
+    assert cache.run_text(["inspect", "id1"]) == "out-3"
+    assert cache.run_text(["inspect", "id1"]) == "out-4"
+    # Any mutation invalidates cached inventory immediately.
+    assert cache.run_text(["restart", "--time", "30", "id1"]) == "out-5"
+    assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-6"

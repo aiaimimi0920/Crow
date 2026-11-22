@@ -87,12 +87,8 @@ class RepositoryCoreMixin:
                 text(
                     """
                     UPDATE property_listing
-                    SET geom = CASE
-                        WHEN longitude IS NOT NULL AND latitude IS NOT NULL
-                        THEN ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
-                        ELSE NULL
-                    END
-                    WHERE geom IS NULL
+                    SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
+                    WHERE geom IS NULL AND longitude IS NOT NULL AND latitude IS NOT NULL
                     """
                 )
             )

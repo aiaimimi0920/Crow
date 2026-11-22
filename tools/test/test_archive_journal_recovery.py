@@ -115,3 +115,31 @@ def test_archive_transaction_excludes_another_process(tmp_path):
     stdout, stderr = child.communicate(timeout=15)
     assert child.returncode == 0, stdout + stderr
     assert io.read_records(path) == [{"id": "keep"}, {"id": "child"}]
+
+
+def test_append_journal_reuses_verified_tail_and_detects_external_tampering(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "records.json"
+    io.write_records(path, [{"id": "base"}])
+    full_reads = []
+    original_read = io._read_journal
+
+    def counted_read(target):
+        full_reads.append(1)
+        return original_read(target)
+
+    monkeypatch.setattr(io, "_read_journal", counted_read)
+    io.append_journal(path, upserts=[{"id": "1"}])
+    assert len(full_reads) == 1
+    for idx in range(2, 10):
+        io.append_journal(path, upserts=[{"id": str(idx)}])
+    # Subsequent cooperative appends use O(1) tail verification instead of O(N) full scans.
+    assert len(full_reads) == 1
+    assert len(io.read_records(path)) == 10
+
+    # External corruption invalidates tail verification and fails closed.
+    jp = io.journal_path(path)
+    jp.write_bytes(jp.read_bytes() + b'{"corrupt":\n')
+    with pytest.raises(ValueError):
+        io.append_journal(path, upserts=[{"id": "after-corrupt"}])

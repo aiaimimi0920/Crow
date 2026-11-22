@@ -60,6 +60,13 @@ class CollectionArchiveRecords:
                 else:
                     target = new_data
 
+                if (
+                    index is not None
+                    and all_data[index] == target
+                    and not archive_json_io.journal_path(file_path).exists()
+                ):
+                    return dict(target)
+
                 if index is None:
                     all_data.append(target)
                 else:

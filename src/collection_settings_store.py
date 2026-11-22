@@ -2,10 +2,10 @@
 import hmac
 import json
 import os
-from pathlib import Path
 import secrets
 import sqlite3
 import time
+from pathlib import Path
 
 from .collection_engine_restart import RestartError, identifier
 from .collection_settings_fingerprint import create_fingerprint, verify_fingerprint
@@ -24,6 +24,8 @@ class SettingsStore:
         connection = sqlite3.connect(self.root / "state.sqlite3", isolation_level=None, timeout=10)
         connection.row_factory = sqlite3.Row
         try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA busy_timeout=10000")
             connection.execute("CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY, revision INTEGER, desired TEXT, effective TEXT, heartbeat REAL, key_present INTEGER)")
             connection.execute("CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, revision INTEGER, config TEXT, key_ref TEXT, fingerprint TEXT, status TEXT, claim TEXT, created REAL, updated REAL, result TEXT, previous TEXT)")
             connection.execute("BEGIN IMMEDIATE")

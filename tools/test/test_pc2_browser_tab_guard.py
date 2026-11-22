@@ -21,7 +21,7 @@ def inventory(count):
     ).encode()
 
 
-@pytest.mark.parametrize("count", [0, 1, 4, 5, 8])
+@pytest.mark.parametrize("count", [0, 1, 4, 5, 8, 12, 13, 16])
 def test_threshold_closes_all_page_types_and_restarts_only_on_overflow(count):
     calls, signals, events = [], [], []
 
@@ -37,13 +37,41 @@ def test_threshold_closes_all_page_types_and_restarts_only_on_overflow(count):
         log=events.append,
     )
     assert calls == ["/json/list"] + (
-        [f"/json/close/{i}" for i in range(count)] if count > 4 else []
+        [f"/json/close/{i}" for i in range(count)] if count > 12 else []
     )
-    assert signals == ([(123, signal.SIGTERM)] if count > 4 else [])
-    assert result["status"] == ("restart_requested" if count > 4 else "within_limit")
+    assert signals == ([(123, signal.SIGTERM)] if count > 12 else [])
+    assert result["status"] == ("restart_requested" if count > 12 else "within_limit")
     assert "private.invalid" not in json.dumps(events)
-    if count > 4:
+    if count > 12:
         assert result["close_acknowledged"] == count
+
+
+def test_configured_max_tabs_honors_env_override_and_floor(monkeypatch):
+    monkeypatch.setenv("CROW_BROWSER_TAB_GUARD_MAX_TABS", "6")
+    monkeypatch.delenv("FAPAI_BROWSER_TAB_GUARD_MAX_TABS", raising=False)
+    assert guard.configured_max_tabs() == 6
+    assert (
+        guard.guard_iteration(
+            123,
+            request=lambda path, timeout: inventory(6),
+            terminate=lambda *args: pytest.fail("within configured limit"),
+            log=lambda event: None,
+        )["status"]
+        == "within_limit"
+    )
+    assert (
+        guard.guard_iteration(
+            123,
+            request=lambda path, timeout: (
+                inventory(7) if path == "/json/list" else b"Target is closing"
+            ),
+            terminate=lambda *args: None,
+            log=lambda event: None,
+        )["status"]
+        == "restart_requested"
+    )
+    monkeypatch.setenv("CROW_BROWSER_TAB_GUARD_MAX_TABS", "2")
+    assert guard.configured_max_tabs() == 4
 
 
 @pytest.mark.parametrize(
@@ -106,13 +134,13 @@ def test_close_negative_ack_is_not_reported_as_closed():
     result = guard.guard_iteration(
         123,
         request=lambda path, timeout: (
-            inventory(5) if path == "/json/list" else b"No such target id"
+            inventory(13) if path == "/json/list" else b"No such target id"
         ),
         terminate=lambda *args: None,
         log=lambda event: None,
     )
     assert result["close_acknowledged"] == 0
-    assert result["close_failed"] == 5
+    assert result["close_failed"] == 13
     assert result["status"] == "restart_requested"
 
 

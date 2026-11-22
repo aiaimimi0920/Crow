@@ -142,3 +142,55 @@ def test_existing_processed_data_is_preserved(repository: PropertyRepository, re
         assert seed.detail_attempt_count == 3
         assert seed.source_payload["_analysis_attempt_count"] == 3
         assert seed.status == "analysis_blocked"
+
+
+@pytest.mark.parametrize("has_raw", [False, True])
+def test_explicit_reviewed_processed_opt_in_requeues_without_rewriting_listings(
+    repository: PropertyRepository, tmp_path: Path, has_raw: bool
+) -> None:
+    raw = tmp_path / "detail.html"
+    if has_raw:
+        raw.write_text("<html>archived evidence</html>", encoding="utf-8")
+    add_seed(
+        repository,
+        "analysis_blocked",
+        detail_attempt_count=3,
+        detail_last_error="missing_raw",
+        source_payload={
+            "_analysis_attempt_count": 2,
+            "_raw_detail_artifacts": {"detail_html_path": str(raw)} if has_raw else {},
+        },
+    )
+    with repository.session_factory.begin() as session:
+        session.add(
+            PropertyListing(item_id="123", source_title="Legacy Backfill", area_sqm=88)
+        )
+        session.add(
+            PropertyAudit(
+                item_id="123",
+                is_processed=True,
+                detail_captured=True,
+                source_json_path="datas/archive/2021/2021-08-31.json",
+            )
+        )
+    result = recover(repository, apply=True, allow_processed_recapture=True)
+    expected_target = "analysis_failed" if has_raw else "detail_failed"
+    expected_reason = (
+        "reviewed_processed_raw_available"
+        if has_raw
+        else "reviewed_processed_recapture_required"
+    )
+    assert result["applied"] is True
+    assert result["target_status"] == expected_target
+    assert result["reason"] == expected_reason
+    with repository.session_factory() as session:
+        listing = session.get(PropertyListing, "123")
+        audit = session.get(PropertyAudit, "123")
+        seed = session.get(FapaiSeedItem, "123")
+        assert listing.source_title == "Legacy Backfill"
+        assert listing.area_sqm == 88
+        assert audit.is_processed is True
+        assert seed.status == expected_target
+        assert seed.detail_attempt_count == (3 if has_raw else 0)
+        assert seed.source_payload["_analysis_attempt_count"] == 0
+        assert seed.source_payload["_blocked_recovery"][0]["reviewed_processed"] is True

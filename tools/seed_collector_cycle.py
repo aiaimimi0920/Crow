@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from tools.detail_worker_statistics import worker_queue_statistics
 from tools.seed_collector_context import *
+
+
+def _cached_seed_counts(repository: PropertyRepository) -> dict[str, int]:
+    return worker_queue_statistics(repository)["counts"]
 
 
 def _fail_claimed_seed_page(
@@ -47,7 +52,7 @@ def run_seed_collector_once(
                 "decision": "seed_collection_paused",
                 "reason": pause_state.get("reason") or "collection_paused",
                 "captcha_solver": pause_state.get("captcha_solver") or {},
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
@@ -66,7 +71,7 @@ def run_seed_collector_once(
                 "reason": pause_state.get("reason") or "collection_paused",
                 "captcha_solver": pause_state.get("captcha_solver") or {},
                 "auth_probe": auth_probe,
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
@@ -85,7 +90,7 @@ def run_seed_collector_once(
         **policy_kwargs,
     )
     if task is None:
-        summary = {"decision": "seed_scan_queue_empty", "counts": repository.seed_queue_counts()}
+        summary = {"decision": "seed_scan_queue_empty", "counts": _cached_seed_counts(repository)}
         if auth_probe_summary is not None:
             summary["auth_probe"] = auth_probe_summary
         _write_runtime_summary(config.output_dir, summary)
@@ -94,7 +99,7 @@ def run_seed_collector_once(
     claimed_summary = {
         "decision": "seed_page_claimed",
         "task": task,
-        "counts": repository.seed_queue_counts(),
+        "counts": _cached_seed_counts(repository),
     }
     if auth_probe_summary is not None:
         claimed_summary["auth_probe"] = auth_probe_summary
@@ -142,7 +147,7 @@ def run_seed_collector_once(
                         "final_url": final_url,
                         "method": fetch_method,
                     },
-                    "counts": repository.seed_queue_counts(),
+                    "counts": _cached_seed_counts(repository),
                 }
                 if auth_probe_summary is not None:
                     summary["auth_probe"] = auth_probe_summary
@@ -160,7 +165,7 @@ def run_seed_collector_once(
                     "final_url": final_url,
                     "method": fetch_method,
                 },
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             if auth_probe_summary is not None:
                 summary["auth_probe"] = auth_probe_summary
@@ -189,7 +194,7 @@ def run_seed_collector_once(
                     "final_url": final_url,
                     "method": fetch_method,
                 },
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             if auth_probe_summary is not None:
                 summary["auth_probe"] = auth_probe_summary
@@ -256,7 +261,7 @@ def run_seed_collector_once(
             "item_count": len(items),
             "has_next": has_next,
             "upsert": upsert,
-            "counts": repository.seed_queue_counts(),
+            "counts": _cached_seed_counts(repository),
         }
         if auth_probe_summary is not None:
             summary["auth_probe"] = auth_probe_summary
@@ -274,7 +279,7 @@ def run_seed_collector_once(
                 "decision": "seed_collection_paused",
                 "reason": "browser_page_capacity",
                 "error": safe_exception_text(exc),
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             _write_runtime_summary(config.output_dir, summary)
             return summary
@@ -286,7 +291,7 @@ def run_seed_collector_once(
                 "error": safe_exception_text(exc),
                 "traceback": safe_exception_traceback(exc),
                 "auth_probe": _build_cdp_unreachable_auth_probe(config, str(task.get("url") or "")),
-                "counts": repository.seed_queue_counts(),
+                "counts": _cached_seed_counts(repository),
             }
             if auth_probe_summary is not None:
                 summary["previous_auth_probe"] = auth_probe_summary
@@ -298,7 +303,7 @@ def run_seed_collector_once(
             "task": task,
             "error": safe_exception_text(exc),
             "traceback": safe_exception_traceback(exc),
-            "counts": repository.seed_queue_counts(),
+            "counts": _cached_seed_counts(repository),
         }
         if auth_probe_summary is not None:
             summary["auth_probe"] = auth_probe_summary
@@ -307,6 +312,8 @@ def run_seed_collector_once(
 
 
 __all__ = (
+    '_cached_seed_counts',
     '_fail_claimed_seed_page',
     'run_seed_collector_once',
+    'worker_queue_statistics',
 )

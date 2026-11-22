@@ -109,3 +109,51 @@ def test_two_sqlite_seed_writers_preserve_independent_enrichment(case):
             future.result(timeout=10)
     stored = repo.get_flat_item(raw["id"])
     assert stored["extra_a"] == stored["extra_b"] == "evidence"
+
+
+def test_unchanged_seed_replay_skips_redundant_archive_rewrite(
+    case, monkeypatch
+):
+    service, _repo, _runtime, _store, _path, options = case
+    payload = {"items": [{"id": "one", "title": "seed"}]}
+    service.submit_batch(payload, **options)
+    service.submit_batch(payload, **options)
+    writes = []
+    original_write = io.write_records
+
+    def counted_write(*args, **kwargs):
+        writes.append(1)
+        return original_write(*args, **kwargs)
+
+    monkeypatch.setattr(io, "write_records", counted_write)
+    service.submit_batch(payload, **options)
+    assert writes == []
+    service.submit_batch(
+        {"items": [{"id": "one", "title": "seed", "extra": "new_value"}]}, **options
+    )
+    assert len(writes) == 1
+
+
+def test_bootstrap_db_search_tasks_caches_non_empty_repository():
+    calls = []
+
+    class Repo:
+        enabled = True
+
+        def count_search_tasks(self):
+            calls.append(1)
+            return 5
+
+        def claim_search_task(self, *_args, **_kwargs):
+            return None
+
+    service = SeedCollectionService(
+        repository=Repo(),
+        adapter=GenericProductAdapter(
+            source_platform="catalog_x", bootstraps_legacy_search_tasks=True
+        ),
+    )
+    service.next_task("s1")
+    service.next_task("s1")
+    service.next_task("s1")
+    assert len(calls) == 1

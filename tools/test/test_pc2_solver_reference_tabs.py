@@ -103,3 +103,39 @@ def test_existing_google_only_opens_baidu_and_error_is_nonfatal(tmp_path, monkey
     monkeypatch.setattr(tabs, "open_background_page", fail)
     tabs.record_failed_drags("http://fixture", 3)
     assert events[-1]["kind"] == "solver_reference_tab_error"
+
+
+def test_tracked_target_id_prevents_duplicate_tabs_on_chrome_error(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(tabs, "FALLBACK_STATE_PATH", tmp_path / "fallback.json")
+    challenge = {"challenge_id": "one"}
+    monkeypatch.setattr(tabs, "_load_fallback_state", lambda: challenge)
+    pages, opened = [], []
+    monkeypatch.setattr(tabs, "list_cdp_targets", lambda _: pages)
+    monkeypatch.setattr(tabs, "log_event", lambda _: None)
+
+    def open_page(endpoint, url):
+        opened.append(url)
+        target_id = f"tab-{len(opened)}"
+        # Simulate unreachable reference site landing on chrome-error://chromewebdata/
+        page = {
+            "id": target_id,
+            "type": "page",
+            "url": "chrome-error://chromewebdata/"
+            if "google" in url
+            else url,
+        }
+        pages.append(page)
+        return page
+
+    monkeypatch.setattr(tabs, "open_background_page", open_page)
+    tabs.record_failed_drags("http://fixture", 3)
+    assert len(opened) == 2
+    tabs.record_failed_drags("http://fixture", 1)
+    assert len(opened) == 2
+    # If the error page is closed by user/compaction, it may be reopened once.
+    pages.pop(0)
+    tabs.record_failed_drags("http://fixture", 1)
+    assert opened[-1] == "https://www.google.com/"
+    assert len(opened) == 3

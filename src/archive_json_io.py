@@ -28,6 +28,7 @@ COMPACT_LINES = 256
 # 小于该字节数不统计行数，避免为了几行 journal 读整个文件。
 _COMPACT_MIN_BYTES = 4096
 _ID_KEY = "id"
+_VERIFIED_TAILS: dict[str, tuple[int, int, bytes]] = {}
 
 
 def _serialized(function):
@@ -133,6 +134,24 @@ def read_json(path: str | Path) -> object:
     return payload
 
 
+def _journal_tail_verified(jp: Path) -> bool:
+    cached = _VERIFIED_TAILS.get(str(jp))
+    if cached is None:
+        return False
+    expected_size, expected_mtime_ns, expected_tail = cached
+    if not expected_tail or expected_size < len(expected_tail):
+        return False
+    try:
+        with open(jp, "rb") as handle:
+            stat = os.fstat(handle.fileno())
+            if stat.st_size != expected_size or stat.st_mtime_ns != expected_mtime_ns:
+                return False
+            handle.seek(expected_size - len(expected_tail))
+            return handle.read() == expected_tail
+    except OSError:
+        return False
+
+
 @_serialized
 def append_journal(
     path: str | Path,
@@ -148,12 +167,17 @@ def append_journal(
     if not lines:
         return
     jp = journal_path(path)
-    _read_journal(path)  # Never append through unexplained corruption.
+    if not _journal_tail_verified(jp):
+        _VERIFIED_TAILS.pop(str(jp), None)
+        _read_journal(path)  # Never append through unexplained corruption.
     payload = "\n".join(lines) + "\n"
+    encoded_tail = payload.encode("utf-8")[-512:]
     with open(jp, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
+        stat = os.fstat(handle.fileno())
+    _VERIFIED_TAILS[str(jp)] = (stat.st_size, stat.st_mtime_ns, encoded_tail)
 
 
 @_serialized
@@ -204,6 +228,7 @@ def compact(path: str | Path) -> None:
 
 def _truncate_journal(path: str | Path) -> None:
     jp = journal_path(path)
+    _VERIFIED_TAILS.pop(str(jp), None)
     try:
         os.remove(jp)
     except FileNotFoundError:

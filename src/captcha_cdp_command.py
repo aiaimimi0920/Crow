@@ -85,11 +85,20 @@ class CaptchaCDPCommandMixin:
                         observe_navigation_event(self, sock, res_json)
                     if res_json.get("id") == msg["id"]:
                         if "error" in res_json:
+                            error_obj = res_json["error"]
+                            if (
+                                method == "Emulation.setLocaleOverride"
+                                and isinstance(error_obj, dict)
+                                and error_obj.get("code") == -32000
+                                and error_obj.get("message")
+                                == "Another locale override is already in effect"
+                            ):
+                                return {}
                             invalidate_navigation_trace(self, sock)
                             logger.error(
                                 "[SOLVER] CDP Error method=%s error=%s",
                                 method,
-                                res_json["error"],
+                                error_obj,
                             )
                             return None
                         return res_json.get("result")
