@@ -10,7 +10,7 @@
 
 1. 从当前配置的 OpenAI-compatible 服务的 `/models` 发现模型；目录仅用于核对精确 ID，不授权业务或生成测试，不使用其他服务的密钥。
 2. 业务与后台资格测试只准入 `OPENAI_MODEL` 和 `OPENAI_MODEL_CANDIDATES` 中显式配置的精确 ID。GPT 默认禁止；`CROW_ANALYSIS_ALLOW_GPT=1` 时也只允许 `gpt-6.1-sol`、`gpt-6-luna`，不自动改名或加入其他 GPT。其他厂商同样必须显式配置；图像、语音、embedding/reranker 过滤不变。未知别名背后的实际模型仍由上游路由配置负责。
-3. 每个候选执行固定的 5 个资料提取用例，覆盖成交价、万元换算、建筑面积、未成交和缺失信息。用例及标准答案在 `src/llm_qualification_cases.py`，版本为 `collection-exact-v1`。
+3. 每个候选执行固定的 5 个资料提取用例，覆盖成交价、万元换算、建筑面积、未成交和缺失信息。用例及标准答案在 `src/llm_qualification_cases.py`，版本为 `collection-exact-v2-evidence`。
 4. 每例回答与标准答案精确比较：相同得 1 分，否则得 0 分。仅忽略首尾空白；不忽略 JSON 内部空格、键顺序、Markdown 包装，不使用模型裁判或模糊评分。
 5. 总分至少 4/5 才合格；资格未过期且未冷却的显式路由按配置顺序使用，分数或测试耗时不能扩大允许范围或改变优先级。
 6. `OPENAI_MODEL` 是常规首选，`OPENAI_MODEL_CANDIDATES` 去重后是有序故障回退，不轮换。首选未合格、过期、冷却或请求失败时才尝试明确允许且合格的回退；没有回退则返回不可用，绝不恢复任意历史模型。单模型失败仍冷却 15 分钟，401/403/429 共享退避不变。

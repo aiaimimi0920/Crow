@@ -80,3 +80,41 @@ def test_explicit_alias_conflict_rejects_the_plan_without_mutating_input():
         inventory(model)
     assert "private-" not in str(error.value)
     assert model == before
+
+
+@pytest.mark.parametrize("prefix", ["FAPAI", "CROW", "BOTH"])
+def test_equal_integer_delay_draft_does_not_rewrite_the_plan(prefix):
+    model = model_with_namespace(prefix)
+    config = inventory(model)["effective"]
+    for name in ("success_delay", "failure_delay"):
+        config["intervals"][name] = int(config["intervals"][name])
+    original = deepcopy(config)
+    assert render(model, config) == model
+    assert config == original
+
+
+def test_changed_fractional_delay_is_applied_without_truncation():
+    model = model_fixture()
+    config = inventory(model)["effective"]
+    config["intervals"].update(success_delay=6.125, failure_delay=15.25)
+    result = render(model, config)
+    assert inventory(result)["effective"] == config
+    for name in ("pc2-seed-1", "pc2-analysis-1", "pc2-browser-solver"):
+        assert result["services"][name] == model["services"][name]
+
+
+@pytest.mark.parametrize("prefix", ["FAPAI", "CROW", "BOTH"])
+def test_primary_model_change_preserves_provisioned_fallback_candidates(prefix):
+    model = model_with_namespace(prefix)
+    for name, service in model["services"].items():
+        if name.startswith("pc2-analysis-"):
+            service["environment"]["OPENAI_MODEL_CANDIDATES"] = "deepseek-fixture;glm-fixture,deepseek-fixture"
+    config = inventory(model)["effective"]
+    config["ai"]["model"] = "gemini-fixture"
+    result = render(model, config)
+    for name, service in result["services"].items():
+        if name.startswith("pc2-analysis-"):
+            assert service["environment"]["OPENAI_MODEL_CANDIDATES"] == "gemini-fixture,deepseek-fixture,glm-fixture"
+        else:
+            assert service == model["services"][name]
+    assert render(result, inventory(result)["effective"]) == result

@@ -212,14 +212,22 @@ def test_each_stage_interval_uses_exact_replacement_without_touching_browser(tmp
     assert not any("compose" in call and "up" in call for call in docker.calls)
 
 
-def test_gpt_disable_keeps_saved_route_and_preserves_every_other_setting(tmp_path):
+@pytest.mark.parametrize("delay_type", [int, float])
+def test_gpt_disable_keeps_saved_route_and_preserves_every_other_setting(tmp_path, delay_type):
     docker = ExactDocker()
     runtime, request = setup_runtime(tmp_path, docker)
     assert runtime.apply(request) == "applied"
+    unrelated = {
+        name: deepcopy(row) for name, row in runtime.inspect().items()
+        if not name.startswith("pc2-analysis-")
+    }
     disabled = deepcopy(request["config"])
     disabled["ai"].pop("allow_gpt")
+    for name in ("success_delay", "failure_delay"):
+        disabled["intervals"][name] = delay_type(disabled["intervals"][name])
     assert runtime.apply({**request, "request_id": "settings-gpt-off-0002", "previous": request["config"], "config": disabled}) == "applied"
     assert runtime.snapshot()["effective"] == disabled
+    assert {name: runtime.inspect()[name] for name in unrelated} == unrelated
     for service in runtime.inspect().values():
         if "analysis" in service["Name"]:
             env = dict(value.split("=", 1) for value in service["Config"]["Env"])

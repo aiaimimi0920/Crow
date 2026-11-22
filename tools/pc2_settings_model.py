@@ -66,6 +66,9 @@ def inventory(model):
 
 def render(model, config, api_key=None):
     config = validate(config)
+    # Inventory reads delays as floats; equivalent integer drafts must not restart workers.
+    for name in ("success_delay", "failure_delay"):
+        config["intervals"][name] = float(config["intervals"][name])
     previous = inventory(model)["effective"]
     result = deepcopy(model)
     templates = {stage: deepcopy(model["services"]["pc2-" + role + "-1"]) for stage, role in STAGES.items()}
@@ -78,7 +81,11 @@ def render(model, config, api_key=None):
             service["container_name"] = "fapaifang-" + name
             env = service["environment"]
             old_values = environment_changes(previous, stage)
-            for key, value in environment_changes(config, stage).items():
+            new_values = environment_changes(config, stage)
+            if stage == "analysis" and config["ai"]["model"] != previous["ai"]["model"]:
+                candidates = [config["ai"]["model"], *re.split(r"[;,]", env.get("OPENAI_MODEL_CANDIDATES") or "")]
+                new_values["OPENAI_MODEL_CANDIDATES"] = ",".join(dict.fromkeys(name.strip() for name in candidates if name.strip()))
+            for key, value in new_values.items():
                 if old_values[key] != value:
                     set_env(key, value, environ=env)
             if name not in model["services"]:
