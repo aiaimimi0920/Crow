@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
 import numpy as np
@@ -33,7 +34,11 @@ def backtest(
     backend: str = "ridge",
     holdout: bool = False,
     evaluation_asof: date,
+    begin_final_scoring: Callable[[], None] | None = None,
 ) -> dict:
+    """A final CLI run may reserve its one-shot receipt before revealing scores."""
+    if begin_final_scoring is not None and not holdout:
+        raise ValueError("final scoring receipt requires holdout")
     validate_examples(examples)
     if len({r.synthetic for r in examples}) > 1:
         raise ValueError("cannot mix real and synthetic examples")
@@ -63,6 +68,10 @@ def backtest(
         allowed = HOLDOUT_CITIES if holdout else TRAIN_CITIES
         test = [r for r in examples if r.group[0] in allowed and r.origin == cutoff]
         if not train or not test:
+            if begin_final_scoring is not None:
+                raise ValueError(
+                    "holdout preflight: insufficient training or inference data"
+                )
             folds.append(
                 {
                     "cutoff": str(cutoff),
@@ -71,13 +80,20 @@ def backtest(
                 }
             )
             continue
-        without = fit(train, cutoff, auction=False, backend=backend).predict(test)
-        with_auction = fit(train, cutoff, auction=True, backend=backend).predict(test)
-        scored = [
+        scored = {
             i
             for i, r in enumerate(test)
-            if r.target is not None and r.label_available_at <= evaluation_asof
-        ]
+            if r.target is not None
+            and r.label_available_at is not None
+            and r.label_available_at <= evaluation_asof
+        }
+        if begin_final_scoring is not None and not scored:
+            raise ValueError("holdout preflight: no scoreable holdout labels")
+        without = fit(train, cutoff, auction=False, backend=backend).predict(test)
+        with_auction = fit(train, cutoff, auction=True, backend=backend).predict(test)
+        if begin_final_scoring is not None:
+            # Same fold and score mask as the evaluator; no truth has been reported.
+            begin_final_scoring()
         predictions = [
             {
                 "group": list(r.group),
@@ -95,14 +111,15 @@ def backtest(
             }
             for i, r in enumerate(test)
         ]
-        actual = [test[i].target for i in scored]
+        score_indices = sorted(scored)
+        actual = [test[i].target for i in score_indices]
         scores = {}
         for name, pred in (
             (persistence_name, [r.baseline for r in test]),
             (base_name, without),
             (model_name, with_auction),
         ):
-            scores[name] = metrics(actual, [pred[i] for i in scored])
+            scores[name] = metrics(actual, [pred[i] for i in score_indices])
         city_scores = {
             city: {
                 name: metrics(

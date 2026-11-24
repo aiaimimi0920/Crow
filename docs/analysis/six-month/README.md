@@ -30,6 +30,14 @@ venv/Scripts/python.exe -m ruff check src/analysis tests/analysis
 输出仅限 `artifacts/analysis/`，拒绝覆盖已有证据。再次运行请选新文件名。
 `aggregate`产物是实际Crow聚合，不是预测值；`demo`是全合成8城数据，不含真实准确率。
 
+## 归档法拍价格证据口径（2026-11-22）
+
+audit、aggregate、current-input 都带 `auction_result_evidence`，标明目前仅使用历史兼容的归档布尔代理，不认证竞得或其后实际履约。分析仍要求 `是否成交` 是布尔 `true`。但是淘宝采集适配器 `src/collection/adapters/taobao_judicial.py` 的 `preserve_seed_values` 可把 `done / 成交 / ended / finished / 结束` 都写为真；仅结束不证明有人竞得。它还可从列表 `auction_date` 和 `currentPrice` 填入交易时间和成交价格列；该时间不是付款或裁定时间，价格不自动等于买方最终实际支付额。
+
+`is_processed` 只说明详情采集/分析产物处理完成。`actual_paid_price` 在采集合约中允许为成交价加税费、欠费的成本估计，并非付款凭证，不替代落槌金额。采集合约及本次读取样本中，未见能确认尾款支付、裁定送达或撤销的适用结构化时间证据。历史字段可得性继续独立核验：归档日、文件更新时间、交易/竞价结束时间不可当作信息首次可得日。
+
+复核抽样：六个预先固定的日归档（2024 至 2026），只检查训练四城 36 行，均布尔为真、无原始状态值，未见上述后续事件时间。该小样本不是全量或随机样本，不说明异常频率。最高人民法院的[网络司法拍卖规定](https://www.court.gov.cn/zixun/xiangqing/24391.html) 第22、24、25、31条分别区分平台确认和裁定送达、悔拍、尾款交付及撤销。本段仅解释数据证据阶段，不判断具体拍卖的法律状态。适配器行为、入选门槛、默认特征和普通实际成交标签均不变。
+
 ## 预测与验证合同
 
 目标是六个**日历月**后对应月份的小区典型普通实际成交元/平方米，非挂牌/评估/起拍价。
@@ -74,11 +82,12 @@ venv/Scripts/python.exe -m src.analysis.six_month evaluate --input artifacts/ana
 
 ```json
 {"split_version":"yicai2025-seed20261117-v1","backend":"ridge","cutoffs":"2023-07-31",
+ "origins":["2022-07-31","2022-10-31","2023-07-31"],"evaluation_asof":"2024-02-01",
  "input_mode":"crow_only","label_definition":"resale_cell_median_month_t_plus_6_v1"}
 ```
 
-预检失败不消耗最终测试；预检通过开始后保存唯一receipt，拒绝重复最终测试。
-不删除receipt重新自称首次留出。底层backtest函数仅供分析与测试，不是防篡改权限服务。
+按去重、升序的 ISO 日期数组冻结实际预测起点 origins，并以 evaluation_asof 冻结标签可得性截止日。旧协议缺这两项不能直接运行。预检失败（包括没有匹配且在截止日已成熟的留出标签）不消耗最终测试。模型的两条预测路径均成功后，在计算或输出评分前独占保存唯一 receipt，拒绝重复最终测试。仅需预测时走下文 train / predict，不使用最终留出评分。
+输出不能使用任一留出 receipt 的保留路径。回执记录实际 origins 和 evaluation_asof，与报告和冻结协议哈希对应。回执与报告不是同一事务；如果评分已开始但报告写入失败，也不删除 receipt 重新自称首次留出。底层backtest函数仅供分析与测试，不是防篡改权限服务。
 
 ## 尚未完成
 

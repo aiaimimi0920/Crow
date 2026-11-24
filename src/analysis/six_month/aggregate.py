@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import median
 
 from .contracts import HOLDOUT_CITIES, TRAIN_CITIES, parse_date
-from .inputs import archive_candidate
+from .inputs import ARCHIVE_AUCTION_RESULT_EVIDENCE, archive_candidate
 from .source_records import read_source_files
 
 
@@ -59,6 +59,7 @@ def aggregate_archives(root: Path, layout: str = "daily-archive") -> dict:
     skipped["conflicting_item_ids"] = len(conflicts)
     return {
         "status": "real_crow_aggregation_only_no_resale_accuracy_claim",
+        "auction_result_evidence": ARCHIVE_AUCTION_RESULT_EVIDENCE,
         "source_layout": layout,
         "location_resolution": "raw_community_or_locality_unverified",
         "availability": "historical_field_availability_unverified_not_backtest_ready",

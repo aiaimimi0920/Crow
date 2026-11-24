@@ -18,18 +18,34 @@ from .inputs import audit_archives, load_transactions
 
 ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_ROOT = ROOT / "artifacts" / "analysis"
+HOLDOUT_RECEIPT_NAMES = {
+    True: "synthetic-holdout-receipt.json",
+    False: "real-holdout-receipt.json",
+}
 
 
 def safe_output(value: str) -> Path:
     target = Path(value).resolve()
-    if not target.is_relative_to(OUTPUT_ROOT.resolve()):
+    root = OUTPUT_ROOT.resolve()
+    if not target.is_relative_to(root):
         raise ValueError(
             "output must be under repository artifacts/analysis; never a collector path"
         )
-    if target.exists():
-        raise ValueError("refusing to overwrite existing analysis evidence")
+    # Account for Win32 case, trailing dot/space and alternate-stream aliases.
+    basename = target.name.split(":", 1)[0].rstrip(" .").casefold()
+    if any(
+        (target.parent == root and basename == name) or target == (root / name).resolve()
+        for name in HOLDOUT_RECEIPT_NAMES.values()
+    ):
+        raise ValueError("output cannot use a reserved holdout receipt path")
+    require_new_output(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     return target
+
+
+def require_new_output(target: Path):
+    if target.exists() or target.is_symlink():
+        raise ValueError("refusing to overwrite existing analysis evidence")
 
 
 def main():
@@ -107,19 +123,20 @@ def main():
         )
     else:
         rows, digest = load_transactions(args.input)
-        origins = [parse_date(v) for v in args.origins.split(",")]
+        origins = sorted({parse_date(v) for v in args.origins.split(",")})
+        effective_origins = [str(origin) for origin in origins]
         cutoffs = [parse_date(v) for v in args.cutoffs.split(",")]
         if not set(cutoffs).issubset(origins):
             raise ValueError("each cutoff needs a forecast origin")
         as_of = parse_date(args.as_of)
         if any(cutoff > as_of for cutoff in cutoffs):
             raise ValueError("evaluation as-of precedes fit cutoff")
-        examples = build_examples(rows, origins, input_mode=args.input_mode)
         if args.backend != "ridge":
             import importlib
 
             importlib.import_module(args.backend)
         protocol_hash = None
+        begin_final_scoring = None
         if args.holdout:
             if not args.frozen_protocol:
                 raise ValueError("holdout requires a preregistered frozen protocol")
@@ -129,6 +146,8 @@ def main():
                 "split_version": SPLIT_VERSION,
                 "backend": args.backend,
                 "cutoffs": args.cutoffs,
+                "origins": effective_origins,
+                "evaluation_asof": str(as_of),
                 "label_definition": "resale_cell_median_month_t_plus_6_v1",
                 "input_mode": args.input_mode,
             }
@@ -136,53 +155,40 @@ def main():
                 raise ValueError("frozen protocol does not match this experiment")
             if len(cutoffs) != 1:
                 raise ValueError("one final cutoff only")
-            train = [
-                r
-                for r in examples
-                if r.group[0] in TRAIN_CITIES
-                and r.target is not None
-                and r.origin < cutoffs[0]
-                and r.label_available_at <= cutoffs[0]
-            ]
-            test = [
-                r
-                for r in examples
-                if r.group[0] in HOLDOUT_CITIES and r.origin == cutoffs[0]
-            ]
-            if not train or not test:
-                raise ValueError(
-                    "holdout preflight: insufficient training or inference data"
-                )
-            from .models import fit
-
-            fit(train, cutoffs[0], backend=args.backend)
-            fit(train, cutoffs[0], backend=args.backend, auction=False)
             protocol_hash = sha256(raw).hexdigest()
-            # A global experiment receipt prevents rebranding repeated tests as untouched holdout.
-            lock = OUTPUT_ROOT / (
-                "synthetic-holdout-receipt.json"
-                if rows and rows[0].synthetic
-                else "real-holdout-receipt.json"
-            )
-            with lock.open("x", encoding="utf-8") as stream:
-                json.dump(
-                    {
-                        "protocol_sha256": protocol_hash,
-                        "input_sha256": digest,
-                        "status": "attempt_started_no_repeated_final_test",
-                    },
-                    stream,
-                )
+            lock = OUTPUT_ROOT / HOLDOUT_RECEIPT_NAMES[bool(rows and rows[0].synthetic)]
+
+            def reserve_receipt():
+                # Catch outputs created since the initial check. The two file
+                # writes are not a transaction; a later output I/O failure
+                # must not erase a receipt after scoring has started.
+                require_new_output(output)
+                with lock.open("x", encoding="utf-8") as stream:
+                    json.dump(
+                        {
+                            "protocol_sha256": protocol_hash,
+                            "input_sha256": digest,
+                            "origins": effective_origins,
+                            "evaluation_asof": str(as_of),
+                            "status": "attempt_started_no_repeated_final_test",
+                        },
+                        stream,
+                    )
+
+            begin_final_scoring = reserve_receipt
+        examples = build_examples(rows, origins, input_mode=args.input_mode)
         report = backtest(
             examples,
             cutoffs,
             backend=args.backend,
             holdout=args.holdout,
             evaluation_asof=as_of,
+            begin_final_scoring=begin_final_scoring,
         )
         report.update(
             input_sha256=digest,
             protocol_sha256=protocol_hash,
+            origins=effective_origins,
             input_transactions=len(rows),
             examples=len(examples),
             train_cities=TRAIN_CITIES,
