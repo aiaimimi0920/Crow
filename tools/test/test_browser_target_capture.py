@@ -174,3 +174,15 @@ def test_seed_fetch_entry_does_not_short_circuit_on_cached_challenge(monkeypatch
         smoke.fetch_browser_list_page("http://fixture", TARGETS["seed"])[0]
         == PAYLOADS["seed"]
     )
+
+
+def test_stripped_query_punish_redirect_closes_orphan_tab_but_reports_challenge(
+    monkeypatch,
+):
+    stripped = "https://sf.taobao.com//list/50025969__2.htm/_____tmd_____/punish?x5secdata=fixture&x5step=1"
+    capture, events, page = capture_fixture(monkeypatch, smoke, "seed", fresh_html=CHALLENGE)
+    page.url = stripped
+    html, final_url = capture()
+    assert html == CHALLENGE
+    assert final_url == stripped
+    assert events.count("close_owned") == 1

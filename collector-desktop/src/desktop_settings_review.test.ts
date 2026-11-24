@@ -11,6 +11,9 @@ test("review exposes stale AI address, model and GPT differences without credent
   assert.match(changes, /模型路由.*gpt-6.1-sol/);
   assert.match(changes, /允许使用 GPT: true → false/);
   assert.equal(settingsChanges(live, structuredClone(live)), "");
+  const gptDisabledOnly = structuredClone(live);
+  delete gptDisabledOnly.ai.allow_gpt;
+  assert.match(settingsChanges(live, gptDisabledOnly), /仅使用已配置的非 GPT 后备候选/);
 });
 
 test("receipt identifies its own revision instead of claiming the draft was applied", () => {

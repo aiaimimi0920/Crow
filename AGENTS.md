@@ -95,6 +95,7 @@
 - Before a broad run, state why it is needed, what it covers, its expected time budget, and its data/isolation boundary. If a focused check fails, fix that slice before spending the broad-suite budget. Do not rerun an unchanged broad suite only to refresh a number.
 - Keep the longitudinal loop visible in reports: behavior path, focused test, affected-boundary test, then milestone-wide acceptance. Never combine results from different worktree states or different times and describe them as one full pass; report partial, skipped, and unverified gates explicitly.
 - This strategy reduces redundant test work; it does not permit weakening security checks, deleting useful tests, changing thresholds, or claiming release/runtime acceptance from focused tests alone.
+- Batch independent file reads/searches in parallel within one turn, design 150-500 effective-line modules upfront before writing so files do not require a second split-and-rebuild pass, keep a single build writer on `target/` without disposable cold `CARGO_TARGET_DIR` directories, and avoid short-interval `write_stdin` / `wait` / `sleep` polling loops.
 
 - Required local gates for relevant changes:
   - `node --test scripts/tests/effective-code-lines.test.mjs`

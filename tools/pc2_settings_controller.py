@@ -1,21 +1,20 @@
 """Explicit opt-in settings controller. Development tests must use fake Docker/API."""
-from src.project_data_paths import resolve_project_data_root
 
 import argparse
-import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
-import urllib.error
+from pathlib import Path
 
 from src.collection_engine_restart import identifier
 from src.collection_settings_schema import PREFIX, validate, validate_key
-from .pc2_engine_controller import ControllerError, MailboxClient
-from .pc2_settings_runtime import SettingsRuntime, write_private
+from src.project_data_paths import resolve_project_data_root
+
 from .collection_control_lock import operation_lock
 from .controller_receipts import deliver_receipt
+from .pc2_engine_controller import ControllerError, MailboxClient
+from .pc2_settings_runtime import SettingsRuntime, write_private
 
 
 class SettingsClient(MailboxClient):
@@ -68,6 +67,8 @@ class SettingsController:
         try:
             result = self.runtime.apply(command)
             if result != "interrupted":
+                if hasattr(self.runtime, "invalidate_cache"):
+                    self.runtime.invalidate_cache()
                 snapshot = self.runtime.snapshot()
                 receipt.update(result=result, **snapshot)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):

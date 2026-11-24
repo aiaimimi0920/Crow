@@ -4,7 +4,7 @@
 > `FPFData` stays in place and explicit paths keep priority; do not move or copy data.
 > See [the compatibility guide](docs/runbooks/crow-data-root-compatibility.md).
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![Storage](https://img.shields.io/badge/Storage-JSON%20%2B%20PostgreSQL-green)
 ![Control%20Plane](https://img.shields.io/badge/Control%20Plane-Receipt%20Aware-orange)
 ![Status](https://img.shields.io/badge/Status-Active-yellow)
@@ -513,11 +513,11 @@ docker compose --env-file docker.local.env -f docker-compose.postgres.yml up -d
 
 ### 3. 构建并长驻运行三段式采集器
 
-默认 Dockerfile 会从 `python:3.10-slim` 安装 `requirements.txt`。如果当前宿主机/daemon 的 PyPI 或 Docker Hub 网络不稳定，可以预先准备离线 wheelhouse：
+默认 Dockerfile 会从 `python:3.12-slim` 安装 `requirements.txt`。如果当前宿主机/daemon 的 PyPI 或 Docker Hub 网络不稳定，可以预先准备离线 wheelhouse：
 
 ```powershell
 New-Item -ItemType Directory -Force vendor\wheels | Out-Null
-python -m pip download --index-url https://pypi.org/simple --dest vendor\wheels --platform manylinux2014_x86_64 --implementation cp --python-version 310 --abi cp310 --only-binary=:all: -r requirements.txt
+python -m pip download --index-url https://pypi.org/simple --dest vendor\wheels --platform manylinux2014_x86_64 --implementation cp --python-version 312 --abi cp312 --only-binary=:all: -r requirements.txt
 docker compose --env-file docker.local.env -f docker-compose.collection.yml build fapaifang-seed-collector fapaifang-detail-worker fapaifang-detail-analysis-worker fapaifang-detail-analysis-worker-2 fapaifang-detail-analysis-worker-3
 ```
 
@@ -762,7 +762,7 @@ docker compose --env-file docker.local.env -f docker-compose.collection.yml --pr
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.12+
 - Chrome + Tampermonkey
 - 可选：Docker（本地 PostgreSQL）
 

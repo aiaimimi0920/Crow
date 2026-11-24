@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -90,7 +90,7 @@ jobs:
           RUSTUP_TOOLCHAIN: '1.90.0'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - run: python -m pip install --require-hashes -r requirements-dev.lock
         working-directory: .
       - run: python -m pytest -q tools/test/test_operator_entrypoint_main_batch.py tools/test/test_project_data_paths.py tools/test/test_project_data_path_entrypoints.py tools/test/test_desktop_auth_launcher.py tools/test/test_desktop_auth_bundle.py tools/test/test_project_environment.py tools/test/test_project_environment_runtime.py tools/test/test_project_environment_injected.py tools/test/test_desktop_environment_aliases.py tools/test/test_powershell_environment_aliases.py tools/test/test_project_environment_compose.py tools/test/test_desktop_api_configuration.py tools/test/test_compose_environment.py tools/test/test_compose_arguments.py tools/test/test_compose_environment_file.py tools/test/test_pc2_operator_environment_bundle.py tools/test/test_pc2_operator_environment_readers.py tools/test/test_pc2_analysis_environment_aliases.py
@@ -105,7 +105,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'

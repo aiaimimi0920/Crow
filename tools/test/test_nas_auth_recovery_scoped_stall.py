@@ -81,3 +81,68 @@ def test_scoped_stall_keeps_cooldown_and_single_flight(tmp_path):
         recovery_signal="seed_challenge_stalled", recovery_signal_stall_seconds=300,
     )
     assert same["active"]["recovery_id"] == active["recovery_id"]
+
+
+def test_automatic_seed_stall_binds_stage_context_and_verifies_without_detail_growth(
+    monkeypatch, tmp_path
+):
+    seed_url = "https://sf.taobao.com/list/50025969__2.htm?location_code=371602&page=1"
+    coordinator = NasAuthRecoveryCoordinator(
+        tmp_path / "recovery.json", cooldown_seconds=1800
+    )
+    coordinator.register_stage_auth_pc2()
+    coordinator.sample(50, 0, now=time.time() - 10)
+    stages = {
+        "seed": {
+            "paused": True,
+            "challenge_id": "seed-chal-1",
+            "challenge_age_seconds": 301,
+            "last_request": {"target_url": seed_url + "&x5secdata=secret"},
+        },
+        "detail": {"paused": False, "challenge_id": None, "challenge_age_seconds": 0},
+    }
+    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY", coordinator)
+    monkeypatch.setattr(server, "NAS_AUTH_RECOVERY_BLOCKED_STALL_SECONDS", 300)
+    monkeypatch.setattr(server.RUNTIME.control, "reason", "")
+    monkeypatch.setattr(server, "_solver_detail_captured_count", lambda: 50)
+    monkeypatch.setattr(server, "_nas_auth_recovery_pending_detail_count", lambda: 0)
+    monkeypatch.setattr(server, "_solver_scope_runtime_status", lambda stage: stages[stage])
+    monkeypatch.setattr(
+        server,
+        "_captcha_solver_runtime_status",
+        lambda: {"paused": True, "scopes": stages, "manual_required": False},
+    )
+    monkeypatch.setattr(
+        server, "_auth_cookie_snapshot_runtime_status", lambda: {"status": "idle"}
+    )
+
+    result = server._sample_nas_auth_recovery()
+    active = result["active"]
+    assert active["scope"] == "seed"
+    assert active["challenge_id"] == "seed-chal-1"
+    assert active["target_url"] == seed_url
+    rid = active["recovery_id"]
+    coordinator.claim("pc1", rid, "pc1")
+    coordinator.snapshot_ready(rid, sha256="b" * 64, cookie_count=2)
+    coordinator.claim("pc2", rid, "pc2")
+    coordinator.pc2_restarting(rid)
+    accepted = coordinator.accept_stage_result(
+        {
+            "recovery_id": rid,
+            "scope": "seed",
+            "protocol_version": 2,
+            "node_id": "pc2",
+            "snapshot_sha256": "b" * 64,
+            "success": True,
+            "probe_authenticated": True,
+            "target_url": seed_url,
+        },
+        validate_and_clear=lambda _: None,
+        captured_count=50,
+    )
+    assert accepted["status"] == "succeeded"
+    # Same seed challenge during cooldown stays blocked; a new seed challenge ID can retry.
+    assert server._sample_nas_auth_recovery()["active"] is None
+    stages["seed"]["challenge_id"] = "seed-chal-2"
+    retried = server._sample_nas_auth_recovery()["active"]
+    assert retried is not None and retried["challenge_id"] == "seed-chal-2"

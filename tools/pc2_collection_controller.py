@@ -44,11 +44,19 @@ class StepDockerCache:
             return key
         return None
 
+    @staticmethod
+    def _is_read_only(arguments: list[str]) -> bool:
+        if not arguments:
+            return True
+        if arguments[0] in {"ps", "inspect", "exec"}:
+            return True
+        return arguments[0] == "compose" and "config" in arguments
+
     def run_text(self, arguments: list[str], timeout: int = 60) -> str:
         cache_key = self._bulk_read_key(arguments)
         if cache_key is not None and cache_key in self._cache:
             return self._cache[cache_key]
-        if arguments and arguments[0] not in {"ps", "inspect", "exec", "compose"}:
+        if not self._is_read_only(arguments):
             self._cache.clear()
         output = self._text_runner(arguments, timeout=timeout)
         if cache_key is not None:
@@ -63,7 +71,7 @@ class StepDockerCache:
             return subprocess.CompletedProcess(
                 ["docker", *arguments], 0, stdout=self._cache[cache_key], stderr=""
             )
-        if arguments and arguments[0] not in {"ps", "inspect", "exec", "compose"}:
+        if not self._is_read_only(arguments):
             self._cache.clear()
         completed = self._process_runner(arguments, timeout=timeout)
         if cache_key is not None:

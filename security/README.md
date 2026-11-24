@@ -50,13 +50,13 @@ because a workflow or Dependabot configuration exists.
 Dependabot's pip support discovers `.txt` and `.in` requirements; it does not
 maintain this project's custom uv-generated `.lock` files automatically. Review
 its manifest PRs and regenerate the affected locks before merging. Preserve
-Python 3.10 compatibility, universal markers, and package hashes:
+Python 3.12 compatibility, universal markers, and package hashes:
 
 ```sh
-uv pip compile requirements.txt --universal --python-version 3.10 \
+uv pip compile requirements.txt --universal --python-version 3.12 \
   --generate-hashes --no-emit-index-url --output-file requirements.lock
 uv pip compile requirements-dev.in --constraint requirements.lock \
-  --universal --python-version 3.10 --generate-hashes --no-emit-index-url \
+  --universal --python-version 3.12 --generate-hashes --no-emit-index-url \
   --output-file requirements-dev.lock
 ```
 

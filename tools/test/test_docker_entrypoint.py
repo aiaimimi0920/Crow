@@ -15,7 +15,7 @@ from tools import docker_entrypoint
 def test_dockerfile_supports_offline_wheelhouse_installation() -> None:
     dockerfile = docker_entrypoint.REPO_ROOT.joinpath("Dockerfile").read_text(encoding="utf-8")
 
-    assert "ARG PYTHON_BASE_IMAGE=python:3.10-slim" in dockerfile
+    assert "ARG PYTHON_BASE_IMAGE=python:3.12-slim" in dockerfile
     assert "COPY vendor/wheels/ /tmp/wheels/" in dockerfile
     assert "--no-index --find-links=/tmp/wheels" in dockerfile
 
@@ -138,7 +138,7 @@ def test_nas_central_compose_pins_builder_base_images_to_dockerfile_digests() ->
     dockerfile = docker_entrypoint.REPO_ROOT.joinpath("Dockerfile").read_text(encoding="utf-8")
     compose = docker_entrypoint.REPO_ROOT.joinpath("docker-compose.nas-central.yml").read_text(encoding="utf-8")
     for line in (
-        "ARG PYTHON_BASE_IMAGE=python:3.10-slim@sha256:31dd4d9529d02d7436659061cb7564cd4733fc90e5e152709a942d53382ec8d0",
+        "ARG PYTHON_BASE_IMAGE=python:3.12-slim@sha256:a0e2dd78cc679ddfffea960fe45ecfcff9ac2f68d67917a0edfcde5c2100151b",
         "ARG NODE_BASE_IMAGE=node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85",
     ):
         image_name, digest = line.removeprefix("ARG ").split("=", 1)

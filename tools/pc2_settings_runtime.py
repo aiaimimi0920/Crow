@@ -83,6 +83,11 @@ class SettingsRuntime:
                 return False
         return True
 
+    def invalidate_cache(self):
+        clear = getattr(getattr(self.run, "__self__", None), "clear", None)
+        if callable(clear):
+            clear()
+
     def snapshot(self):
         model = self.model()
         if not self.matches(model, self.inspect(), healthy=False):
@@ -92,6 +97,7 @@ class SettingsRuntime:
     def wait_ready(self, model):
         deadline = self.clock() + 300
         while self.clock() < deadline:
+            self.invalidate_cache()
             if self.matches(model, self.inspect(), healthy=True):
                 return True
             self.sleep(5)

@@ -77,6 +77,10 @@ def _reset_fallback_state(
             int(cast("str | int", previous.get("solver_cooldown_cycles") or 0)),
             int(previous.get("solver_cooldown_reason") == "repeated_solver_failures"),
         )
+        if previous.get("window_started_at"):
+            state["window_started_at"] = float(
+                cast("str | float", previous["window_started_at"])
+            )
     _save_fallback_state(state)
     return state
 

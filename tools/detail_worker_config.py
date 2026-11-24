@@ -16,9 +16,7 @@ def _llm_preflight_is_unavailable(preflight: dict[str, Any] | None) -> bool:
         return False
     if isinstance(chat_status_code, int) and chat_status_code >= 400:
         return True
-    if isinstance(status_code, int) and status_code >= 400:
-        return True
-    return False
+    return bool(isinstance(status_code, int) and status_code >= 400)
 
 
 def _llm_preflight_is_retryable(preflight: dict[str, Any] | None) -> bool:
@@ -43,7 +41,7 @@ def _run_llm_preflight(config: DetailWorkerConfig) -> dict[str, Any] | None:
                 timeout=config.llm_preflight_timeout_seconds,
                 check_chat=True,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- convert unexpected preflight failures into bounded error dict
             preflight = {
                 "enabled": True,
                 "error": safe_exception_text(exc),
@@ -264,15 +262,15 @@ def config_from_env_and_args(argv: Sequence[str] | None = None) -> tuple[DetailW
 
 
 __all__ = (
-    '_llm_preflight_is_unavailable',
-    '_llm_preflight_is_retryable',
-    '_run_llm_preflight',
-    '_clean_text',
-    '_safe_int',
-    '_safe_non_negative_int',
-    '_safe_float',
-    '_safe_non_negative_float',
-    '_live_config',
-    '_env_flag',
-    'config_from_env_and_args',
+    "_clean_text",
+    "_env_flag",
+    "_live_config",
+    "_llm_preflight_is_retryable",
+    "_llm_preflight_is_unavailable",
+    "_run_llm_preflight",
+    "_safe_float",
+    "_safe_int",
+    "_safe_non_negative_float",
+    "_safe_non_negative_int",
+    "config_from_env_and_args",
 )

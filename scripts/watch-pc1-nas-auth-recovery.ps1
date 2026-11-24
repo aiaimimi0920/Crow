@@ -236,6 +236,8 @@ $sameRecovery = $null -ne $state -and [string]$state.recovery_id -eq $recoveryId
 $targetLookupFailed = $false
 $recoveryUrl = if ($sameRecovery -and $state.target_url -and -not $state.target_lookup_failed) {
     [string]$state.target_url
+} elseif ($active.target_url) {
+    [string]$active.target_url
 } else {
     try {
         $apiStatus = Invoke-RecoveryRequest -Action public_status

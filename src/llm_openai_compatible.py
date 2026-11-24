@@ -7,17 +7,17 @@ import threading
 import time
 from urllib.parse import urlparse
 
-import requests
-
 from src.llm_analysis_policy import (
     require_non_gpt_analysis_model,
     validate_analysis_model_route,
 )
-from src.llm_config import get_model_pool
 from src.llm_model_selector import (
     AUTH_INVALID_ERROR_CODES,
     LLMBackendUnavailableError,
-    get_model_selector,
+)
+from src.llm_preflight_probe import (
+    preflight_llm_backend,
+    preflight_openai_compatible_backend,
 )
 from src.llm_rest_transport import _get_http_session, _message_text
 from src.llm_websocket import AIService
@@ -46,7 +46,7 @@ def _get_openai_compatible_config():
     primary_model = (
         os.environ.get("OPENAI_MODEL")
         or os.environ.get("OPENAI_COMPATIBLE_MODEL")
-        or "deepseek-v4-flash-0731"
+        or "glm-5-2"
     )
     candidate_text = os.environ.get("OPENAI_MODEL_CANDIDATES") or ""
     models = []
@@ -164,12 +164,20 @@ def _chat_with_openai_compatible(content, config):
     response = None
     forbidden_models = set()
     empty_models = set()
+    policy_blocked_models = set()
+    policy_blocked_error: ValueError | None = None
     for attempt in range(1, max_retries + 1):
         wait_seconds = min(2 ** (attempt - 1), 8)
         for model in models:
-            if model in forbidden_models or model in empty_models:
+            if model in (forbidden_models | empty_models | policy_blocked_models):
                 continue
-            require_non_gpt_analysis_model(model, setting="OpenAI request model")
+            try:
+                require_non_gpt_analysis_model(model, setting="OpenAI request model")
+            except ValueError as exc:
+                policy_blocked_models.add(model)
+                if policy_blocked_error is None:
+                    policy_blocked_error = exc
+                continue
             request_payload = {
                 "model": model,
                 "messages": request_messages(content),
@@ -213,9 +221,9 @@ def _chat_with_openai_compatible(content, config):
                 break
             if status_code not in (403, 429, 500, 502, 503, 504, 524):
                 response.raise_for_status()
-        if attempt >= max_retries or len(forbidden_models | empty_models) >= len(
-            models
-        ):
+        if attempt >= max_retries or len(
+            forbidden_models | empty_models | policy_blocked_models
+        ) >= len(models):
             break
         if wait_seconds > MAX_RETRY_WAIT_SECONDS:
             response.raise_for_status()
@@ -227,6 +235,8 @@ def _chat_with_openai_compatible(content, config):
         )
         time.sleep(wait_seconds)
     if response is None:
+        if policy_blocked_error is not None:
+            raise policy_blocked_error
         raise LLMBackendUnavailableError(
             "LLM backend unavailable: no OpenAI-compatible model candidates"
         )
@@ -235,215 +245,6 @@ def _chat_with_openai_compatible(content, config):
         "OpenAI-compatible response missing message content "
         f"(models tried: {', '.join(models)}; empty: {', '.join(sorted(empty_models)) or 'none'})"
     )
-
-
-def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
-    config = _get_openai_compatible_config()
-    if not config:
-        return {"enabled": False}
-    from src.llm_qualification_pool import QualifiedModelPool, pool_enabled
-
-    if pool_enabled():
-        import sqlite3
-
-        try:
-            pool = QualifiedModelPool(
-                config, proxies=_get_openai_compatible_proxies(config["base_url"])
-            )
-            models = pool.refresh_in_background()
-        except (OSError, sqlite3.Error, ValueError):
-            models = []
-        return {
-            "enabled": True,
-            "status_code": 200 if models else 503,
-            "chat_status_code": 200 if models else 503,
-            "qualified_models": models,
-            "model_pool": "ready" if models else "exhausted_or_probing",
-        }
-    url = f"{config['base_url']}/models"
-    session = requests.Session()
-    session.trust_env = False
-    proxies = _get_openai_compatible_proxies(config["base_url"])
-    if proxies:
-        session.proxies = proxies
-    try:
-        response = session.get(
-            url,
-            headers={"Authorization": f"Bearer {config['api_key']}"},
-            timeout=float(timeout),
-        )
-    except requests.RequestException as exc:
-        return {
-            "enabled": True,
-            "url": url,
-            "status_code": 0,
-            "error_type": type(exc).__name__,
-        }
-    result = {
-        "enabled": True,
-        "url": url,
-        "status_code": getattr(response, "status_code", None),
-    }
-    if check_chat:
-        chat_url = f"{config['base_url']}/chat/completions"
-        models = list(config.get("models") or [config["model"]])
-        chat_response = None
-        chat_model = None
-        for model in models:
-            try:
-                require_non_gpt_analysis_model(model, setting="OpenAI preflight model")
-                request_payload = {
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": '这是法拍房分析服务连通性检查。请仅返回 JSON：{"ok":true}',
-                        }
-                    ],
-                    "temperature": 0,
-                    "max_tokens": 32,
-                }
-                if config.get("reasoning_effort"):
-                    request_payload["reasoning_effort"] = config["reasoning_effort"]
-                chat_response = session.post(
-                    chat_url,
-                    headers={
-                        "Authorization": f"Bearer {config['api_key']}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_payload,
-                    timeout=float(timeout),
-                )
-            except requests.RequestException as exc:
-                chat_response = None
-                result.setdefault("probe_errors", []).append(
-                    {"model_name": model, "error_type": type(exc).__name__}
-                )
-                continue
-            status_code = getattr(chat_response, "status_code", None)
-            if status_code is not None and status_code < 400:
-                chat_model = model
-                break
-            if status_code in (400, 401):
-                break
-        result.update(
-            {
-                "chat_url": chat_url,
-                "chat_status_code": getattr(chat_response, "status_code", None),
-            }
-        )
-        if len(models) > 1:
-            result["chat_model_name"] = chat_model
-    return result
-
-
-def preflight_llm_backend(timeout=15.0, *, check_chat=False):
-    config = _get_openai_compatible_config()
-    if config:
-        result = preflight_openai_compatible_backend(
-            timeout=timeout, check_chat=check_chat
-        )
-        result.setdefault("backend", "openai_compatible")
-        return result
-    pool = get_model_pool()
-    if not pool:
-        return {"enabled": False}
-
-    result = {
-        "enabled": True,
-        "backend": "glm_websocket_pool",
-        "model_pool_size": len(pool),
-    }
-    if not check_chat:
-        return result
-
-    disabled_models = dict(getattr(get_model_selector(), "disabled_models", {}) or {})
-    enabled_models = [
-        model for model in pool if str(model.get("name") or "") not in disabled_models
-    ]
-    if not enabled_models:
-        result.update(
-            {
-                "chat_status_code": 401 if disabled_models else 503,
-                "error": "all_models_appid_no_auth"
-                if disabled_models
-                else "all_models_unavailable",
-                "probe_errors": [
-                    {
-                        "model_name": model_name,
-                        "error": reason,
-                    }
-                    for model_name, reason in list(disabled_models.items())[:5]
-                ],
-            }
-        )
-        return result
-
-    prompt = '请只返回JSON: {"ok":true}'
-    probe_errors = []
-    probe_success = None
-    auth_error_only = True
-
-    for model in enabled_models:
-        model_name = str(model.get("name") or "")
-        try:
-            service = AIService(model_config=model)
-            response = service.get_response(prompt)
-            if str(response or "").strip():
-                probe_success = model_name
-                break
-            error_code = int(service.error_code or 0)
-            error_msg = str(service.error_msg or "empty_response")
-            probe_errors.append(
-                {
-                    "model_name": model_name,
-                    "error_code": error_code,
-                    "error": error_msg,
-                }
-            )
-            if (
-                error_code not in AUTH_INVALID_ERROR_CODES
-                or "AppIdNoAuthError" not in error_msg
-            ):
-                auth_error_only = False
-        except LLMBackendUnavailableError as exc:
-            message = str(exc)
-            probe_errors.append(
-                {
-                    "model_name": model_name,
-                    "error": message,
-                }
-            )
-            if "disabled" not in message.lower():
-                auth_error_only = False
-        except Exception as exc:
-            probe_errors.append(
-                {
-                    "model_name": model_name,
-                    "error": repr(exc),
-                }
-            )
-            auth_error_only = False
-
-    if probe_success:
-        result.update(
-            {
-                "chat_status_code": 200,
-                "chat_model_name": probe_success,
-            }
-        )
-        return result
-
-    result.update(
-        {
-            "chat_status_code": 401 if probe_errors and auth_error_only else 503,
-            "error": "all_models_appid_no_auth"
-            if probe_errors and auth_error_only
-            else "all_models_unavailable",
-            "probe_errors": probe_errors[:5],
-        }
-    )
-    return result
 
 
 def chat_with_glm(content, *, model=None):

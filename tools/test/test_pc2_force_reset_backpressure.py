@@ -188,3 +188,27 @@ def test_real_loop_defers_force_reset_and_reaches_existing_resume_path(
     saved = store._load_fallback_state()
     assert saved["solver_cooldown_until"] == until
     assert saved["collection_resume_pending"] is bool(resumed)
+
+
+def test_deferred_force_reset_log_is_rate_limited_within_interval(monkeypatch):
+    control.reset_deferred_force_reset_logs()
+    state = store._default_fallback_state()
+    state.update(
+        challenge_id="old",
+        scope="seed",
+        slider_attempts=10,
+        consecutive_failures=10,
+        solver_cooldown_until=1200.0,
+        solver_cooldown_reason="repeated_solver_failures",
+    )
+    store._save_fallback_state(state)
+    now = [1000.0]
+    events = []
+    monkeypatch.setattr(control.time, "time", lambda: now[0])
+    monkeypatch.setattr(control, "log_event", events.append)
+    status = forced_status("seed", blocked=True)
+    for step in (0.0, 5.0, 30.0, 59.0, 60.0):
+        now[0] = 1000.0 + step
+        control.reset_forced_solver_scopes("api.test", "cdp.test", status, "pc2")
+    assert len(events) == 2
+    control.reset_deferred_force_reset_logs()

@@ -176,3 +176,94 @@ def test_gpt_settings_mailbox_claim_receipt_roundtrip(tmp_path):
     )
     assert result["request"]["status"] == "succeeded"
     assert store.status()["effective"] == config
+
+
+def test_disabled_gpt_preference_falls_back_to_non_gpt_in_direct_chat_and_preflight(
+    monkeypatch,
+):
+    import requests as req_mod
+
+    from src.llm_openai_compatible import (
+        _chat_with_openai_compatible,
+        preflight_openai_compatible_backend,
+    )
+
+    called_models: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, status_code: int, text: str = '{"choices":[{"message":{"content":"{\\"ok\\":true}"}}]}'):
+            self.status_code = status_code
+            self.text = text
+            self.content = text.encode("utf-8")
+
+        def json(self):
+            import json
+
+            return json.loads(self.text)
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise req_mod.HTTPError(f"HTTP {self.status_code}", response=self)
+
+    class FakeSession(req_mod.sessions.Session):
+        def get(self, *_a, **_k):
+            return FakeResponse(200, '{"data":[]}')
+
+        def post(self, _url, *, json, **_k):
+            called_models.append(json["model"])
+            return FakeResponse(200)
+
+    monkeypatch.setenv("CROW_ANALYSIS_ALLOW_GPT", "0")
+    monkeypatch.delenv("FAPAI_ANALYSIS_ALLOW_GPT", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6.1-sol")
+    monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "gpt-6.1-sol,deepseek-fixture")
+    monkeypatch.setattr(req_mod, "Session", FakeSession)
+
+    reply = _chat_with_openai_compatible(
+        "business",
+        {
+            "base_url": "https://example.test/v1",
+            "api_key": "test-key",
+            "model": "gpt-6.1-sol",
+            "models": ["gpt-6.1-sol", "deepseek-fixture"],
+            "max_retries": 2,
+            "timeout": 5,
+        },
+    )
+    assert reply == '{"ok":true}'
+    assert called_models == ["deepseek-fixture"]
+
+    called_models.clear()
+    preflight = preflight_openai_compatible_backend(timeout=5, check_chat=True)
+    assert preflight["chat_status_code"] == 200
+    assert preflight["chat_model_name"] == "deepseek-fixture"
+    assert called_models == ["deepseek-fixture"]
+
+
+def test_empty_allowed_model_pool_returns_non_retryable_policy_status(
+    tmp_path, monkeypatch
+):
+    from src.llm_openai_compatible import preflight_openai_compatible_backend
+    from tools.detail_worker_config import (
+        _llm_preflight_is_retryable,
+        _llm_preflight_is_unavailable,
+    )
+
+    monkeypatch.setenv("CROW_ANALYSIS_ALLOW_GPT", "0")
+    monkeypatch.delenv("FAPAI_ANALYSIS_ALLOW_GPT", raising=False)
+    monkeypatch.setenv("CROW_ANALYSIS_MODEL_POOL_ENABLED", "1")
+    monkeypatch.setenv("CROW_ANALYSIS_MODEL_POOL_PATH", str(tmp_path / "pool.sqlite3"))
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6.1-sol")
+    monkeypatch.setenv("OPENAI_MODEL_CANDIDATES", "gpt-6.1-sol")
+
+    preflight = preflight_openai_compatible_backend(timeout=5, check_chat=True)
+    assert preflight["status_code"] == 403
+    assert preflight["chat_status_code"] == 403
+    assert preflight["model_pool"] == "no_eligible_models"
+    assert preflight["reason"] == "no_eligible_analysis_models"
+    assert _llm_preflight_is_unavailable(preflight) is True
+    assert _llm_preflight_is_retryable(preflight) is False

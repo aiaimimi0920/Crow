@@ -85,3 +85,26 @@ def batch_observation(results, *, elapsed_seconds):
         "page_requests_observed": False,
         "batch_elapsed_seconds": elapsed,
     }
+
+
+SAFE_PREFLIGHT_KEYS = (
+    "backend",
+    "status_code",
+    "chat_status_code",
+    "model_pool",
+    "reason",
+    "error_type",
+)
+
+
+def safe_preflight_summary(preflight):
+    if not isinstance(preflight, dict):
+        return None
+    summary = {
+        key: preflight[key]
+        for key in SAFE_PREFLIGHT_KEYS
+        if key in preflight
+        and isinstance(preflight[key], (str, int))
+        and not isinstance(preflight[key], bool)
+    }
+    return summary or None

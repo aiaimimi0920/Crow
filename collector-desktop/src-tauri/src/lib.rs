@@ -4,6 +4,7 @@ mod environment_aliases;
 mod helper_process;
 mod runtime_config;
 mod settings_bridge;
+mod single_instance;
 
 #[cfg(test)]
 #[path = "../build_frontend.rs"]
@@ -70,8 +71,21 @@ fn bundled_script_path(script_name: &str) -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let Some(instance_guard) = single_instance::acquire_default() else {
+        return;
+    };
+    let activation_listener = instance_guard.listener();
     tauri::Builder::default()
-        .setup(|app| desktop_tray::install(app))
+        .setup(move |app| {
+            desktop_tray::install(app)?;
+            let handle = app.handle().clone();
+            activation_listener.spawn(move || {
+                let target = handle.clone();
+                let _ = handle.run_on_main_thread(move || desktop_tray::show_main(&target));
+            });
+            Ok(())
+        })
+        .on_window_event(desktop_tray::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             default_api_base,
             auth_bridge::desktop_auth_action,
@@ -79,4 +93,5 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Crow collector desktop application");
+    drop(instance_guard);
 }

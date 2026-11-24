@@ -19,24 +19,29 @@ from src.project_environment import getenv as project_getenv
 
 # Never use the configurable worker/PC1 CDP endpoint for destructive recovery.
 ENDPOINT = "http://127.0.0.1:9223"
-# Must exceed normal steady state (initial + 2 reference + seed + detail + attached captures),
-# aligning with DEFAULT_CDP_PAGE_TARGET_LIMIT (12) so cooperative capacity checks run first.
-MAX_TABS = 12
+# Must stay strictly below DEFAULT_CDP_PAGE_TARGET_LIMIT (12), where cooperative
+# background-page creation refuses new pages at count >= 12.
+MAX_TABS = 11
 CLOSE_BUDGET_SECONDS = 10.0
 POLL_SECONDS = 5.0
 
 
 def configured_max_tabs() -> int:
-    raw = str(
-        project_getenv("CROW_BROWSER_TAB_GUARD_MAX_TABS")
-        or project_getenv("CROW_CDP_MAX_PAGE_TARGETS")
-        or MAX_TABS
-    ).strip()
-    try:
-        parsed = int(raw)
-    except ValueError:
-        return MAX_TABS
-    return max(4, parsed) if parsed > 0 else MAX_TABS
+    explicit = str(project_getenv("CROW_BROWSER_TAB_GUARD_MAX_TABS") or "").strip()
+    if explicit:
+        try:
+            parsed = int(explicit)
+        except ValueError:
+            return MAX_TABS
+        return max(4, parsed) if parsed > 0 else MAX_TABS
+    cdp_limit = str(project_getenv("CROW_CDP_MAX_PAGE_TARGETS") or "").strip()
+    if cdp_limit:
+        try:
+            parsed = int(cdp_limit)
+        except ValueError:
+            return MAX_TABS
+        return max(4, parsed - 1) if parsed > 0 else MAX_TABS
+    return MAX_TABS
 
 
 def read_cdp(path: str, timeout: float) -> bytes:
@@ -65,7 +70,12 @@ def page_ids(payload: bytes) -> list[str]:
 
 
 def emit(event: dict[str, object]) -> None:
-    print(json.dumps(event), flush=True)
+    payload = (
+        event
+        if "ts" in event
+        else {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()), **event}
+    )
+    print(json.dumps(payload), flush=True)
 
 
 def guard_iteration(

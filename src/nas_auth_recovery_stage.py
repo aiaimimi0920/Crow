@@ -1,6 +1,7 @@
 """Stage-bound recovery receipts; cookie transport alone is never seed proof."""
-import time
+
 import copy
+import time
 import uuid
 
 
@@ -61,6 +62,59 @@ class StageRecoveryMixin:
             if current - float(self._state.get("pc2_stage_auth_seen_at") or 0) >= 30:
                 self._state["pc2_stage_auth_seen_at"] = current
                 self._persist_locked()
+
+    def _stage_retry_ready_locked(
+        self,
+        *,
+        signal: str,
+        normalized_count: int | None,
+        stage_context: dict[str, str] | None,
+    ) -> bool:
+        last_result = self._state.get("last_result")
+        if not isinstance(last_result, dict) or last_result.get("status") != "succeeded":
+            return False
+        if signal == "detail_challenge_stalled" and normalized_count is not None:
+            try:
+                completed_count = int(last_result.get("captured_count"))
+            except (TypeError, ValueError):
+                completed_count = normalized_count
+            return normalized_count > completed_count
+        if signal == "seed_challenge_stalled" and isinstance(stage_context, dict):
+            last_challenge = str(last_result.get("challenge_id") or "").strip()
+            next_challenge = str(stage_context.get("challenge_id") or "").strip()
+            return bool(
+                last_result.get("scope") == "seed"
+                and stage_context.get("scope") == "seed"
+                and last_challenge
+                and next_challenge
+                and next_challenge != last_challenge
+            )
+        return False
+
+    def _bind_stage_context_locked(
+        self,
+        active: dict[str, object],
+        *,
+        stalled_scope: str | None,
+        scoped_stall: bool,
+        stage_context: dict[str, str] | None,
+        now: float,
+    ) -> None:
+        if not (
+            scoped_stall
+            and stalled_scope in {"seed", "detail"}
+            and 0 <= now - float(self._state.get("pc2_stage_auth_seen_at") or 0) < 120
+            and isinstance(stage_context, dict)
+            and stage_context.get("scope") == stalled_scope
+            and str(stage_context.get("challenge_id") or "").strip()
+            and str(stage_context.get("target_url") or "").strip()
+        ):
+            return
+        active.update(
+            scope=stalled_scope,
+            challenge_id=str(stage_context["challenge_id"]).strip(),
+            target_url=str(stage_context["target_url"]).strip(),
+        )
 
     def accept_stage_result(self, payload, *, validate_and_clear, captured_count, now=None):
         current = time.time() if now is None else now

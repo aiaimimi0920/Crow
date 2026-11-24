@@ -33,10 +33,8 @@ def test_restart_receipt_survives_crash_and_never_replays(tmp_path):
 @pytest.mark.skipif(os.name != "posix", reason="Host flock is Linux-only")
 def test_release_and_controller_share_nonblocking_lock(tmp_path):
     tmp_path.chmod(0o700)
-    with operation_lock(tmp_path):
-        with pytest.raises(BlockingIOError):
-            with operation_lock(tmp_path):
-                pytest.fail("concurrent mutation permitted")
+    with operation_lock(tmp_path), pytest.raises(BlockingIOError), operation_lock(tmp_path):
+        pytest.fail("concurrent mutation permitted")
     (tmp_path / "release-operation.json").write_text("{}")
     with pytest.raises(ControllerError):
         step(tmp_path, None, None)
@@ -90,3 +88,37 @@ def test_step_docker_cache_deduplicates_bulk_inventory_but_keeps_single_rechecks
     # Any mutation invalidates cached inventory immediately.
     assert cache.run_text(["restart", "--time", "30", "id1"]) == "out-5"
     assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-6"
+    assert cache.run_text(["compose", "-p", "fapaifang-pc2", "config", "--quiet"]) == "out-7"
+    assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-6"
+    assert cache.run_text(["compose", "-p", "fapaifang-pc2", "up", "-d", "pc2-seed-1"]) == "out-8"
+    assert cache.run_text(["ps", "-aq", "--filter", "x"]) == "out-9"
+
+
+def test_step_docker_cache_invalidates_across_exact_id_docker_api_apply(tmp_path):
+    from tools.pc2_collection_controller import StepDockerCache
+    from tools.pc2_settings_controller import SettingsController
+    from tools.test.test_pc2_settings_ai_runtime import ExactDocker, setup_runtime
+
+    docker = ExactDocker()
+    cache = StepDockerCache(text_runner=docker)
+    runtime, request = setup_runtime(tmp_path, docker)
+    runtime.run = cache.run_text
+    sent = []
+
+    def post(action, payload):
+        sent.append((action, payload))
+        if action == "poll":
+            return {
+                "command": {
+                    **request,
+                    "revision": 2,
+                    "claim": "b" * 64,
+                }
+            }
+        return {"ok": True}
+
+    controller = SettingsController(SimpleNamespace(post=post), runtime)
+    controller.step()
+    receipt = json.loads(controller.journal.read_text(encoding="utf-8"))
+    assert receipt["result"] == "applied"
+    assert receipt["effective"] == request["config"]

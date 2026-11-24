@@ -118,7 +118,7 @@ def execute(worker, stage, process):
 
 @pytest.mark.parametrize("stage", ["detail", "analysis"])
 def test_empty_queue_records_zero_claims_and_calls(worker, stage):
-    config, repo = worker
+    _config, repo = worker
     repo.claim_seed_detail_item.return_value = None
     repo.claim_seed_raw_detail_item.return_value = None
     result = execute(
@@ -198,6 +198,42 @@ def test_preflight_early_return_has_elapsed_and_zero_item_work(worker, monkeypat
     assert result["batch_elapsed_seconds"] == 4
     event = detail_worker._detail_batch_progress_event(1, result)
     assert event["batch_elapsed_seconds"] == 4
+
+
+def test_preflight_unavailable_progress_event_exposes_only_allowlisted_diagnostics(
+    worker, monkeypatch
+):
+    config, repo = worker
+    monkeypatch.setattr(
+        detail_worker,
+        "_run_llm_preflight",
+        lambda _cfg: {
+            "enabled": True,
+            "backend": "openai_compatible",
+            "status_code": 403,
+            "chat_status_code": 403,
+            "model_pool": "no_eligible_models",
+            "reason": "no_eligible_analysis_models",
+            "url": "https://private.invalid/v1/models",
+            "error": "Bearer secret-key",
+        },
+    )
+    result = detail_worker.run_detail_worker_batch(
+        replace(config, llm_preflight_enabled=True),
+        repository=repo,
+        http_session=None,
+        browser_pages={},
+    )
+    event = detail_worker._detail_batch_progress_event(1, result)
+    assert event["preflight_summary"] == {
+        "backend": "openai_compatible",
+        "status_code": 403,
+        "chat_status_code": 403,
+        "model_pool": "no_eligible_models",
+        "reason": "no_eligible_analysis_models",
+    }
+    assert "private.invalid" not in str(event)
+    assert "secret-key" not in str(event)
     assert event["reason_counts"] == event["decision_counts"] == {}
     assert event["page_requests"] is None
     repo.claim_seed_detail_item.assert_not_called()

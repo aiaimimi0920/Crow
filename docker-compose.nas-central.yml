@@ -3,7 +3,7 @@ x-fapaifang-image: &fapaifang-image
     context: .
     dockerfile: ${FAPAI_DOCKERFILE:-Dockerfile}
     args:
-      PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.10-slim@sha256:31dd4d9529d02d7436659061cb7564cd4733fc90e5e152709a942d53382ec8d0}
+      PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim@sha256:a0e2dd78cc679ddfffea960fe45ecfcff9ac2f68d67917a0edfcde5c2100151b}
       NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85}
       BASE_IMAGE: ${FAPAI_BASE_IMAGE:-fapaifang-collector:local}
       FAPAI_BUILD_VERSION: ${FAPAI_BUILD_VERSION:-development}

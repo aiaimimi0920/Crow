@@ -2,6 +2,7 @@
 
 import time
 
+from tools import pc2_solver_retry_state
 from tools.pc2_reference_browse import maybe_browse_reference_tabs
 from tools.pc2_solver_attempt_policy import (
     preserve_unconfirmed_target,
@@ -30,11 +31,13 @@ from tools.pc2_solver_transport import log_event, read_solver_status
 
 def log_solver_cooldown_started(state: dict[str, object], now: float) -> None:
     """Report the scheduled duration, including persisted exponential backoff."""
+    raw_until = state.get("solver_cooldown_until")
+    until_val = float(raw_until) if isinstance(raw_until, int | float | str) else 0.0
     log_event(
         {
             "kind": "solver_cooldown_started",
-            "until": state["solver_cooldown_until"],
-            "seconds": max(0.0, float(state["solver_cooldown_until"]) - now),
+            "until": raw_until,
+            "seconds": max(0.0, until_val - now),
             "cycles": state.get("solver_cooldown_cycles", 0),
             "consecutive_failures": state.get("consecutive_failures", 0),
         }
@@ -112,6 +115,7 @@ def record_failed_attempt(
     log_event({"kind": "local_solver_failure", "failure_reason": failure_reason})
     # Account the completed attempt before fallible control reads or page rotation.
     state = _load_fallback_state()
+    prior_cycles = max(0, int(state.get("solver_cooldown_cycles") or 0))
     now = time.time()
     failure = _record_slider_attempt_failure(state, now=now)
     last_success_at = float(state.get("last_success_at") or 0) or None
@@ -121,7 +125,18 @@ def record_failed_attempt(
         if last_success_at is None
         else now - max(last_success_at, window_started_at)
     )
-    threshold_reached = int(state["slider_attempts"]) >= FALLBACK_FAIL_THRESHOLD
+    current_failures = max(
+        int(state["slider_attempts"]),
+        int(state.get("consecutive_failures") or 0),
+    )
+    prior_failures = (
+        max(1, int(pc2_solver_retry_state.SOLVER_COOLDOWN_FAIL_THRESHOLD))
+        + (prior_cycles - 1)
+        if prior_cycles > 0
+        else 0
+    )
+    escalation_failures = prior_failures + current_failures
+    threshold_reached = escalation_failures >= FALLBACK_FAIL_THRESHOLD
     stalled = stalled_seconds >= FALLBACK_STALL_SECONDS
     cooldown_started = bool(failure.get("cooldown_started"))
     state["stalled_seconds"] = round(stalled_seconds, 1)
@@ -193,7 +208,7 @@ def record_failed_attempt(
     log_event(
         {
             "kind": "pc1_manual_escalation_check",
-            "consecutive_failures": state["consecutive_failures"],
+            "consecutive_failures": escalation_failures,
             "stalled_seconds": round(stalled_seconds, 1),
             "threshold": FALLBACK_FAIL_THRESHOLD,
             "stalled_threshold_seconds": FALLBACK_STALL_SECONDS,

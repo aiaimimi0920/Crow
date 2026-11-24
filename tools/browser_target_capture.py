@@ -86,6 +86,33 @@ def _has_live_duplicate(context, candidates, matches, is_challenge, is_login):
     return False
 
 
+def _should_preserve_challenge_page(
+    context,
+    page,
+    final_url,
+    html,
+    *,
+    candidates,
+    matches,
+    is_login_target,
+    is_challenge,
+    is_login,
+) -> bool:
+    if is_login_target(final_url) or is_login(html, final_url):
+        return not any(
+            existing is not page
+            and is_login_target(str(getattr(existing, "url", "") or ""))
+            for existing in list(getattr(context, "pages", []))
+        )
+    if not matches(final_url):
+        return False
+    if candidates:
+        return not _has_live_duplicate(
+            context, candidates, matches, is_challenge, is_login
+        )
+    return True
+
+
 def capture_attached_target(
     target_url,
     *,
@@ -161,7 +188,6 @@ def capture_attached_target(
                         )
                         if navigation_challenge is None:
                             raise
-                        owned.preserve = True
                         response = None
                     if navigation_challenge is None:
                         mark_capture_stage(ready_stage)
@@ -173,11 +199,17 @@ def capture_attached_target(
                         html, final_url = navigation_challenge
                 check_capture_budget()
                 if navigation_challenge is not None or is_challenge(html, final_url):
-                    owned.preserve = True
-                    if candidates:
-                        owned.preserve = not _has_live_duplicate(
-                            context, candidates, matches, is_challenge, is_login
-                        )
+                    owned.preserve = _should_preserve_challenge_page(
+                        context,
+                        page,
+                        final_url,
+                        html,
+                        candidates=candidates,
+                        matches=matches,
+                        is_login_target=is_login_target,
+                        is_challenge=is_challenge,
+                        is_login=is_login,
+                    )
                     raise BrowserTargetChallenge(
                         f"browser {label} request", final_url, html
                     )

@@ -952,7 +952,7 @@
     "-m",
     "mypy",
     "--python-version",
-    "3.10",
+    "3.12",
     "--strict",
     "--explicit-package-bases",
     "--follow-imports",

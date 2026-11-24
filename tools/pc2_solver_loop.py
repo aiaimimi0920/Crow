@@ -30,6 +30,7 @@ from tools.pc2_solver_idle_pointer import IdlePointer
 from tools.pc2_solver_loop_control import (
     process_pending_control_actions,
     recover_stale_pause,
+    reset_deferred_force_reset_logs,
     reset_forced_solver_scopes,
     retry_blocked_report,
 )
@@ -96,11 +97,10 @@ def local_solver_loop(
     prepare_solver_browser(
         api_base_url, cdp_endpoint, poll_seconds, max_attempts, expected_node_id
     )
-    last_probe_target = None
+    last_probe_target, last_cooldown_log = None, None
     recovery_targets = RecoveryTargets()
-    last_auth_confirmed_at = 0.0
-    probe_counter = 0
-    last_cooldown_log = None
+    last_auth_confirmed_at, probe_counter = 0.0, 0
+    reset_deferred_force_reset_logs()
     idle_pointer = IdlePointer(cdp_endpoint)
     while True:
         if hold_manual_window(poll_seconds):

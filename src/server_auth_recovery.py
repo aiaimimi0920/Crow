@@ -43,6 +43,7 @@ class RecoveryCoordinator(Protocol):
         recovery_signal: str | None,
         recovery_signal_stall_seconds: float,
         blocked_scopes: tuple[str, ...],
+        stage_context: dict[str, str] | None = None,
     ) -> dict[str, object]: ...
 
     def snapshot(self) -> dict[str, object]: ...
@@ -145,18 +146,51 @@ class AuthRecovery:
             return "cookie_snapshot_candidate_unhealthy"
         return None
 
+    def _stage_recovery_context(self, signal: str | None) -> dict[str, str] | None:
+        from src.collection.adapters.taobao_auth_target import auth_target
+
+        scope = {
+            "seed_challenge_stalled": "seed",
+            "detail_challenge_stalled": "detail",
+        }.get(str(signal or "").strip())
+        if not scope:
+            return None
+        status = self.scope_status(scope)
+        challenge_id = str(status.get("challenge_id") or "").strip()
+        last_request = status.get("last_request")
+        raw_url = (
+            str(last_request.get("target_url") or last_request.get("url") or "").strip()
+            if isinstance(last_request, dict)
+            else ""
+        )
+        if not challenge_id or not raw_url:
+            return None
+        try:
+            canonical = auth_target(scope, raw_url)
+        except ValueError:
+            return None
+        return {
+            "scope": scope,
+            "challenge_id": challenge_id,
+            "target_url": canonical,
+        }
+
     def _sample_nas_auth_recovery(self) -> dict[str, object]:
+        signal = self.signal()
+        stage_context = self._stage_recovery_context(signal)
+        extra = {"stage_context": stage_context} if stage_context else {}
         return self.coordinator().sample(
             self.captured_count(),
             self.pending_count(),
             operator_paused=self.runtime().control.snapshot().reason == "operator",
-            recovery_signal=self.signal(),
+            recovery_signal=signal,
             recovery_signal_stall_seconds=self.blocked_seconds(),
             blocked_scopes=tuple(
                 scope
                 for scope in CHALLENGE_SCOPES
                 if self.scope_status(scope).get("challenge_id")
             ),
+            **extra,
         )
 
     def _nas_auth_recovery_authorized(self, headers: HeaderReader) -> tuple[bool, str]:

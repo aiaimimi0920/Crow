@@ -193,6 +193,35 @@ def process_pending_control_actions(
     }
 
 
+DEFERRED_FORCE_RESET_LOG_INTERVAL_SECONDS = 60.0
+_DEFERRED_FORCE_RESET_LOGS: dict[tuple[str, str, float], float] = {}
+
+
+def reset_deferred_force_reset_logs() -> None:
+    _DEFERRED_FORCE_RESET_LOGS.clear()
+
+
+def _should_log_deferred_force_reset(
+    scope: object, challenge_id: object, cooldown_until: object
+) -> bool:
+    current = time.time()
+    key = (
+        str(scope or ""),
+        str(challenge_id or ""),
+        float(cast("str | float", cooldown_until or 0)),
+    )
+    last_logged = _DEFERRED_FORCE_RESET_LOGS.get(key)
+    if (
+        last_logged is not None
+        and 0 <= current - last_logged < DEFERRED_FORCE_RESET_LOG_INTERVAL_SECONDS
+    ):
+        return False
+    if len(_DEFERRED_FORCE_RESET_LOGS) >= 16 and key not in _DEFERRED_FORCE_RESET_LOGS:
+        _DEFERRED_FORCE_RESET_LOGS.clear()
+    _DEFERRED_FORCE_RESET_LOGS[key] = current
+    return True
+
+
 def _fallback_matches_scope_challenge(
     fallback: dict[str, object], scope: object, challenge_id: object
 ) -> bool:
@@ -232,16 +261,22 @@ def reset_forced_solver_scopes(
             and fallback.get("solver_cooldown_reason") == "repeated_solver_failures"
         ):
             # An expired deadline must reach the resume acknowledgement path first.
-            log_event(
-                {
-                    "kind": "scoped_challenge_force_reset_deferred",
-                    "scope": scope,
-                    "challenge_id": scoped_status.get("challenge_id"),
-                    "cooldown_until": fallback.get("solver_cooldown_until"),
-                    "reason": "solver_cooldown_or_resume_pending",
-                }
-            )
+            if _should_log_deferred_force_reset(
+                scope,
+                scoped_status.get("challenge_id"),
+                fallback.get("solver_cooldown_until"),
+            ):
+                log_event(
+                    {
+                        "kind": "scoped_challenge_force_reset_deferred",
+                        "scope": scope,
+                        "challenge_id": scoped_status.get("challenge_id"),
+                        "cooldown_until": fallback.get("solver_cooldown_until"),
+                        "reason": "solver_cooldown_or_resume_pending",
+                    }
+                )
             continue
+        _DEFERRED_FORCE_RESET_LOGS.clear()
         cleanup = close_challenge_pages_for_scope(cdp_endpoint, scope)
         reset_result = notify_force_reset(
             api_base_url,
@@ -325,7 +360,8 @@ def recover_stale_pause(
     ):
         pending_navigation = (
             last_probe_target
-            if maintenance_target_probe(last_probe_target)
+            if isinstance(last_probe_target, dict)
+            and maintenance_target_probe(last_probe_target)
             and last_probe_target.get("_challenge_id") == solver_status["challenge_id"]
             else None
         )
@@ -367,5 +403,6 @@ def recover_stale_pause(
 __all__ = (
     "process_pending_control_actions",
     "recover_stale_pause",
+    "reset_deferred_force_reset_logs",
     "reset_forced_solver_scopes",
 )

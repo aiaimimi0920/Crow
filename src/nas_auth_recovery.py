@@ -16,7 +16,10 @@ from .auth_recovery_codes import (
 from .auth_recovery_codes import TIMEOUT_REASONS
 from .nas_auth_recovery_stage import StageRecoveryMixin
 
-SUCCESSFUL_RECOVERY_NEW_PROGRESS_RETRY_SIGNALS = {"detail_challenge_stalled"}
+SUCCESSFUL_RECOVERY_NEW_PROGRESS_RETRY_SIGNALS = {
+    "seed_challenge_stalled",
+    "detail_challenge_stalled",
+}
 SCOPED_CHALLENGE_STALL_SIGNALS = {
     "seed_challenge_stalled": "seed",
     "detail_challenge_stalled": "detail",
@@ -252,6 +255,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
         recovery_signal: str | None = None,
         recovery_signal_stall_seconds: float | None = None,
         blocked_scopes: tuple[str, ...] = (),
+        stage_context: dict[str, str] | None = None,
         now: float | None = None,
     ) -> dict[str, Any]:
         current = time.time() if now is None else float(now)
@@ -313,20 +317,15 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
             signal_triggered = bool(
                 normalized_signal and (scoped_stall or stalled_for >= signal_stall_seconds)
             )
-            last_result = self._state.get("last_result")
-            successful_signal_retry_ready = False
-            if (
+            successful_signal_retry_ready = bool(
                 signal_triggered
                 and normalized_signal in SUCCESSFUL_RECOVERY_NEW_PROGRESS_RETRY_SIGNALS
-                and normalized_count is not None
-                and isinstance(last_result, dict)
-                and last_result.get("status") == "succeeded"
-            ):
-                try:
-                    completed_count = int(last_result.get("captured_count"))
-                except (TypeError, ValueError):
-                    completed_count = normalized_count
-                successful_signal_retry_ready = normalized_count > completed_count
+                and self._stage_retry_ready_locked(
+                    signal=normalized_signal,
+                    normalized_count=normalized_count,
+                    stage_context=stage_context,
+                )
+            )
             may_trigger = bool(
                 self.enabled
                 and automatic_allowed
@@ -342,7 +341,7 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
                 and (stalled_for >= self.stall_seconds or signal_triggered)
             )
             if may_trigger:
-                self._state["active"] = {
+                next_active: dict[str, Any] = {
                     "recovery_id": f"auth-recovery-{uuid.uuid4().hex}",
                     "status": "requested",
                     "baseline_captured_count": normalized_count,
@@ -354,6 +353,14 @@ class NasAuthRecoveryCoordinator(StageRecoveryMixin):
                         else "captured_count_stalled"
                     ),
                 }
+                self._bind_stage_context_locked(
+                    next_active,
+                    stalled_scope=stalled_scope,
+                    scoped_stall=scoped_stall,
+                    stage_context=stage_context,
+                    now=current,
+                )
+                self._state["active"] = next_active
             self._persist_locked()
         return self.snapshot(now=current)
 

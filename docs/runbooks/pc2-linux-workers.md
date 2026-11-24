@@ -11,7 +11,7 @@ PC2 (`192.168.15.104`) runs one Compose project named `fapaifang-pc2`:
 - `pc2-detail-1..3`: raw detail-page collection.
 - `pc2-analysis-1..4`: AI-only analysis of already collected raw records. These services do not depend on browser health, so collection challenges do not stop analysis.
 
-The central API and PostgreSQL remain on NAS (`192.168.15.200`). The LLM gateway remains on `192.168.15.20:8317`; analysis routes to the gateway's current concrete DeepSeek V4 Flash model first and DeepSeek V4 Pro model second. Re-check `/v1/models` before changing these IDs because the unversioned aliases are not guaranteed to exist.
+The central API and PostgreSQL remain on NAS (`192.168.15.200`). The LLM gateway runs on `192.168.15.20:4200` (`http://192.168.15.20:4200/v1`); analysis routes by default to qualified non-GPT models (`glm-5-2` primary, `zai-glm-5-2` fallback) while GPT-family models stay disabled unless `allow_gpt` (`CROW_ANALYSIS_ALLOW_GPT=1`) is explicitly opted in. Re-check `/v1/models` and the qualification pool before changing model IDs.
 
 ## Persistent paths
 
@@ -41,10 +41,10 @@ Stage an immutable source tree under the release directory. Create `runtime.env`
 - `FAPAI_NAS_AUTH_RECOVERY_TOKEN_FILE` pointing to the distinct mounted recovery
   credential; authentication completion and cooldown resume use this role
 - `FAPAI_WORKER_DB_URL` with NAS address `192.168.15.200:55432`
-- `OPENAI_BASE_URL=http://192.168.15.20:8317/v1`
+- `OPENAI_BASE_URL=http://192.168.15.20:4200/v1`
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL=deepseek-v4-flash-0731`
-- `OPENAI_MODEL_CANDIDATES=deepseek-v4-flash-0731,deepseek-v4-pro-0813`
+- `OPENAI_MODEL=glm-5-2`
+- `OPENAI_MODEL_CANDIDATES=glm-5-2,zai-glm-5-2`
 
 Copy the preserved inputs before the first start:
 
@@ -122,7 +122,7 @@ After activation, check real report acknowledgements and cooldown resume events.
 PC2 启动器为独立心跳 watchdog 启用 `--browser-tab-guard`。它不等待 solver
 主循环，在正常本地 CDP 响应下每 5 秒检查一次容器内部 `127.0.0.1:9223`；
 只计 `type=page` 的 Tab（包括空白页、登录页和参考页），不计 iframe 或 worker。
-默认上限与 `DEFAULT_CDP_PAGE_TARGET_LIMIT` 对齐为 12 个（可通过 `CROW_BROWSER_TAB_GUARD_MAX_TABS` 覆盖，至少为 4），避免「初始页 + 2 参考页 + seed/detail 双挑战页 + 采集临时页」正常并发误触发整容器重启；不超过上限时不处理，超过上限时尝试关闭全部页面，而不是仅关闭超出的页面。
+默认上限设为 `11` 个（低于 `DEFAULT_CDP_PAGE_TARGET_LIMIT = 12` 的后台建页软上限，避免在 `page_count == 12` 时后台建页拒绝而 Tab Guard 不触发恢复的边界死锁；可通过 `CROW_BROWSER_TAB_GUARD_MAX_TABS` 覆盖，至少为 4），兼顾「初始页 + 2 参考页 + seed/detail 双挑战页 + 采集临时页」正常并发且不误触发整容器重启；不超过上限时不处理，超过上限时尝试关闭全部页面，而不是仅关闭超出的页面。
 
 关闭使用 10 秒共享预算和单次最多 2 秒 socket timeout；失败或预算耗尽仍触发
 现有 supervisor 退出，再由 Docker `unless-stopped` 重启 browser-solver 全部受管

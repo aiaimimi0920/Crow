@@ -194,3 +194,17 @@ def test_cooldown_preserves_queryless_seed_challenge_without_identity(monkeypatc
     assert closed == opened == []
     assert result["closed"] == 0
     assert result["opened"] is False
+
+
+def test_rotation_closes_solver_probed_seed_tab_when_redirect_strips_query(monkeypatch):
+    stripped = challenge(SEED.split("?")[0])
+    closed, opened, result = rotate(
+        monkeypatch,
+        SEED,
+        [page("probed", stripped), page("foreign-unbound", stripped)],
+        probe_target={"_target_id": "probed", "_target_url": stripped},
+        open_replacement=False,
+    )
+    assert closed == ["probed"]
+    assert opened == []
+    assert result["closed"] == 1

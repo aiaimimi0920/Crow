@@ -117,3 +117,23 @@ def test_cooldown_disables_replacement_but_keeps_shared_failure_accounting(
     assert saved["slider_next_attempt_at"] is None
     assert failed_attempt.browse.call_count == 1
     failed_attempt.report.assert_not_called()
+
+
+def test_cross_cooldown_cumulative_failures_reach_manual_escalation(
+    monkeypatch, failed_attempt
+):
+    monkeypatch.setattr(failure, "FALLBACK_FAIL_THRESHOLD", 3)
+    monkeypatch.setattr(
+        failure, "rotate_failed_challenge_target", lambda *_a, **_k: {"opened": False}
+    )
+    call_failure()
+    call_failure()
+    failed_attempt.report.assert_not_called()
+    resumed = retry._reset_fallback_state(
+        preserve_failure_history_from=store._load_fallback_state()
+    )
+    assert resumed["window_started_at"] == 10.0
+    assert resumed["solver_cooldown_cycles"] == 1
+    retry._sync_challenge_state(resumed, "next", "detail")
+    call_failure()
+    failed_attempt.report.assert_called_once()

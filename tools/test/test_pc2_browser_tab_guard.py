@@ -21,7 +21,7 @@ def inventory(count):
     ).encode()
 
 
-@pytest.mark.parametrize("count", [0, 1, 4, 5, 8, 12, 13, 16])
+@pytest.mark.parametrize("count", [0, 1, 4, 5, 8, 11, 12, 13, 16])
 def test_threshold_closes_all_page_types_and_restarts_only_on_overflow(count):
     calls, signals, events = [], [], []
 
@@ -37,13 +37,23 @@ def test_threshold_closes_all_page_types_and_restarts_only_on_overflow(count):
         log=events.append,
     )
     assert calls == ["/json/list"] + (
-        [f"/json/close/{i}" for i in range(count)] if count > 12 else []
+        [f"/json/close/{i}" for i in range(count)] if count > 11 else []
     )
-    assert signals == ([(123, signal.SIGTERM)] if count > 12 else [])
-    assert result["status"] == ("restart_requested" if count > 12 else "within_limit")
+    assert signals == ([(123, signal.SIGTERM)] if count > 11 else [])
+    assert result["status"] == ("restart_requested" if count > 11 else "within_limit")
     assert "private.invalid" not in json.dumps(events)
-    if count > 12:
+    if count > 11:
         assert result["close_acknowledged"] == count
+
+
+def test_cdp_page_target_limit_stays_one_below_capacity_ceiling(monkeypatch, capsys):
+    monkeypatch.delenv("CROW_BROWSER_TAB_GUARD_MAX_TABS", raising=False)
+    monkeypatch.setenv("CROW_CDP_MAX_PAGE_TARGETS", "12")
+    assert guard.configured_max_tabs() == 11
+    guard.emit({"kind": "browser_tab_overflow", "page_count": 12, "limit": 11})
+    logged = json.loads(capsys.readouterr().out.strip())
+    assert logged["kind"] == "browser_tab_overflow"
+    assert isinstance(logged["ts"], str) and "T" in logged["ts"]
 
 
 def test_configured_max_tabs_honors_env_override_and_floor(monkeypatch):

@@ -363,6 +363,7 @@ def rotate_failed_challenge_target(
             "error_type": type(exc).__name__,
         }
 
+    probe_id = str((probe_target or {}).get("_target_id") or "").strip()
     rejected_ids = []
     for tab in tabs:
         if not isinstance(tab, dict) or tab.get("type") != "page":
@@ -373,7 +374,10 @@ def rotate_failed_challenge_target(
             continue
         if closer._solver_target_scope(tab_url) != scope:
             continue
-        if not closer._manual_challenge_matches_requested_target(tab_url):
+        if (
+            target_id != probe_id
+            and not closer._manual_challenge_matches_requested_target(tab_url)
+        ):
             continue
         if not closer._is_challenge_tab(tab):
             continue

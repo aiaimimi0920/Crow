@@ -37,7 +37,11 @@ RUN apt-get update \
     && test "$(dpkg-query -W -f='${Version}' google-chrome-stable)" = "$FAPAI_GOOGLE_CHROME_VERSION" \
     && rm -f "$chrome_deb" \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir Pillow==11.3.0 PyAutoGUI==0.9.54 evdev==1.9.2
+    && if [ -d /tmp/wheels ] && [ "$(find /tmp/wheels -maxdepth 1 -type f \( -name 'Pillow-11.3.0*.whl' -o -name 'pillow-11.3.0*.whl' \) | head -n 1)" ]; then \
+        pip install --no-cache-dir --no-index --find-links=/tmp/wheels Pillow==11.3.0 PyAutoGUI==0.9.54 evdev==1.9.2; \
+    else \
+        pip install --no-cache-dir Pillow==11.3.0 PyAutoGUI==0.9.54 evdev==1.9.2; \
+    fi
 
 ARG FAPAI_BROWSER_UID=1000
 ARG FAPAI_BROWSER_GID=1000
@@ -54,6 +58,7 @@ COPY tools/internal_api_http.py /app/tools/internal_api_http.py
 COPY tools/pc2_auth_recovery.py /app/tools/pc2_auth_recovery.py
 COPY tools/pc2_local_solver.py /app/tools/pc2_local_solver.py
 COPY tools/pc2_solver_*.py /app/tools/
+COPY tools/browser_target_capture.py /app/tools/browser_target_capture.py
 COPY tools/cdp_host_relay.py /app/tools/cdp_host_relay.py
 COPY tools/browser_proxy_bridge.py /app/tools/browser_proxy_bridge.py
 COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py

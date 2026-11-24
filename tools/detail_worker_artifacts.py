@@ -20,10 +20,18 @@ def _emit_progress_event(event: dict[str, Any]) -> None:
 
 
 def _detail_batch_progress_event(run: int, result: dict[str, Any]) -> dict[str, Any]:
-    from tools.detail_worker_observation import batch_observation
+    from tools.detail_worker_observation import (
+        batch_observation,
+        safe_preflight_summary,
+    )
 
     results = result.get("results") if isinstance(result.get("results"), list) else []
     last_result = results[-1] if results and isinstance(results[-1], dict) else {}
+    preflight_summary = (
+        safe_preflight_summary(result.get("llm_preflight"))
+        if result.get("decision") == "detail_worker_llm_unavailable"
+        else None
+    )
     return {
         "event": "detail_worker_batch",
         "run": run,
@@ -35,6 +43,7 @@ def _detail_batch_progress_event(run: int, result: dict[str, Any]) -> dict[str, 
         "last_result_decision": last_result.get("decision"),
         "last_item_id": last_result.get("item_id"),
         "counts": result.get("counts"),
+        **({"preflight_summary": preflight_summary} if preflight_summary else {}),
         **batch_observation(
             results, elapsed_seconds=result.get("batch_elapsed_seconds")
         ),
@@ -73,7 +82,7 @@ def _record_analysis_module_b_receipt(
         return
     try:
         record_run(item_id, receipt)
-    except Exception as persistence_error:
+    except Exception as persistence_error:  # noqa: BLE001 -- receipt persistence must not fail completed items
         print(
             "[ANALYSIS-MODULE-B] unable to persist run receipt "
             f"for {item_id}: {safe_exception_text(persistence_error)}"
@@ -161,7 +170,7 @@ def _archive_raw_detail_if_configured(
             detail_html_path=detail_html_path,
             item_id=item_id,
         )
-    except Exception as archive_error:
+    except Exception as archive_error:  # noqa: BLE001 -- raw archive failure must not discard successful capture
         print(
             f"[DETAIL-ARCHIVE] durable archive failed for {item_id}: {safe_exception_text(archive_error)}"
         )
@@ -225,16 +234,16 @@ def _assert_raw_detail_artifact_is_not_challenge(
 
 
 __all__ = (
-    "_build_runtime_context",
-    "_emit_progress_event",
-    "_detail_batch_progress_event",
-    "_load_final_item",
-    "_record_analysis_module_b_receipt",
-    "_load_analysis_module_b_latest",
-    "_copy_raw_artifact",
-    "_write_durable_detail_archive",
     "_archive_raw_detail_if_configured",
-    "_stage_raw_detail_artifacts_for_analysis",
-    "_raw_detail_final_url",
     "_assert_raw_detail_artifact_is_not_challenge",
+    "_build_runtime_context",
+    "_copy_raw_artifact",
+    "_detail_batch_progress_event",
+    "_emit_progress_event",
+    "_load_analysis_module_b_latest",
+    "_load_final_item",
+    "_raw_detail_final_url",
+    "_record_analysis_module_b_receipt",
+    "_stage_raw_detail_artifacts_for_analysis",
+    "_write_durable_detail_archive",
 )
