@@ -8,9 +8,11 @@ mod imp {
     const WAIT_TIMEOUT: u32 = 0x0000_0102;
     const INFINITE: u32 = 0xFFFF_FFFF;
     const ASFW_ANY: u32 = 0xFFFF_FFFF;
+    const UOI_NAME: i32 = 2;
 
     #[link(name = "kernel32")]
     extern "system" {
+        fn GetCurrentThreadId() -> u32;
         fn CreateMutexW(attrs: *const u8, initial_owner: i32, name: *const u16) -> isize;
         fn CreateEventW(
             attrs: *const u8,
@@ -27,10 +29,51 @@ mod imp {
     #[link(name = "user32")]
     extern "system" {
         fn AllowSetForegroundWindow(process_id: u32) -> i32;
+        fn GetThreadDesktop(thread_id: u32) -> isize;
+        fn GetUserObjectInformationW(
+            obj: isize,
+            index: i32,
+            info: *mut u16,
+            len: u32,
+            needed: *mut u32,
+        ) -> i32;
     }
 
     fn wide_null(name: &str) -> Vec<u16> {
         name.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub fn current_desktop_name() -> Option<String> {
+        unsafe {
+            let desktop = GetThreadDesktop(GetCurrentThreadId());
+            if desktop == 0 {
+                return None;
+            }
+            let mut buf = [0_u16; 128];
+            let mut needed = 0_u32;
+            let ok = GetUserObjectInformationW(
+                desktop,
+                UOI_NAME,
+                buf.as_mut_ptr(),
+                (buf.len() * std::mem::size_of::<u16>()) as u32,
+                &mut needed,
+            );
+            if ok == 0 {
+                return None;
+            }
+            let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            Some(String::from_utf16_lossy(&buf[..end]))
+        }
+    }
+
+    pub fn allow_current_desktop(desktop: Option<&str>, allow_headless_override: bool) -> bool {
+        if allow_headless_override {
+            return true;
+        }
+        match desktop {
+            Some(name) => name.eq_ignore_ascii_case("Default"),
+            None => true,
+        }
     }
 
     pub struct ActivationListener {
@@ -46,8 +89,7 @@ mod imp {
                 return;
             }
             thread::spawn(move || loop {
-                // SAFETY: `activate_event` is a valid auto-reset Win32 event handle kept open
-                // until process exit (or returns WAIT_FAILED if closed during shutdown).
+                // SAFETY: `activate_event` is an open auto-reset Win32 event handle.
                 let wait = unsafe { WaitForSingleObject(self.activate_event as isize, INFINITE) };
                 if wait == WAIT_OBJECT_0 {
                     on_activate();
@@ -148,6 +190,19 @@ mod imp {
 pub use imp::InstanceGuard;
 
 pub fn acquire_default() -> Option<InstanceGuard> {
+    #[cfg(windows)]
+    {
+        let allow_override =
+            std::env::var("CROW_ALLOW_HEADLESS_DESKTOP").ok().as_deref() == Some("1");
+        let desktop = imp::current_desktop_name();
+        if !imp::allow_current_desktop(desktop.as_deref(), allow_override) {
+            eprintln!(
+                "Refusing to start Crow GUI on non-interactive Win32 desktop {:?}; launch from the interactive Default desktop.",
+                desktop
+            );
+            return None;
+        }
+    }
     imp::acquire_or_signal(
         "Local\\com.fapaifang.collector.instance.v1",
         "Local\\com.fapaifang.collector.activate.v1",
@@ -156,10 +211,24 @@ pub fn acquire_default() -> Option<InstanceGuard> {
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::imp::acquire_or_signal;
+    use super::imp::{acquire_or_signal, allow_current_desktop};
     use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn non_default_win32_desktop_is_rejected_unless_explicitly_overridden() {
+        assert!(allow_current_desktop(Some("Default"), false));
+        assert!(allow_current_desktop(Some("default"), false));
+        assert!(!allow_current_desktop(
+            Some("exebox-VZNSXNCLPAUHMVDVT7NPZGMSEW"),
+            false
+        ));
+        assert!(allow_current_desktop(
+            Some("exebox-VZNSXNCLPAUHMVDVT7NPZGMSEW"),
+            true
+        ));
+    }
 
     #[test]
     fn second_instance_signals_primary_and_exits_early() {
