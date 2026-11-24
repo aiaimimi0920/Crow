@@ -251,6 +251,8 @@ def test_holdout_preflight_failure_does_not_consume_receipt(tmp_path, monkeypatc
                 "split_version": SPLIT_VERSION,
                 "backend": "ridge",
                 "cutoffs": "2023-07-31",
+                "origins": ["2023-07-31"],
+                "evaluation_asof": "2024-02-01",
                 "input_mode": "crow_only",
                 "label_definition": "resale_cell_median_month_t_plus_6_v1",
             }

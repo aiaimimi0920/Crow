@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .contracts import HOLDOUT_CITIES, TRAIN_CITIES, Transaction, parse_date
 from .dataset import build_examples
-from .inputs import archive_candidate
+from .inputs import ARCHIVE_AUCTION_RESULT_EVIDENCE, archive_candidate
 from .source_records import read_source_files
 
 CHINA_TIME = timezone(timedelta(hours=8))
@@ -46,6 +46,7 @@ def current_snapshot_report(root: Path, layout: str = "daily-archive") -> dict:
         "origin": str(origin),
         "source_snapshot_sha256": fingerprint.hexdigest(),
         "source_layout": layout,
+        "auction_result_evidence": ARCHIVE_AUCTION_RESULT_EVIDENCE,
         "location_resolution": "raw_community_or_locality_unverified_not_exact_community_identity",
         "latest_usable_auction_date": str(
             max((r.traded_at for r in usable), default=None)

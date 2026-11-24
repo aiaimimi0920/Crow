@@ -18,6 +18,11 @@ from .contracts import (
 from .source_records import analysis_item_identity
 
 
+ARCHIVE_AUCTION_RESULT_EVIDENCE = (
+    "legacy_archive_sold_flag_proxy_winning_bid_and_later_completion_unverified"
+)
+
+
 def load_transactions(path: Path) -> tuple[list[Transaction], str]:
     content = path.read_bytes()
     payload = json.loads(content.decode("utf-8-sig"))
@@ -60,6 +65,7 @@ def archive_candidate(row: dict, source: str) -> dict:
         "raw_housing_type": row.get("房屋用途") or prop.get("housing_type"),
         "raw_ownership_share": prop.get("ownership_share_ratio"),
         "raw_auction_status": auction.get("status"),
+        "auction_result_evidence": ARCHIVE_AUCTION_RESULT_EVIDENCE,
         "risk_flags": row.get("risk_flags") or {},
     }
 
@@ -92,6 +98,7 @@ def audit_archives(root: Path) -> dict:
                     missing[key] += 1
     return {
         "status": "raw_archive_audit_not_training",
+        "auction_result_evidence": ARCHIVE_AUCTION_RESULT_EVIDENCE,
         "files": len(hashes),
         "city_rows": dict(counts),
         "unique_item_ids": len(ids),
