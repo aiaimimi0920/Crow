@@ -62,21 +62,30 @@ def run_capture_process(
         return output
     finally:
         deadline = time.monotonic() + CLEANUP_SECONDS
-        if process is not None and os.name != "nt":
-            from tools.detail_browser_capture_posix import cleanup_capture_session
+        try:
+            if process is not None and os.name != "nt":
+                from tools.detail_browser_capture_posix import cleanup_capture_session
 
-            cleanup_capture_session(process, deadline=deadline)
-        else:
-            stderr = _cleanup_windows_capture(job, process, deadline=deadline)
-            # Windows reader threads expose buffered stderr only after EOF.
-            if deadline_error is not None and stderr:
-                deadline_error.progress = parse_capture_progress(
-                    stderr, started_at=started_at, observed_at=observed_at
-                )
+                cleanup_capture_session(process, deadline=deadline)
+            else:
+                stderr = _cleanup_windows_capture(job, process, deadline=deadline)
+                if deadline_error is not None and stderr:
+                    deadline_error.progress = parse_capture_progress(
+                        stderr, started_at=started_at, observed_at=observed_at
+                    )
+        except (OSError, RuntimeError, TimeoutError) as cleanup_error:
+            if deadline_error is not None:
+                raise deadline_error from cleanup_error
+            raise CaptureCleanupError("detail capture cleanup failed") from cleanup_error
+
+
+class CaptureCleanupError(RuntimeError):
+    """The capture process did not release its resources, not an item failure."""
 
 
 def _cleanup_windows_capture(job, process, *, deadline):
     stderr = None
+    cleanup_deadline = max(deadline, time.monotonic() + 2.0)
     try:
         if job:
             job.close()
@@ -86,10 +95,10 @@ def _cleanup_windows_capture(job, process, *, deadline):
                 process.kill()
             try:
                 _, stderr = process.communicate(
-                    timeout=max(0.001, deadline - time.monotonic())
+                    timeout=max(0.05, cleanup_deadline - time.monotonic())
                 )
             except subprocess.TimeoutExpired:
-                raise SystemExit(
+                raise RuntimeError(
                     "detail capture process cleanup did not finish"
                 ) from None
     return stderr
@@ -159,5 +168,9 @@ def capture_detail_with_deadline(seed, *, cdp_endpoint):
         # Transport failure preserves the item's retry budget; never report a human challenge.
         raise CdpEndpointUnavailableError(
             cdp_endpoint, "detail_browser_capture_deadline", error
+        ) from error
+    except CaptureCleanupError as error:
+        raise CdpEndpointUnavailableError(
+            cdp_endpoint, "detail_browser_capture_cleanup", error
         ) from error
     return decode_capture_reply(output, cdp_endpoint=cdp_endpoint)

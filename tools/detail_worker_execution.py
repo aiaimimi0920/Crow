@@ -5,6 +5,30 @@ from __future__ import annotations
 from tools.detail_worker_context import *
 
 
+def _upsert_worker_flat_item(
+    repository: PropertyRepository,
+    final_item: dict[str, Any],
+    *,
+    event_type: str,
+    event_payload: dict[str, Any],
+) -> None:
+    import inspect
+
+    kwargs: dict[str, Any] = {
+        "event_type": event_type,
+        "event_payload": event_payload,
+    }
+    try:
+        params = inspect.signature(repository.upsert_flat_item).parameters
+        if "return_committed" in params or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+        ):
+            kwargs["return_committed"] = False
+    except (TypeError, ValueError):
+        pass
+    repository.upsert_flat_item(final_item, **kwargs)
+
+
 def run_detail_worker_once(
     config: DetailWorkerConfig,
     *,
@@ -76,17 +100,32 @@ def run_detail_worker_once(
                 detail_html_path=detail_html_path,
                 selected_json_path=selected_json_path,
             )
-            repository.mark_seed_raw_detail_captured(
-                item_id,
-                detail_html_path=str(detail_html_path),
-                description_json_path=str(description_json_path),
-                selected_json_path=str(selected_json_path),
-            )
             archived_path = _archive_raw_detail_if_configured(
                 config=config,
                 detail_html_path=detail_html_path,
                 item_id=item_id,
             )
+            capture_kwargs: dict[str, Any] = {
+                "detail_html_path": str(detail_html_path),
+                "description_json_path": str(description_json_path),
+                "selected_json_path": str(selected_json_path),
+            }
+            if archived_path:
+                import inspect
+
+                try:
+                    sig = inspect.signature(repository.mark_seed_raw_detail_captured)
+                    if (
+                        "detail_archive_path" in sig.parameters
+                        or any(
+                            p.kind == inspect.Parameter.VAR_KEYWORD
+                            for p in sig.parameters.values()
+                        )
+                    ):
+                        capture_kwargs["detail_archive_path"] = archived_path
+                except (TypeError, ValueError):
+                    pass
+            repository.mark_seed_raw_detail_captured(item_id, **capture_kwargs)
             summary = {
                 "decision": "detail_item_raw_captured",
                 "item_id": item_id,
@@ -104,7 +143,8 @@ def run_detail_worker_once(
             _write_runtime_summary(config.output_dir, summary)
             return summary
         final_item = _load_final_item(config.output_dir, item_id)
-        repository.upsert_flat_item(
+        _upsert_worker_flat_item(
+            repository,
             final_item,
             event_type="detail_worker_completed",
             event_payload={
@@ -284,7 +324,8 @@ def run_detail_analysis_once(
         final_json_path = config.output_dir / item_id / "final.json"
         selected_json_path = config.output_dir / item_id / "selected.json"
         final_item = _load_final_item(config.output_dir, item_id)
-        repository.upsert_flat_item(
+        _upsert_worker_flat_item(
+            repository,
             final_item,
             event_type="detail_analysis_completed",
             event_payload={
@@ -301,6 +342,19 @@ def run_detail_analysis_once(
             final_json_path=str(final_json_path),
             selected_json_path=str(selected_json_path),
         )
+        raw_artifacts = seed.get("_raw_detail_artifacts")
+        raw_source_html = (
+            str(raw_artifacts.get("detail_html_path") or "").strip()
+            if isinstance(raw_artifacts, dict)
+            else ""
+        )
+        staged_html_path = config.output_dir / item_id / "detail.html"
+        if raw_source_html and staged_html_path.is_file():
+            try:
+                if Path(raw_source_html).resolve() != staged_html_path.resolve():
+                    staged_html_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         summary = {
             "decision": "detail_analysis_completed",
             "item_id": item_id,
@@ -308,6 +362,8 @@ def run_detail_analysis_once(
             "final_json_path": str(final_json_path),
             "selected_json_path": str(selected_json_path),
             "staged_raw_artifacts": staged_artifacts,
+            "staged_html_retained": staged_html_path.is_file(),
+            "raw_artifacts": raw_artifacts,
             **worker_queue_statistics(repository),
             **observation,
         }
@@ -354,6 +410,7 @@ def run_detail_analysis_once(
 
 
 __all__ = (
+    "_upsert_worker_flat_item",
     "run_detail_worker_once",
     "run_detail_analysis_once",
 )

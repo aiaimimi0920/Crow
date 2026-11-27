@@ -337,7 +337,8 @@ def test_collector_desktop_current_challenge_is_independent_and_overview_cannot_
 
     assert "authWatcherStatusMessage" not in main_js
     assert "function challengeActive" in main_js
-    assert "solver.scopes || solver.collection_scopes" in main_js
+    scope_source = (APP_ROOT / "src/desktop_auth_scope.ts").read_text(encoding="utf-8")
+    assert "[status.collection_scopes, solver.scopes, solver.collection_scopes]" in scope_source
     assert "force_reset_required" in main_js
     views = (APP_ROOT / "src/desktop_collection_views.ts").read_text(encoding="utf-8")
     assert '$("authChallengeStatus")' not in views
@@ -352,7 +353,7 @@ def test_collector_desktop_refreshes_region_status_separately_every_ten_minutes(
     assert "regionRefreshStatus" in main_js
     assert "requestId === state.regionsRequestId" in main_js
     assert "最后刷新所在地" in main_js
-    assert 'setInterval(() => { if (!isConfigurationBlocked()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS)' in main_js
+    assert 'setInterval(() => { if (!isConfigurationBlocked() && !isWindowHidden()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS)' in main_js
     assert '$("refreshRegions").addEventListener("click", () => loadRegions({ silent: false }))' in main_js
     assert "每 10 分钟自动刷新所在地状态" in main_js
 
@@ -454,7 +455,12 @@ def test_collector_desktop_local_deploy_script_builds_to_temp_and_copies_local_r
     assert "Stop-Process" in script
     assert "Start-Process" in script
     assert "update-collector-desktop-shortcut.ps1" in script
-    assert "-ExpectedSha256 (Get-FileHash" in script
+    assert "$expectedExeHash = (Get-FileHash -LiteralPath $buildExecutable -Algorithm SHA256).Hash" in script
+    assert "$installedExeHash = (Get-FileHash -LiteralPath $destinationExecutable -Algorithm SHA256).Hash" in script
+    assert "-ExpectedSha256 $expectedExeHash" in script
+    launch = (REPO_ROOT / "scripts/start-collector-desktop-verified.ps1").read_text(encoding="utf-8")
+    assert "-ExpectedHash $expectedExeHash" in script and "$hash -ne $ExpectedHash" in launch
+    assert "-Execute $shell -Argument $launcherArgs" in launch and "$_.MainWindowHandle -ne 0" in launch
     assert '[string]$DataRoot = ""' in script
     assert '$previousEnvironment.FAPAI_DATA_ROOT_HOST' in script
     assert "CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue" in script

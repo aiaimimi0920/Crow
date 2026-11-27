@@ -73,13 +73,20 @@ class DockerAPI:
         )["Id"]
 
 
-def clone_payload(row, environment):
+def clone_payload(row, environment, *, service_name=None):
     """Retain inspected runtime settings, but not allocated network identities."""
     result = deepcopy(row["Config"])
     result.update(
         Image=row["Image"],
         Env=[key + "=" + str(value) for key, value in environment.items()],
     )
+    source_service = (row.get("Config", {}).get("Labels") or {}).get(
+        "com.docker.compose.service"
+    )
+    if service_name and isinstance(result.get("Labels"), dict):
+        result["Labels"]["com.docker.compose.service"] = service_name
+        if result.get("Hostname") in {row["Id"][:12], row["Id"], source_service}:
+            result.pop("Hostname", None)
     host = deepcopy(row["HostConfig"])
     if host.get("AutoRemove"):
         raise ValueError("Automatic removal is incompatible with retained rollback")
@@ -89,6 +96,9 @@ def clone_payload(row, environment):
         "NetworkMode", ""
     ).startswith("container:"):
         endpoints = {}
+        excluded_aliases = {row["Id"], row["Id"][:12], row["Name"].lstrip("/")}
+        if service_name and source_service and source_service != service_name:
+            excluded_aliases.add(source_service)
         for name, endpoint in row["NetworkSettings"]["Networks"].items():
             endpoints[name] = {
                 key: deepcopy(endpoint[key])
@@ -98,8 +108,10 @@ def clone_payload(row, environment):
             aliases = [
                 alias
                 for alias in endpoint.get("Aliases") or []
-                if alias not in {row["Id"], row["Id"][:12], row["Name"].lstrip("/")}
+                if alias not in excluded_aliases
             ]
+            if service_name and source_service and source_service != service_name and service_name not in aliases:
+                aliases.append(service_name)
             if aliases:
                 endpoints[name]["Aliases"] = aliases
         result["NetworkingConfig"] = {"EndpointsConfig": endpoints}

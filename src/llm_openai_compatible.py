@@ -7,6 +7,8 @@ import threading
 import time
 from urllib.parse import urlparse
 
+import requests
+
 from src.llm_analysis_policy import (
     require_non_gpt_analysis_model,
     validate_analysis_model_route,
@@ -158,7 +160,12 @@ def _chat_with_openai_compatible(content, config):
 
     url = f"{config['base_url']}/chat/completions"
     proxies = _get_openai_compatible_proxies(config["base_url"])
-    session = _get_http_session(config["base_url"], proxies, config["api_key"])
+    session = _get_http_session(
+        config["base_url"],
+        proxies,
+        config["api_key"],
+        session_factory=requests.Session,
+    )
     max_retries = max(int(config.get("max_retries", 3)), 1)
     models = list(config.get("models") or [config["model"]])
     response = None
@@ -196,8 +203,26 @@ def _chat_with_openai_compatible(content, config):
                     json=request_payload,
                     timeout=config["timeout"],
                 )
-            session.cookies.clear()
+            if hasattr(session, "cookies"):
+                session.cookies.clear()
             status_code = getattr(response, "status_code", None)
+            if status_code == 400 and "reasoning_effort" in request_payload:
+                fallback_payload = {
+                    k: v for k, v in request_payload.items() if k != "reasoning_effort"
+                }
+                with _REST_SEMAPHORE:
+                    response = session.post(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {config['api_key']}",
+                            "Content-Type": "application/json",
+                        },
+                        json=fallback_payload,
+                        timeout=config["timeout"],
+                    )
+                if hasattr(session, "cookies"):
+                    session.cookies.clear()
+                status_code = getattr(response, "status_code", None)
             if status_code is not None and status_code < 400:
                 text, finish_reason = _message_text(response)
                 if text:
@@ -266,15 +291,26 @@ def chat_with_glm(content, *, model=None):
             "Sending request to OpenAI-compatible backend (model=%s)...",
             openai_config["model"],
         )
-        from src.llm_qualification_pool import QualifiedModelPool, pool_enabled
+        from src.llm_qualification_pool import (
+            EmptyModelResponseError,
+            QualifiedModelPool,
+            pool_enabled,
+        )
 
         if pool_enabled():
             import sqlite3
 
+            from tools.worker_lifecycle import stopping_event
+
+            proxies = _get_openai_compatible_proxies(openai_config["base_url"])
             try:
                 pool = QualifiedModelPool(
                     openai_config,
-                    proxies=_get_openai_compatible_proxies(openai_config["base_url"]),
+                    proxies=proxies,
+                    session=_get_http_session(
+                        openai_config["base_url"], proxies, openai_config["api_key"]
+                    ),
+                    cancel_event=stopping_event(),
                 )
                 result = pool.chat(content, model=requested_model or None)
             except (OSError, sqlite3.Error, ValueError):
@@ -286,7 +322,7 @@ def chat_with_glm(content, *, model=None):
         logger.debug("OpenAI-compatible response received (len=%s).", len(result))
         stripped = _strip_json_markdown(result)
         if not str(stripped or "").strip():
-            raise LLMBackendUnavailableError(
+            raise EmptyModelResponseError(
                 "LLM backend unavailable: OpenAI-compatible backend returned empty response"
             )
         return stripped

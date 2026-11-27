@@ -51,33 +51,45 @@ pub fn run(
         let _ = sender.send(result);
     });
     let deadline = Instant::now() + timeout;
-    let result = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                break match receiver
-                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                {
-                    Ok(Ok(stdout)) if stdout.len() <= 65536 => error_receiver
-                        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                        .map(|stderr| Output {
-                            status,
-                            stdout,
-                            stderr,
-                        })
-                        .map_err(|_| "helper_timeout"),
-                    Ok(_) => Err("helper_output_invalid"),
-                    Err(_) => Err("helper_timeout"),
-                };
+    let result = match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(Ok(stdout)) if stdout.len() <= 65536 => {
+            match error_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(stderr) => loop {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            break Ok(Output {
+                                status,
+                                stdout,
+                                stderr,
+                            });
+                        }
+                        Err(_) => break Err("helper_wait_failed"),
+                        Ok(None) => {
+                            if Instant::now() >= deadline {
+                                break Err("helper_timeout");
+                            }
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                    }
+                },
+                Err(_) => Err("helper_timeout"),
             }
-            Err(_) => break Err("helper_wait_failed"),
-            Ok(None) => {}
         }
-        if Instant::now() >= deadline {
-            break Err("helper_timeout");
-        }
-        thread::sleep(Duration::from_millis(20));
+        Ok(_) => Err("helper_output_invalid"),
+        Err(_) => Err("helper_timeout"),
     };
     if result.is_err() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = Command::new("taskkill.exe")
+                .args(["/T", "/F", "/PID", &child.id().to_string()])
+                .creation_flags(0x08000000)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
         let _ = child.kill();
         let _ = child.wait();
     }

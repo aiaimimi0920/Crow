@@ -14,7 +14,13 @@ def preflight_llm_backend(*, timeout: float, check_chat: bool = False) -> dict[s
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))

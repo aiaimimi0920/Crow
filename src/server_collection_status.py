@@ -107,6 +107,7 @@ class CollectionStatusReaders:
             load_build_info=self.build_info,
             database_enabled=lambda: self.repository().enabled,
             runtime_state_label=self.runtime_state_label,
+            load_data_root=self.data_root,
         )
 
     def _collection_observer_overview_payload(self) -> dict[str, object]:

@@ -214,6 +214,22 @@ def open_cdp_keepalive_tab(cdp_endpoint: str) -> str:
     return ""
 
 
+def _is_protected_auth_or_challenge_tab(url: object) -> bool:
+    lowered = str(url or "").strip().lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "login.taobao.com",
+            "login.m.taobao.com",
+            "login.tmall.com",
+            "havanaone/login",
+            "sec.taobao.com",
+            "_____tmd_____/punish",
+            "x5secdata=",
+        )
+    )
+
+
 def compact_cdp_pages_if_needed(
     cdp_endpoint: str,
     targets: Sequence[Mapping[str, object]] | None = None,
@@ -237,6 +253,8 @@ def compact_cdp_pages_if_needed(
     closed = 0
     for target in page_targets:
         if str(target.get("id") or "").strip() == preserve_target_id:
+            continue
+        if _is_protected_auth_or_challenge_tab(target.get("url")):
             continue
         if close_cdp_target(cdp_endpoint, target.get("id")):
             closed += 1
@@ -279,6 +297,7 @@ __all__ = (
     'cdp_page_target_limit',
     'close_cdp_target',
     'open_cdp_keepalive_tab',
+    '_is_protected_auth_or_challenge_tab',
     'compact_cdp_pages_if_needed',
     'activate_cdp_target',
     'find_cdp_target',

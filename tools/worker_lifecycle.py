@@ -87,6 +87,11 @@ def checkpoint(stage: str) -> bool:
     return lifecycle.checkpoint(stage) if lifecycle else True
 
 
+def stopping_event() -> Event | None:
+    lifecycle = _active.get()
+    return lifecycle.stopping if lifecycle else None
+
+
 def wait(seconds: float) -> None:
     lifecycle = _active.get()
     if lifecycle:

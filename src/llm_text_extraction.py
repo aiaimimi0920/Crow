@@ -101,6 +101,11 @@ AREA_EVIDENCE_PATTERNS = [
         re.IGNORECASE,
     ),
     re.compile(
+        r"(?:房屋建筑面积|不动产建筑面积|产权建筑面积|证载建筑面积|建筑面积)"
+        r"\s*[（(]\s*(?:㎡|平方米|平米|m²|m2)\s*[)）]\s*(?:为|约|是|：|:|=)?\s*([1-9]\d{0,3}(?:\.\d{1,4})?)(?![\d.]|,\d)",
+        re.IGNORECASE,
+    ),
+    re.compile(
         r"([1-9]\d{0,3}(?:\.\d{1,4})?)\s*(?:㎡|平方米|平米|m²|m2)"
         r"\s*(?:的)?(?:房屋建筑面积|不动产建筑面积|产权建筑面积|证载建筑面积|建筑面积)",
         re.IGNORECASE,
@@ -187,26 +192,44 @@ def fetch_description_data_text(html_content, *, timeout=20):
     if not html_content:
         return None
     try:
+        from urllib.parse import urlparse
+
         soup = parse_html(html_content)
         link = _parse_description_data_link(soup)
         if not link:
             return None
+        parsed = urlparse(link)
+        host = (parsed.hostname or "").lower()
+        domains = ("taobao.com", "tmall.com", "alicdn.com", "tbcdn.cn")
+        if (parsed.username is not None or parsed.password is not None
+                or parsed.port not in (None, 443 if parsed.scheme == "https" else 80)
+                or not any(host == d or host.endswith("." + d) for d in domains)):
+            logger.warning(
+                "[AREA_FALLBACK_WARN] blocked untrusted description host: %s", host
+            )
+            return None
         session = requests.Session()
         session.trust_env = False
         session.proxies = {"http": None, "https": None}
-        response = session.get(
-            link,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
-                ),
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Referer": "https://sf.taobao.com/",
-            },
-            timeout=timeout,
-        )
+        try:
+            response = session.get(
+                link,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0"
+                    ),
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Referer": "https://sf.taobao.com/",
+                },
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        finally:
+            session.close()
+        if 300 <= response.status_code < 400:
+            return None
         response.raise_for_status()
         raw_bytes = getattr(response, "content", None)
         if isinstance(raw_bytes, (bytes, bytearray)):
@@ -313,7 +336,7 @@ COORDINATE_PATTERNS = [
         r"(?is)(?:center|point|lnglat|lonlat)[^0-9-]{0,20}\[\s*([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)\s*\]",
     ),
     re.compile(
-        r"(?is)(?:longitude|lng)=([1-9]\d{1,2}\.\d+).*?(?:latitude|lat)=(-?\d{1,2}\.\d+)",
+        r"(?is)(?:longitude|lng)=([1-9]\d{1,2}\.\d+).{0,120}?(?:latitude|lat)=(-?\d{1,2}\.\d+)",
     ),
     re.compile(
         r'(?is)(?:center|point|lnglat|lonlat)\s*[:=]\s*["\']([1-9]\d{1,2}\.\d+)\s*,\s*(-?\d{1,2}\.\d+)["\']',

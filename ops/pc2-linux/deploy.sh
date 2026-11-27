@@ -477,6 +477,7 @@ deploy_release() {
       sudo -n ln -sfn "$prior_release" "$app_root/previous"
     fi
     sudo -n ln -sfn "$release_dir" "$app_root/current"
+    # Only controller provisioning may enroll this host in settings-aware releases.
     compose_for "$release_dir" ps
     echo "PC2 release is healthy: $release_id"
     return 0

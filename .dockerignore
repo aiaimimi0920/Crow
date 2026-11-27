@@ -1,6 +1,9 @@
 .git/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.runtime-backups/
+.security-results/
 .codex-temp/
 .memsearch/
 .playwright-cli/

@@ -1,17 +1,17 @@
 """Private cross-process qualification state; no collection database migration."""
-from contextlib import contextmanager
 import hashlib
 import json
 import os
-from pathlib import Path
 import sqlite3
 import threading
 import time
 import uuid
+from contextlib import closing, contextmanager
+from pathlib import Path
 
-from src.project_environment import getenv as project_getenv
 from src.llm_qualification_cases import VERSION
 from src.project_data_paths import resolve_project_data_root
+from src.project_environment import getenv as project_getenv
 
 
 class QualificationStore:
@@ -35,6 +35,13 @@ class QualificationStore:
         self.owner = uuid.uuid4().hex
         # A reused owner's lease must never be acquired by two local scans.
         self.scan_lock = threading.Lock()
+        with closing(sqlite3.connect(self.path, timeout=5)) as pragma_db:
+            try:
+                pragma_db.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError as exc:
+                # A peer may be using the current journal mode; do not mask I/O errors.
+                if getattr(exc, "sqlite_errorcode", None) not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                    raise
         with self._connection() as db:
             db.execute("CREATE TABLE IF NOT EXISTS pools (id TEXT PRIMARY KEY, state TEXT NOT NULL)")
             db.execute("INSERT OR IGNORE INTO pools VALUES (?, ?)", (self.key, json.dumps({
@@ -59,15 +66,24 @@ class QualificationStore:
 
     def change(self, update):
         with self._connection() as db:
-            state = json.loads(db.execute("SELECT state FROM pools WHERE id=?", (self.key,)).fetchone()[0])
+            row = db.execute("SELECT state FROM pools WHERE id=?", (self.key,)).fetchone()
+            if row is None:
+                raise sqlite3.DatabaseError("Qualification pool state is missing")
+            raw_before = row[0]
+            state = json.loads(raw_before)
             result = update(state)
-            db.execute("UPDATE pools SET state=? WHERE id=?", (json.dumps(state), self.key))
+            raw_after = json.dumps(state)
+            if raw_after != raw_before:
+                db.execute("UPDATE pools SET state=? WHERE id=?", (raw_after, self.key))
             return result
 
     def snapshot(self):
         db = sqlite3.connect(self.path, timeout=5)
         try:
-            return json.loads(db.execute("SELECT state FROM pools WHERE id=?", (self.key,)).fetchone()[0])
+            row = db.execute("SELECT state FROM pools WHERE id=?", (self.key,)).fetchone()
+            if row is None:
+                raise sqlite3.DatabaseError("Qualification pool state is missing")
+            return json.loads(row[0])
         finally:
             db.close()
 
@@ -97,14 +113,20 @@ class QualificationStore:
         self.change(update)
 
     def reserve_request_slot(self):
-        """At most 15 chat starts per minute across workers sharing this pool."""
+        """Bound chat starts across workers sharing this pool (default 4s spacing)."""
+        raw_interval = project_getenv("CROW_MODEL_POOL_MIN_INTERVAL_SECONDS")
+        try:
+            spacing = max(0.0, float(raw_interval)) if raw_interval is not None else 4.0
+        except ValueError:
+            spacing = 4.0
+
         def update(state):
             now = time.time()
             if state.get("cooldown_until", 0) > now:
                 return None
             delay = max(0, state.get("next_request_at", 0) - now)
             if not delay:
-                state["next_request_at"] = now + 4
+                state["next_request_at"] = now + spacing
             return delay
         return self.change(update)
 

@@ -61,9 +61,10 @@ test("polling has a wall-clock limit, without inventing a server failure or succ
 });
 
 test("local defaults match current deployment without embedded secrets or fixture routes", () => {
-  assert.deepEqual(localCollectionDefaults.workers, { links: 1, details: 3, analysis: 4 });
+  assert.deepEqual(localCollectionDefaults.workers, { links: 1, details: 1, analysis: 3 });
   assert.equal(localCollectionDefaults.ai.base_url, "http://192.168.15.20:4200/v1");
-  assert.equal(localCollectionDefaults.ai.model, "glm-5-2");
+  assert.equal(localCollectionDefaults.ai.model, "deepseek-v4.1-flash");
+  assert.equal(localCollectionDefaults.ai.reasoning_effort, "minimal");
   assert.equal(localCollectionDefaults.intervals.analysis, 5);
   assert.equal(localCollectionDefaults.retries.ai_attempts, 2);
   assert.ok(!JSON.stringify(localCollectionDefaults).match(/api_key|password|fixture|example.invalid/));

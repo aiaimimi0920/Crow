@@ -136,8 +136,9 @@ document.querySelectorAll<HTMLButtonElement>("button[data-stage]").forEach((butt
     state.offset = 0;
     state.itemsRequestId += 1;
     hideDetailPanel();
+    const stage = state.stage;
     await loadRegions();
-    await refreshList();
+    if (stage === state.stage) await refreshList();
   }),
 );
 
@@ -209,5 +210,12 @@ if (initialConfig.blocked) {
 } else {
   await reloadAll();
 }
-setInterval(() => { if (!isConfigurationBlocked()) void reloadAll({ silent: true }); }, AUTO_REFRESH_INTERVAL_MS);
-setInterval(() => { if (!isConfigurationBlocked()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS);
+const isWindowHidden = (): boolean => typeof document !== "undefined" && document.hidden === true;
+setInterval(() => { if (!isConfigurationBlocked() && !isWindowHidden()) void reloadAll({ silent: true }); }, AUTO_REFRESH_INTERVAL_MS);
+setInterval(() => { if (!isConfigurationBlocked() && !isWindowHidden()) void loadRegions({ silent: true }); }, REGION_REFRESH_INTERVAL_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!isWindowHidden() && !isConfigurationBlocked()) {
+    const stale = !state.lastRefreshAt || Date.now() - state.lastRefreshAt.getTime() >= AUTO_REFRESH_INTERVAL_MS;
+    if (stale) void reloadAll({ silent: true });
+  }
+});

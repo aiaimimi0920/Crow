@@ -8,29 +8,31 @@ import requests
 _HTTP_LOCAL = threading.local()
 
 
-def _get_http_session(base_url, proxies, api_key):
+def _get_http_session(base_url, proxies, api_key, *, session_factory=None):
     """Keep one bounded, credential-isolated connection pool per worker thread."""
     import hashlib
 
+    factory = session_factory or requests.Session
     key = (
         base_url,
         tuple(sorted((proxies or {}).items())),
         hashlib.sha256(api_key.encode("utf-8")).digest(),
-        requests.Session,
+        factory,
     )
     previous = getattr(_HTTP_LOCAL, "entry", None)
     if previous is not None and previous[0] == key:
         return previous[1]
-    if previous is not None:
+    if previous is not None and hasattr(previous[1], "close"):
         previous[1].close()
-    session = requests.Session()
-    session.trust_env = False
-    session.proxies = dict(proxies or {})
-    adapter = requests.adapters.HTTPAdapter(
-        pool_connections=2, pool_maxsize=2, max_retries=0
-    )
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
+    session = factory()
+    if hasattr(session, "mount"):
+        session.trust_env = False
+        session.proxies = dict(proxies or {})
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=2, pool_maxsize=2, max_retries=0
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
     _HTTP_LOCAL.entry = (key, session)
     return session
 

@@ -72,6 +72,10 @@ class RequestBudgetExceeded(LLMBackendUnavailableError):
         super().__init__("LLM backend unavailable: request scheduling budget exhausted")
 
 
+class EmptyModelResponseError(LLMBackendUnavailableError):
+    """Per-prompt empty output that should try fallbacks without disabling healthy models."""
+
+
 class QualifiedModelPool:
     def __init__(
         self, config, *, proxies=None, store=None, session=None, cancel_event=None
@@ -82,6 +86,7 @@ class QualifiedModelPool:
         self.cancel_event = (
             cancel_event if cancel_event is not None else threading.Event()
         )
+        self._owns_session = session is None
         self.session = session or requests.Session()
         self.session.trust_env = False
         self.session.proxies = proxies or {}
@@ -129,27 +134,7 @@ class QualifiedModelPool:
         else:
             self.store.defer_scan(seconds)
 
-    def request(self, model, content, *, probe=False, deadline=None):
-        from src.llm_evidence_prompt import request_messages
-        from src.llm_request_policy import MAX_OUTPUT_TOKENS
-
-        check_cancelled(self.cancel_event)
-        if model not in self.allowed_models():
-            raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
-        payload = {
-            "model": model,
-            "messages": request_messages(content),
-            "temperature": 0,
-            "max_tokens": MAX_OUTPUT_TOKENS,
-        }
-        if self.config.get("reasoning_effort"):
-            payload["reasoning_effort"] = self.config["reasoning_effort"]
-        if probe:
-            payload["max_tokens"] = 256
-        timeout = self.probe_timeout if probe else self.config["timeout"]
-        slot_deadline = time.monotonic() + timeout
-        if deadline is not None:
-            slot_deadline = min(slot_deadline, deadline - timeout)
+    def _reserve_send(self, model, slot_deadline):
         while True:
             check_cancelled(self.cancel_event)
             if time.monotonic() > slot_deadline:
@@ -169,16 +154,50 @@ class QualifiedModelPool:
             raise ModelRateLimitedError(0)
         if model not in self.allowed_models():
             raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
-        try:
-            body = request_json(
-                self.session,
-                "post",
-                self.config["base_url"] + "/chat/completions",
-                headers=self.headers,
-                json=payload,
-                timeout=timeout,
+
+    def request(self, model, content, *, probe=False, deadline=None):
+        from src.llm_evidence_prompt import request_messages
+        from src.llm_openai_compatible import _strip_json_markdown
+        from src.llm_request_policy import MAX_OUTPUT_TOKENS
+
+        check_cancelled(self.cancel_event)
+        if model not in self.allowed_models():
+            raise LLMBackendUnavailableError("LLM backend unavailable: excluded model")
+        payload = {
+            "model": model, "messages": request_messages(content), "temperature": 0,
+            "max_tokens": 256 if probe else MAX_OUTPUT_TOKENS,
+        }
+        if self.config.get("reasoning_effort"):
+            payload["reasoning_effort"] = self.config["reasoning_effort"]
+        timeout = self.probe_timeout if probe else self.config["timeout"]
+        slot_deadline = time.monotonic() + timeout
+        if deadline is not None:
+            slot_deadline = min(slot_deadline, deadline - timeout)
+        self._reserve_send(model, slot_deadline)
+        send_deadline = time.monotonic() + timeout
+        if deadline is not None:
+            send_deadline = min(deadline, send_deadline)
+
+        def send(body, seconds):
+            return request_json(
+                self.session, "post", self.config["base_url"] + "/chat/completions",
+                headers=self.headers, json=body, timeout=seconds,
                 max_bytes=65536 if probe else 2097152,
             )
+
+        try:
+            try:
+                body = send(payload, timeout)
+            except ModelHttpError as http_exc:
+                if http_exc.status_code != 400 or "reasoning_effort" not in payload:
+                    raise
+                self._reserve_send(model, send_deadline)
+                remaining = send_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RequestBudgetExceeded()
+                body = send({k: v for k, v in payload.items() if k != "reasoning_effort"}, remaining)
+        except (RequestBudgetExceeded, QualificationCancelled):
+            raise
         except (
             requests.RequestException,
             LLMBackendUnavailableError,
@@ -198,8 +217,8 @@ class QualifiedModelPool:
             raise LLMBackendUnavailableError(
                 "LLM backend unavailable: invalid chat response"
             ) from None
-        if not isinstance(value, str) or not value.strip():
-            raise LLMBackendUnavailableError(
+        if not isinstance(value, str) or not _strip_json_markdown(value).strip():
+            raise EmptyModelResponseError(
                 "LLM backend unavailable: empty chat response"
             )
         return value
@@ -350,6 +369,8 @@ class QualifiedModelPool:
         """Preflight never waits for a benchmark or claims a business item."""
         active = self.available()
         if not self.allowed_models():
+            if self._owns_session:
+                self.session.close()
             return active
         snapshot = self.store.snapshot()
         if (
@@ -357,8 +378,11 @@ class QualifiedModelPool:
             or snapshot["lease_until"] > time.time()
             or snapshot["next_scan"] > time.time()
         ):
+            if self._owns_session:
+                self.session.close()
             return active
         key = self.store.key
+        spawned = False
         with _REFRESH_LOCK:
             if key not in _REFRESH_THREADS:
 
@@ -370,13 +394,17 @@ class QualifiedModelPool:
                     finally:
                         with _REFRESH_LOCK:
                             _REFRESH_THREADS.pop(key, None)
-                        self.session.close()
+                        if self._owns_session:
+                            self.session.close()
 
                 thread = threading.Thread(
                     target=run, name="analysis-model-qualification", daemon=True
                 )
                 _REFRESH_THREADS[key] = thread
                 thread.start()
+                spawned = True
+        if not spawned and self._owns_session:
+            self.session.close()
         return active
 
     def chat(self, content, *, model=None):
@@ -384,10 +412,13 @@ class QualifiedModelPool:
         candidates = self.available()
         if model:
             candidates = [model] if model in candidates else []
+        empty_failures = 0
+        tried = 0
         # A healthy primary is never rotated away by historical shared route_cursor.
         for candidate in candidates:
             if candidate not in self.available():
                 continue
+            tried += 1
             try:
                 answer = self.request(candidate, content)
                 self.config["last_successful_model"] = candidate
@@ -397,10 +428,18 @@ class QualifiedModelPool:
                 return answer
             except QualificationCancelled:
                 raise
+            except EmptyModelResponseError:
+                check_cancelled(self.cancel_event)
+                empty_failures += 1
             except (ModelRateLimitedError, RequestBudgetExceeded):
                 break  # Do not spend the same account's quota on more aliases.
             except (requests.RequestException, LLMBackendUnavailableError, ValueError):
+                check_cancelled(self.cancel_event)
                 self.store.disable(candidate)
+        if tried > 0 and empty_failures == tried:
+            raise EmptyModelResponseError(
+                "LLM backend unavailable: empty chat response across qualified models"
+            )
         # Re-qualification is performed by the next worker preflight, not per item.
         raise LLMBackendUnavailableError(
             "LLM backend unavailable: qualified model pool exhausted or probing"

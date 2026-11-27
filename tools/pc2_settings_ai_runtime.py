@@ -134,10 +134,12 @@ def apply_workers(runtime, before, after, rows, changed, directory, write_privat
         os.replace(staged, runtime.active)
         return "applied"
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError):
-        try:
-            for entry in reversed(entries):
-                if not entry["new"]:
-                    continue
+        rollback_incomplete = False
+        for entry in reversed(entries):
+            if not entry["new"]:
+                continue
+            new_cleared = False
+            try:
                 api.action(
                     entry["new"],
                     "update",
@@ -149,17 +151,43 @@ def apply_workers(runtime, before, after, rows, changed, directory, write_privat
                     "rename",
                     name=entry["name"] + "-settings-failed-" + token,
                 )
+                new_cleared = True
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ):
+                rollback_incomplete = True
+            if not new_cleared:
+                continue
+            try:
                 old = api.inspect(entry["old"])
                 if old["Name"] not in {
                     "/" + entry["name"],
                     "/" + entry["name"] + "-settings-old-" + token,
                 }:
-                    return "interrupted"
+                    rollback_incomplete = True
+                    continue
                 if old["Name"] != "/" + entry["name"]:
                     api.action(entry["old"], "rename", name=entry["name"])
-                api.action(entry["old"], "update", {"RestartPolicy": entry["restart"]})
+                api.action(
+                    entry["old"], "update", {"RestartPolicy": entry["restart"]}
+                )
                 if not old["State"]["Running"]:
                     api.action(entry["old"], "start")
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ):
+                rollback_incomplete = True
+        if rollback_incomplete:
+            return "interrupted"
+        try:
             return "rolled_back" if runtime.wait_ready(before) else "interrupted"
         except (
             OSError,

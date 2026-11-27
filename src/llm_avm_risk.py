@@ -225,8 +225,12 @@ def extract_avm_risk_features(page_text, item_id=None, *, model=None):
         return None
 
     from src.llm_request_policy import MAX_INPUT_CHARACTERS
+    from src.llm_text_extraction import filter_content
 
-    prompt = build_avm_risk_prompt(str(page_text)[:MAX_INPUT_CHARACTERS])
+    text_input = str(page_text)
+    if "<" in text_input and ">" in text_input:
+        text_input = filter_content(text_input)
+    prompt = build_avm_risk_prompt(text_input[:MAX_INPUT_CHARACTERS])
 
     try:
         raw = chat_with_glm(prompt, model=model) if model else chat_with_glm(prompt)

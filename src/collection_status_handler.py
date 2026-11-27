@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import ClassVar, Protocol, cast
 
 from .collection_repository_status import collection_stage_snapshot
+from .collection_status_payload import load_postgres_backup_status
 
 Record = dict[str, object]
 
@@ -155,35 +156,37 @@ def bind_collection_status(host: CollectionStatusHost) -> CollectionStatusHandle
             api_metrics = host.llm_helper.get_api_metrics()
             stage_snapshot = collection_stage_snapshot(host.DB_REPOSITORY)
             runtime_snapshot = host._collection_runtime_snapshot()
-            handler.send_json(
-                {
-                    "paused": runtime_snapshot["paused"],
-                    "total_ids": total_ids,
-                    "captured_count": captured_count,
-                    "ai_finalized_count": ai_finalized_count,
-                    "db_mode": host._prefer_db_task_reads(),
-                    "db_total_ids": db_total_ids,
-                    "db_processed_ids": db_processed_ids,
-                    "db_pending_ids": db_pending_ids,
-                    "db_detail_captured_ids": db_detail_captured_ids,
-                    "sniff_queue_count": status_info.get("pending_locations", 0),
-                    "sniff_done_count": status_info.get("done_locations", 0),
-                    "next_batch_preview": next_batch,
-                    "api_success_rate": api_metrics.get("success_rate", 0.0),
-                    "api_avg_response_time_ms": api_metrics.get(
-                        "avg_response_time_ms", 0.0
-                    ),
-                    "api_total_calls": api_metrics.get("total_calls", 0),
-                    "api_success_calls": api_metrics.get("success_calls", 0),
-                    "captcha_solver": runtime_snapshot["captcha_solver"],
-                    "auth_recovery": runtime_snapshot["auth_recovery"],
-                    "collection_scopes": runtime_snapshot["collection_scopes"],
-                    "data_supply_recent_24h": host._db_data_supply_snapshot(24)
-                    if host.DB_REPOSITORY.enabled
-                    else {},
-                    "collection_stage": stage_snapshot,
-                }
-            )
+            payload: Record = {
+                "paused": runtime_snapshot["paused"],
+                "total_ids": total_ids,
+                "captured_count": captured_count,
+                "ai_finalized_count": ai_finalized_count,
+                "db_mode": host._prefer_db_task_reads(),
+                "db_total_ids": db_total_ids,
+                "db_processed_ids": db_processed_ids,
+                "db_pending_ids": db_pending_ids,
+                "db_detail_captured_ids": db_detail_captured_ids,
+                "sniff_queue_count": status_info.get("pending_locations", 0),
+                "sniff_done_count": status_info.get("done_locations", 0),
+                "next_batch_preview": next_batch,
+                "api_success_rate": api_metrics.get("success_rate", 0.0),
+                "api_avg_response_time_ms": api_metrics.get(
+                    "avg_response_time_ms", 0.0
+                ),
+                "api_total_calls": api_metrics.get("total_calls", 0),
+                "api_success_calls": api_metrics.get("success_calls", 0),
+                "captcha_solver": runtime_snapshot["captcha_solver"],
+                "auth_recovery": runtime_snapshot["auth_recovery"],
+                "collection_scopes": runtime_snapshot["collection_scopes"],
+                "data_supply_recent_24h": host._db_data_supply_snapshot(24)
+                if host.DB_REPOSITORY.enabled
+                else {},
+                "collection_stage": stage_snapshot,
+            }
+            postgres_backup = load_postgres_backup_status(host.DATA_DIR)
+            if postgres_backup is not None:
+                payload["postgres_backup"] = postgres_backup
+            handler.send_json(payload)
         except Exception as error:  # noqa: BLE001 - preserve status HTTP boundary
             handler.send_error_json(
                 status=500,

@@ -62,7 +62,7 @@ open.addEventListener("click", () => run(async () => {
 
 submit.addEventListener("click", () => run(async () => {
   const tab = await chrome.tabs.get(tabId);
-  if (tab.incognito || targetIdentity(tab.url) !== targetIdentity(task.target_url)) throw new Error("challenge_page_not_ready");
+  if (!tab?.url || tab.incognito || targetIdentity(tab.url) !== targetIdentity(task.target_url)) throw new Error("challenge_page_not_ready");
   // Explicit button only. There is no background worker, cookie listener or page injection.
   const stores = await chrome.cookies.getAllCookieStores();
   const store = stores.find((entry) => entry.tabIds.includes(tabId));

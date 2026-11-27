@@ -11,7 +11,7 @@ export function settingsChanges(effective: Config, edited: Config): string {
   for (const group of groups) for (const field of group.fields) compare(group.key, field[0], `${group.label} · ${field[1]}`);
   compare("ai", "allow_gpt", "允许使用 GPT", false);
   compare("ai", "reasoning_effort", "推理强度", "none");
-  if (lines.length > 0 && !edited.ai.allow_gpt && /gpt/i.test(edited.ai.model)) {
+  if (lines.length > 0 && !edited.ai.allow_gpt && /gpt/i.test(String(edited.ai.model ?? ""))) {
     lines.push("注意：GPT 许可关闭时，首选 GPT 路由不会发送请求，仅使用已配置的非 GPT 后备候选。");
   }
   return lines.join("\n");

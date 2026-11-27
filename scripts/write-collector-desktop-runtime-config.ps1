@@ -22,6 +22,7 @@ if (-not $PSBoundParameters.ContainsKey('ApiBase')) { $ApiBase = (Get-CrowEnviro
 $root = [IO.Path]::GetFullPath($InstallRoot)
 if (-not (Test-Path -LiteralPath $root -PathType Container)) { throw 'Install root must exist' }
 $path = Join-Path $root 'crow-desktop.runtime.json'
+$savedPython = ''
 if (Test-Path -LiteralPath $path) {
     $previous = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8) | ConvertFrom-Json
     $saved = ConvertTo-CrowEnvironmentMap -Value $previous.environment
@@ -30,13 +31,30 @@ if (Test-Path -LiteralPath $path) {
     if (-not $SettingsCaFile) { $SettingsCaFile = (Get-CrowEnvironmentValue -Name 'CROW_SETTINGS_CA_FILE' -Environment $saved -PathValue) }
     if (-not $ApiCaFile) { $ApiCaFile = (Get-CrowEnvironmentValue -Name 'CROW_API_CA_FILE' -Environment $saved -PathValue) }
     if (-not $OperatorTokenFile) { $OperatorTokenFile = (Get-CrowEnvironmentValue -Name 'CROW_ENGINE_OPERATOR_TOKEN_FILE' -Environment $saved -PathValue) }
+    if (-not $CookieSnapshotPath) { $CookieSnapshotPath = (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -Environment $saved -PathValue) }
+    if (-not $RecoveryTokenPath) { $RecoveryTokenPath = (Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -Environment $saved -PathValue) }
+    if (-not $AuthBrowserProfileDir) { $AuthBrowserProfileDir = (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $saved -PathValue) }
+    if (-not $AuthBrowserPath) { $AuthBrowserPath = (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -Environment $saved -PathValue) }
+    if (-not $PSBoundParameters.ContainsKey('AuthLocalCdpPort')) {
+        $savedPort = (Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_PORT' -Environment $saved)
+        $parsedPort = 0
+        if ([int]::TryParse([string]$savedPort, [ref]$parsedPort) -and $parsedPort -ge 1024 -and $parsedPort -le 65535) {
+            $AuthLocalCdpPort = $parsedPort
+        }
+    }
+    if (-not (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)) {
+        $savedPythonCandidate = (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -Environment $saved -PathValue)
+        if ($savedPythonCandidate -and (Test-Path -LiteralPath $savedPythonCandidate -PathType Leaf)) {
+            $savedPython = $savedPythonCandidate
+        }
+    }
 }
 $ApiBase = ConvertTo-CollectionApiOrigin -ApiBase $ApiBase
 $data = [IO.Path]::GetFullPath($DataRoot)
 $pythonResolver = Join-Path $PSScriptRoot 'resolve-pc1-auth-python.ps1'
 if (-not (Test-Path -LiteralPath $pythonResolver -PathType Leaf)) { throw 'PC1 auth Python resolver is missing' }
 . $pythonResolver
-$resolvedPython = Resolve-Pc1AuthPython
+$resolvedPython = Resolve-Pc1AuthPython -Requested $savedPython
 $values = [ordered]@{
     CROW_COLLECTOR_API_BASE = $ApiBase
     CROW_DATA_ROOT_HOST = $data

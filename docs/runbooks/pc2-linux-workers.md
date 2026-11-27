@@ -11,7 +11,7 @@ PC2 (`192.168.15.104`) runs one Compose project named `fapaifang-pc2`:
 - `pc2-detail-1..3`: raw detail-page collection.
 - `pc2-analysis-1..4`: AI-only analysis of already collected raw records. These services do not depend on browser health, so collection challenges do not stop analysis.
 
-The central API and PostgreSQL remain on NAS (`192.168.15.200`). The LLM gateway runs on `192.168.15.20:4200` (`http://192.168.15.20:4200/v1`); analysis routes by default to qualified non-GPT models (`glm-5-2` primary, `zai-glm-5-2` fallback) while GPT-family models stay disabled unless `allow_gpt` (`CROW_ANALYSIS_ALLOW_GPT=1`) is explicitly opted in. Re-check `/v1/models` and the qualification pool before changing model IDs.
+The central API and PostgreSQL remain on NAS (`192.168.15.200`). The LLM gateway runs on `192.168.15.20:4200` (`http://192.168.15.20:4200/v1`); analysis routes by default to qualified non-GPT models (`deepseek-v4.1-flash` with `OPENAI_REASONING_EFFORT=minimal`, or `glm-5-2` when its upstream channel is active) while GPT-family models stay disabled unless `allow_gpt` (`CROW_ANALYSIS_ALLOW_GPT=1`) is explicitly opted in. Re-check `/v1/models` and the qualification pool before changing model IDs.
 
 ## Persistent paths
 

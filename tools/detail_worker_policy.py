@@ -53,6 +53,7 @@ def _normalize_collection_pause_state(
             "captcha_solver": dict(captcha_solver),
             "scope": scope,
         }
+    global_manual = bool(captcha_solver.get("global_manual_pause_active"))
     scope_statuses = collection_scope_statuses(payload)
     scoped = scope_statuses.get(scope) if isinstance(scope_statuses, dict) else None
     if isinstance(scoped, dict):
@@ -62,17 +63,19 @@ def _normalize_collection_pause_state(
             scoped.get("last_request") or captcha_solver.get("last_request") or {}
         )
         scoped_solver["running"] = bool(scoped.get("last_status") == "running")
-        scoped_solver["paused"] = bool(scoped.get("paused"))
-        scoped_solver["manual_required"] = bool(scoped.get("manual_required"))
-        scoped_solver["force_unlock_flag_exists"] = False
+        manual_required = bool(scoped.get("manual_required") or global_manual)
+        paused = bool(scoped.get("paused") or manual_required)
+        scoped_solver["paused"] = paused
+        scoped_solver["manual_required"] = manual_required
+        scoped_solver["force_unlock_flag_exists"] = global_manual
         return {
-            "paused": bool(scoped.get("paused") or scoped.get("manual_required")),
+            "paused": paused,
             "reason": "captcha_solver_manual_required"
-            if scoped.get("manual_required")
+            if manual_required
             else "captcha_solver_running"
             if scoped.get("paused") and scoped_solver["running"]
             else "collection_paused"
-            if scoped.get("paused")
+            if paused
             else None,
             "captcha_solver": scoped_solver,
             "scope": scope,
@@ -126,6 +129,8 @@ def _captcha_solver_targets_current_node(captcha_solver: dict[str, Any]) -> bool
 
 
 def _collection_pause_state_with_retry(api_base_url: str) -> dict[str, Any]:
+    from tools import worker_lifecycle
+
     pause_state = _collection_pause_state(api_base_url)
     if (
         not str(api_base_url or "").strip()
@@ -134,6 +139,8 @@ def _collection_pause_state_with_retry(api_base_url: str) -> dict[str, Any]:
         return pause_state
 
     for _attempt in range(1, STATUS_UNAVAILABLE_RETRY_ATTEMPTS):
+        if not worker_lifecycle.checkpoint("detail_status_retry"):
+            break
         time.sleep(STATUS_UNAVAILABLE_RETRY_SLEEP_SECONDS)
         retry_state = _collection_pause_state(api_base_url)
         pause_state = retry_state
@@ -217,7 +224,10 @@ def _is_transient_dns_error(exc: BaseException) -> bool:
 def _is_llm_backend_unavailable_error(exc: BaseException) -> bool:
     from src import llm_helper
     from src.llm_backend_failures import is_backend_http_failure
+    from src.llm_qualification_pool import EmptyModelResponseError
 
+    if isinstance(exc, EmptyModelResponseError):
+        return False
     if isinstance(exc, llm_helper.LLMBackendUnavailableError):
         return True
     cause = exc.cause if isinstance(exc, CdpEndpointUnavailableError) else exc

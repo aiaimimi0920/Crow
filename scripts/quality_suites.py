@@ -282,6 +282,8 @@ SUITES = {
         "test_operator_entrypoint_main_batch.py",
     ),
     "collection-maintenance": (
+        "test_slice6_splits_and_backup_status.py",
+        "test_scheduled_backup_workflow.py",
         "test_collection_job_stop_boundaries.py",
         "test_collection_maintenance_recovery.py",
         "test_collection_application.py",
@@ -309,6 +311,8 @@ SUITES = {
         "test_generic_collection_runtime.py",
     ),
     "collection-runtime": (
+        "test_seed_collector_operator_pause.py",
+        "test_settings_control_self_heal.py",
         "test_html_parse.py",
         "test_project_environment_pc2.py",
         "test_project_environment_workers.py",
@@ -321,6 +325,7 @@ SUITES = {
         "test_server_native_imports.py",
     ),
     "collection-storage": (
+        "test_storage_batch_and_manual_review_opt.py",
         "test_collection_publication_consistency.py",
         "test_seed_publication_recovery.py",
         "test_collection_record_independence.py",
@@ -350,6 +355,7 @@ SUITES = {
         "test_pc2_x11_button_recovery.py",
     ),
     "llm": (
+        "test_llm_pool_resilience_and_archive.py",
         "test_gpt_optin.py",
         "test_llm_native_ownership.py",
         "test_llm_helper_openai_compatible.py",

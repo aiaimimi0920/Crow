@@ -1,5 +1,24 @@
 import { test, expect } from "@playwright/test";
 
+test("stage change drops a vanished district before fetching items", async ({ page }) => {
+  const district = { location_code: "440115", province: "广东省", city: "广州市", district: "南沙区" };
+  await page.route("**/api/collection/regions?*", (route) => {
+    const stage = new URL(route.request().url()).searchParams.get("stage");
+    return route.fulfill({ json: { ok: true, regions: stage === "links" ? [district] : [] } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "筛选地区", exact: true }).click();
+  await page.locator('.province-tab[data-province="广东省"]').click();
+  await page.locator('.city-tab[data-city="广州市"]').click();
+  await page.locator('.district-tab[data-location-code="440115"]').click();
+  const next = page.waitForRequest((req) => {
+    const url = new URL(req.url());
+    return url.pathname === "/api/collection/items" && url.searchParams.get("stage") === "details";
+  });
+  await page.locator('button[data-stage="details"]').click();
+  expect(new URL((await next).url()).searchParams.has("location_code")).toBe(false);
+});
+
 test("manual refresh updates district and parent completion badges", async ({ page }) => {
   let completed = false;
   let requests = 0;

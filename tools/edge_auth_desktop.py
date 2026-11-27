@@ -29,6 +29,10 @@ def open_edge(*, data_root, request_id, url, scope, api, challenge_id):
     subprocess.Popen(
         [str(browser), f"chrome-extension://{EXTENSION_ID}/auth.html"],
         cwd=str(browser.parent),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     return {

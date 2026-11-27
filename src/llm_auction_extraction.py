@@ -178,6 +178,8 @@ def extract_auction_data(html_content, item_id=None, *, model=None):
     trusted_title = None
     coordinate_payload = extract_property_coordinates(html_content)
     area_fallback = None
+    large_page = isinstance(html_content, str) and len(html_content) > 8000
+    html_for_body = html_content
 
     try:
         soup = parse_html(html_content)
@@ -232,12 +234,19 @@ def extract_auction_data(html_content, item_id=None, *, model=None):
         if notice_div:
             # Extract text as single line, truncate at "竞买人条件"
             text_val = notice_div.get_text(separator="", strip=True)
-            if "竞买人条件" in text_val:
-                text_val = text_val.split("竞买人条件")[0]
+            text_val, divider, notice_tail = text_val.partition("竞买人条件")
             clean_notice = re.sub(r"\s+", "", text_val)
             critical_text += f"【重要竞买公告（含建筑面积）】\n{clean_notice}\n\n"
         else:
             logger.debug("J_NoticeDetail not found, skipping this part.")
+
+        if large_page and (desc_div or notice_div):
+            # Remove only text actually copied above. Keep omitted evidence in the body.
+            if desc_div:
+                desc_div.replace_with(desc_text[20000:])
+            if notice_div and notice_div.parent is not None:
+                notice_div.replace_with(divider + notice_tail)
+            html_for_body = str(soup)
 
         desc_async_text = fetch_description_data_text(html_content)
         if desc_async_text:
@@ -256,9 +265,9 @@ def extract_auction_data(html_content, item_id=None, *, model=None):
             f"经度: {coordinate_payload['longitude']}\n\n"
         )
 
-    # 1. Filter Content
+    # 1. Filter Content (avoid resending J_desc/J_NoticeDetail twice on large HTML pages)
     logger.debug("Filtering content (len=%s)...", len(html_content))
-    filtered_text = filter_content(html_content)
+    filtered_text = filter_content(html_for_body)
     logger.debug("Filtered content (len=%s). Preparing prompt...", len(filtered_text))
 
     # Limit length to avoid context overflow, though filtered text should be smaller

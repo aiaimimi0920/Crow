@@ -94,3 +94,22 @@ def test_large_html_reply_is_drained_before_waiting_for_exit(tmp_path):
 def test_invalid_deadline_fails_before_starting_a_process(timeout):
     with pytest.raises(ValueError, match="deadline"):
         run_capture_process([], b"", timeout_seconds=timeout)
+
+
+def test_cleanup_failure_preserves_primary_deadline(monkeypatch):
+    from unittest.mock import Mock
+    from tools import detail_browser_capture as owner
+    from tools.capture_progress import CaptureDeadlineExceeded
+
+    process = Mock()
+    process.communicate.side_effect = subprocess.TimeoutExpired("fixture", 2)
+    monkeypatch.setattr(owner.subprocess, "Popen", lambda *_args, **_kw: process)
+    failure = Mock(side_effect=RuntimeError("fixture cleanup"))
+    if os.name == "nt":
+        monkeypatch.setattr("tools.detail_browser_capture_job.CaptureJob", Mock)
+        monkeypatch.setattr(owner, "_cleanup_windows_capture", failure)
+    else:
+        monkeypatch.setattr("tools.detail_browser_capture_posix.cleanup_capture_session", failure)
+    with pytest.raises(CaptureDeadlineExceeded) as caught:
+        owner.run_capture_process(["fixture"], b"", timeout_seconds=2)
+    assert caught.value.__cause__ is failure.side_effect

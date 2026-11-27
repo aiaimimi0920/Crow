@@ -280,6 +280,7 @@ class RepositoryDetailClaimMixin:
         detail_html_path: str | None = None,
         description_json_path: str | None = None,
         selected_json_path: str | None = None,
+        detail_archive_path: str | None = None,
     ) -> None:
         if not self.enabled:
             return
@@ -297,11 +298,15 @@ class RepositoryDetailClaimMixin:
             row.final_json_path = None
             row.selected_json_path = selected_json_path
             payload = dict(row.source_payload or {})
-            payload["_raw_detail_artifacts"] = {
+            artifacts_payload: Dict[str, Any] = {
                 "detail_html_path": detail_html_path,
                 "description_json_path": description_json_path,
                 "selected_json_path": selected_json_path,
             }
+            if detail_archive_path:
+                artifacts_payload["detail_archive_path"] = detail_archive_path
+                payload["detail_archive_path"] = detail_archive_path
+            payload["_raw_detail_artifacts"] = artifacts_payload
             row.source_payload = payload
             session.add(row)
 

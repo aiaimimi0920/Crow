@@ -2,12 +2,31 @@
 
 from sqlalchemy.engine import make_url
 
+from src.project_environment import getenv as project_getenv
+
+
+def _positive_int_env(name: str) -> int | None:
+    raw = str(project_getenv(name) or "").strip()
+    if not raw:
+        return None
+    value = int(raw)
+    return value if value > 0 else None
+
 
 def engine_connection_options(url: str) -> dict:
     parsed = make_url(url)
     if parsed.get_backend_name() != "postgresql":
         return {}
-    options = {"pool_pre_ping": True}
+    options: dict[str, object] = {"pool_pre_ping": True}
+    for env_name, opt_name in (
+        ("CROW_DB_POOL_SIZE", "pool_size"),
+        ("CROW_DB_MAX_OVERFLOW", "max_overflow"),
+        ("CROW_DB_POOL_TIMEOUT", "pool_timeout"),
+        ("CROW_DB_POOL_RECYCLE", "pool_recycle"),
+    ):
+        configured = _positive_int_env(env_name)
+        if configured is not None:
+            options[opt_name] = configured
     if parsed.get_driver_name() not in {"psycopg", "psycopg2"}:
         return options
     # A lost NAS connection must not inherit the OS's multi-hour keepalive delay.

@@ -31,6 +31,9 @@ def _retry_after_seconds(response):
 
 def request_json(session, method, url, *, timeout, max_bytes, **kwargs):
     started = time.monotonic()
+    cookies = getattr(session, "cookies", None)
+    if cookies is not None:
+        cookies.clear()
     response = getattr(session, method)(url, timeout=timeout, stream=True,
                                         allow_redirects=False, **kwargs)
     try:
@@ -39,7 +42,7 @@ def request_json(session, method, url, *, timeout, max_bytes, **kwargs):
         if not 200 <= response.status_code < 300:
             raise ModelHttpError(response.status_code, _retry_after_seconds(response))
         chunks = bytearray()
-        # One-byte reads also bound trickle responses that never hit a read timeout.
+        # A whole buffered chunk can take indefinitely under a slow trickle.
         for chunk in response.iter_content(chunk_size=1):
             chunks.extend(chunk)
             if len(chunks) > max_bytes or time.monotonic() - started > timeout:
@@ -47,3 +50,5 @@ def request_json(session, method, url, *, timeout, max_bytes, **kwargs):
         return json.loads(chunks.decode("utf-8"))
     finally:
         response.close()
+        if cookies is not None:
+            cookies.clear()

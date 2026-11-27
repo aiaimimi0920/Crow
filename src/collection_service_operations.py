@@ -86,6 +86,7 @@ class CollectionServiceOperations:
     ) -> dict[str, object]:
         host = self.host
         collection = host._collection_runtime_index()
+        # The new-item decision and filesystem publication precede the DB commit.
         with collection.lock:
             return cast(
                 "dict[str, object]",

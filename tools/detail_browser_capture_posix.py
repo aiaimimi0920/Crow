@@ -44,10 +44,11 @@ def cleanup_capture_session(process, *, deadline):
     # Include a child forked between the first snapshot and the group kill.
     if linux:
         members.update(_session_members(process.pid))
+    cleanup_deadline = max(deadline, time.monotonic() + 2.0)
     try:
-        process.communicate(timeout=max(0.001, deadline - time.monotonic()))
+        process.communicate(timeout=max(0.05, cleanup_deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
-        raise SystemExit("detail capture process cleanup did not finish") from None
+        raise RuntimeError("detail capture process cleanup did not finish") from None
     while members:
         remaining = {}
         for pid, starttime in members.items():
@@ -62,6 +63,6 @@ def cleanup_capture_session(process, *, deadline):
                 remaining[pid] = starttime
         members = remaining
         if members:
-            if time.monotonic() >= deadline:
-                raise SystemExit("detail capture descendants were not reaped")
-            time.sleep(min(0.02, max(0, deadline - time.monotonic())))
+            if time.monotonic() >= cleanup_deadline:
+                raise RuntimeError("detail capture descendants were not reaped")
+            time.sleep(min(0.02, max(0, cleanup_deadline - time.monotonic())))

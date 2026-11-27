@@ -8,7 +8,8 @@ import { CONTROL_TIMEOUT_MS } from "./desktop_config.ts";
 let nativeQueue: Promise<unknown> = Promise.resolve();
 
 function invokeControl(invoke: NativeInvoke, request: Record<string, unknown>): Promise<unknown> {
-  const operation = nativeQueue.then(() => boundedSettingsRequest(invoke("desktop_settings_action", { request })));
+  const timeoutMs = request.action === "apply" ? 95_000 : 40_000;
+  const operation = nativeQueue.then(() => boundedSettingsRequest(invoke("desktop_settings_action", { request }), timeoutMs));
   nativeQueue = operation.catch(() => undefined);
   return operation;
 }

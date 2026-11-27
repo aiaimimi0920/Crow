@@ -29,7 +29,7 @@ function fixture({ missing, suffix = "", stale = false } = {}) {
   }
   if (suffix) {
     const lastPart = path.join(root, PART_RELATIVE_PATHS.at(-1));
-    const source = fs.readFileSync(lastPart, "utf8");
+    const source = fs.readFileSync(lastPart, "utf8").replace(/\r\n?/g, "\n");
     fs.writeFileSync(lastPart, source.slice(0, -2) + suffix + "}\n", "utf8");
     if (!stale) fs.writeFileSync(path.join(root, OUTPUT_RELATIVE_PATH), buildUserscriptSource(root), "utf8");
   }

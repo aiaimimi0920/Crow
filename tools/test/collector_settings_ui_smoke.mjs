@@ -43,9 +43,11 @@ export default async function settingsSmoke(page, { origin, artifactDir }) {
   await page.locator("#openSettings").click();
   await page.locator("#runtimeSettings summary").click();
   check(await page.locator('[id="setting-workers.details"]').isEnabled(), "defaults are editable before live inventory");
-  check(await page.locator('[id="setting-workers.details"]').inputValue() === "3", "default detail workers match deployment");
+  check(await page.locator('[id="setting-workers.details"]').inputValue() === "1", "default detail workers match deployment");
+  check(await page.locator('[id="setting-workers.analysis"]').inputValue() === "3", "default analysis workers match deployment");
   check(await page.locator('[id="setting-ai.base_url"]').inputValue() === "http://192.168.15.20:4200/v1", "default AI endpoint matches deployment");
-  check(await page.locator('[id="setting-ai.model"]').inputValue() === "glm-5-2", "default AI model matches deployment");
+  check(await page.locator('[id="setting-ai.model"]').inputValue() === "deepseek-v4.1-flash", "default AI model matches deployment");
+  check(await page.locator('[id="setting-ai.reasoning_effort"]').inputValue() === "minimal", "default reasoning effort matches deployment");
   check(!await page.locator('[id="setting-ai.allow_gpt"]').isChecked(), "GPT permission defaults off");
   check(await page.locator('.settings-toggle').evaluate((label) => getComputedStyle(label).display === "flex" && label.querySelector("input").getBoundingClientRect().width <= 20), "GPT switch is a compact inline checkbox");
   await page.locator('[id="setting-workers.details"]').fill("2");

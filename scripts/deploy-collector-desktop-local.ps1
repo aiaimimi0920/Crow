@@ -252,7 +252,7 @@ $resolvedBuildTargetRoot = if ($BuildTargetRoot) {
     $BuildTargetRoot
 }
 else {
-    Join-Path $env:TEMP "fapaifang-collector-desktop-target"
+    Join-Path $collectorRoot "src-tauri\target"
 }
 
 $previousRuntime = $null
@@ -301,8 +301,23 @@ if (-not $DataRoot) {
 if (-not $DataRoot) {
     $DataRoot = Resolve-CrowProjectDataRoot -RepoRoot $repoRoot
 }
+$savedRecoveryTokenPath = ""
 if (-not $CookieSnapshotPath -and (Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -Environment $savedEnvironment -PathValue)) {
     $CookieSnapshotPath = [string](Get-CrowEnvironmentValue -Name 'CROW_COOKIE_SNAPSHOT' -Environment $savedEnvironment -PathValue)
+}
+if (Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -Environment $savedEnvironment -PathValue) {
+    $savedRecoveryTokenPath = [string](Get-CrowEnvironmentValue -Name 'CROW_NAS_AUTH_RECOVERY_TOKEN_FILE' -Environment $savedEnvironment -PathValue)
+}
+$boundParameters = $PSBoundParameters
+if (-not $boundParameters.ContainsKey('AuthLocalCdpPort')) {
+    $savedPort = [string](Get-CrowEnvironmentValue -Name 'CROW_AUTH_LOCAL_CDP_PORT' -Environment $savedEnvironment)
+    $parsedPort = 0
+    if ([int]::TryParse($savedPort, [ref]$parsedPort) -and $parsedPort -ge 1024 -and $parsedPort -le 65535) {
+        $AuthLocalCdpPort = $parsedPort
+    }
+}
+if (-not $boundParameters.ContainsKey('AuthBrowserPath') -and (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -Environment $savedEnvironment -PathValue)) {
+    $AuthBrowserPath = [string](Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PATH' -Environment $savedEnvironment -PathValue)
 }
 if (-not $AuthBrowserProfileDir -and (Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue)) {
     $AuthBrowserProfileDir = [string](Get-CrowEnvironmentValue -Name 'CROW_AUTH_BROWSER_PROFILE_DIR' -Environment $savedEnvironment -PathValue)
@@ -310,6 +325,16 @@ if (-not $AuthBrowserProfileDir -and (Get-CrowEnvironmentValue -Name 'CROW_AUTH_
 if (-not $AuthBrowserProfileDir) {
     $AuthBrowserProfileDir = Join-Path $DataRoot "chrome-cdp-profile-pc1-human-clean"
 }
+
+. (Join-Path $PSScriptRoot 'resolve-pc1-auth-python.ps1')
+$savedPythonForPreflight = ""
+if (-not (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)) {
+    $candidatePy = [string](Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -Environment $savedEnvironment -PathValue)
+    if ($candidatePy -and (Test-Path -LiteralPath $candidatePy -PathType Leaf)) {
+        $savedPythonForPreflight = $candidatePy
+    }
+}
+[void](Resolve-Pc1AuthPython -Requested $savedPythonForPreflight)
 
 $buildExecutable = Join-Path $resolvedBuildTargetRoot "release\fapaifang_collector_desktop.exe"
 $destinationExecutable = Join-Path $deployRoot "fapaifang_collector_desktop.exe"
@@ -420,7 +445,8 @@ foreach ($relativePath in @(
 
 & (Join-Path $PSScriptRoot 'write-collector-desktop-runtime-config.ps1') `
     -InstallRoot $deployRoot -DataRoot $DataRoot -ApiBase $ApiBase -ApiCaFile $ApiCaFile `
-    -CookieSnapshotPath $resolvedCookieSnapshotPath -AuthLocalCdpPort $AuthLocalCdpPort `
+    -CookieSnapshotPath $resolvedCookieSnapshotPath -RecoveryTokenPath $savedRecoveryTokenPath `
+    -AuthLocalCdpPort $AuthLocalCdpPort `
     -AuthBrowserProfileDir $AuthBrowserProfileDir -AuthBrowserPath $AuthBrowserPath `
     -SettingsApiBase $SettingsApiBase -SettingsCaFile $SettingsCaFile -OperatorTokenFile $OperatorTokenFile
 
@@ -442,19 +468,21 @@ Write-LauncherScript `
     -AuthBrowserProfileDirValue $AuthBrowserProfileDir `
     -AuthBrowserPathValue $AuthBrowserPath
 
+$expectedExeHash = (Get-FileHash -LiteralPath $buildExecutable -Algorithm SHA256).Hash
+$installedExeHash = (Get-FileHash -LiteralPath $destinationExecutable -Algorithm SHA256).Hash
+if (-not [string]::Equals($expectedExeHash, $installedExeHash, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Installed desktop executable SHA-256 mismatch ($installedExeHash != $expectedExeHash)"
+}
+
 if (-not $SkipShortcut) {
     $shortcut = & (Join-Path $PSScriptRoot 'update-collector-desktop-shortcut.ps1') `
         -InstallRoot $deployRoot -DesktopDirectory $DesktopDirectory `
-        -ExpectedSha256 (Get-FileHash -LiteralPath $buildExecutable -Algorithm SHA256).Hash
+        -ExpectedSha256 $expectedExeHash
 }
 
 if (-not $SkipLaunch) {
-    $powershellExecutable = (Get-Command powershell -ErrorAction Stop).Source
-    Start-Process `
-        -FilePath $powershellExecutable `
-        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $launcherPath) `
-        -WorkingDirectory $deployRoot `
-        -WindowStyle Hidden
+    & (Join-Path $PSScriptRoot 'start-collector-desktop-verified.ps1') `
+        -LauncherPath $launcherPath -ExecutablePath $destinationExecutable -ExpectedHash $expectedExeHash
 }
 
 Write-Output "Collector desktop deployed to: $deployRoot"

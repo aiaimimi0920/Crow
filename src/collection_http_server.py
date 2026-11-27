@@ -10,9 +10,12 @@ from pathlib import Path
 
 from src.collection_job_control import DEFAULT_TIMEOUT_SECONDS, positive_timeout
 from src.collection_jobs import CollectionJobManager, JobQueueFull
+from src.project_environment import getenv as project_getenv
 
 CERT_ENV = "FAPAI_API_TLS_CERT_FILE"
 KEY_ENV = "FAPAI_API_TLS_KEY_FILE"
+CROW_CERT_ENV = "CROW_API_TLS_CERT_FILE"
+CROW_KEY_ENV = "CROW_API_TLS_KEY_FILE"
 
 
 def tls_context(cert_file: str | None, key_file: str | None) -> ssl.SSLContext | None:
@@ -30,7 +33,9 @@ def tls_context(cert_file: str | None, key_file: str | None) -> ssl.SSLContext |
 
 
 def tls_context_from_env(env: Mapping[str, str]) -> ssl.SSLContext | None:
-    return tls_context(env.get(CERT_ENV), env.get(KEY_ENV))
+    cert = project_getenv(CROW_CERT_ENV, reader=env.get)
+    key = project_getenv(CROW_KEY_ENV, reader=env.get)
+    return tls_context(cert, key)
 
 
 class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -38,6 +43,7 @@ class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     block_on_close = False
     handshake_timeout = 5.0
+    request_timeout: float | None = 60.0
 
     def __init__(
         self,
@@ -105,7 +111,7 @@ class CollectionHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
             try:
                 # Handshake I/O must never occupy the accept loop.
                 request.do_handshake()
-                request.settimeout(None)
+                request.settimeout(self.request_timeout)
             except OSError:
                 self.shutdown_request(request)
                 return

@@ -47,6 +47,7 @@ export function initializeOperations(actions: { refresh: () => Promise<void>; pa
   element("operationsSeedAuth").addEventListener("click", () => actions.auth("seed"));
   element("operationsDetailAuth").addEventListener("click", () => actions.auth("detail"));
   setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden === true) return;
     const node = document.getElementById("operationsFreshness");
     if (!node || !snapshot) return;
     const freshness = operationsFreshness(snapshot, receivedAt, failed);

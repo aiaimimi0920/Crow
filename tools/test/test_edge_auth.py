@@ -196,3 +196,37 @@ def test_extension_id_matches_public_key_and_permissions():
         "*://" not in host and "*." not in host for host in manifest["host_permissions"]
     )
     assert "background" not in manifest and "content_scripts" not in manifest
+
+
+def test_open_edge_detaches_stdio_pipes_and_closes_fds(tmp_path, monkeypatch):
+    import subprocess as sp
+
+    from tools import edge_auth_desktop
+
+    fake_edge = tmp_path / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+    fake_edge.parent.mkdir(parents=True, exist_ok=True)
+    fake_edge.write_bytes(b"MZ")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "empty1"))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "empty2"))
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(edge_auth_desktop.subprocess, "Popen", fake_popen)
+    res = edge_auth_desktop.open_edge(
+        data_root=tmp_path / "data",
+        request_id=REQUEST,
+        url=URL,
+        scope="seed",
+        api=API,
+        challenge_id="cid-1",
+    )
+    assert res["code"] == "edge_ready"
+    assert captured["kwargs"]["stdin"] == sp.DEVNULL
+    assert captured["kwargs"]["stdout"] == sp.DEVNULL
+    assert captured["kwargs"]["stderr"] == sp.DEVNULL
+    assert captured["kwargs"]["close_fds"] is True

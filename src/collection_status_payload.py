@@ -4,6 +4,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
+from .postgres_backup_status import read_receipt
+
 if TYPE_CHECKING:
     from .collection_control_state import CollectionPauseSnapshot
 
@@ -31,6 +33,15 @@ def build_runtime_snapshot(
     }
 
 
+def load_postgres_backup_status(
+    data_root: str | Path | None,
+) -> dict[str, object] | None:
+    """Return latest PostgreSQL backup metadata when present under data_root."""
+    if not data_root:
+        return None
+    return read_receipt(data_root)
+
+
 def build_lightweight_status(
     snapshot: StatisticsSnapshot,
     *,
@@ -40,6 +51,7 @@ def build_lightweight_status(
     load_build_info: Callable[[], Mapping[str, str]],
     database_enabled: Callable[[], bool],
     runtime_state_label: Callable[[dict[str, object]], str],
+    load_data_root: Callable[[], Path] | None = None,
 ) -> dict[str, object]:
     seed_queue_counts = snapshot["counts"]
 
@@ -160,6 +172,10 @@ def build_lightweight_status(
             },
         },
     }
+    if load_data_root is not None:
+        postgres_backup = load_postgres_backup_status(load_data_root())
+        if postgres_backup is not None:
+            payload["postgres_backup"] = postgres_backup
     payload["runtime_state"] = (
         runtime_state_label(payload) if snapshot["metadata"]["valid"] else "统计不可用"
     )

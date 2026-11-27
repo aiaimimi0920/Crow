@@ -149,6 +149,13 @@ def test_status_lightweight_shortcut_still_acquires_index(status):
     handler.send_json.assert_called_once_with({"light": True})
 
 
+def test_full_status_does_not_report_invalid_backup_healthy(status):
+    host, handler, _, root = status
+    (root / "postgres-backup-status.json").write_text('{"ok":"false"}', encoding="utf-8")
+    host._get_status(handler, None, "/api/status", {})
+    assert handler.send_json.call_args.args[0]["postgres_backup"]["ok"] is False
+
+
 @pytest.mark.parametrize("query", ["stage_status_counts", "search_task_counts"])
 def test_status_remains_available_when_stage_query_fails(status, query):
     host, handler, _, _ = status

@@ -170,7 +170,9 @@ def _build_detail_analysis_input(
     trusted_seed = as_dict(selected.get("trusted_seed"))
     fetch = as_dict(selected.get("fetch"))
     final_core = as_dict(selected.get("final_core"))
-    soup = BeautifulSoup(html or "", "html.parser")
+    from src.html_parse import parse_html
+
+    soup = parse_html(html or "")
 
     title = pick_first(
         final_core.get("title"),
@@ -233,7 +235,19 @@ def _build_detail_analysis_input(
         lines.append(f"description_area_sqm: {description_data.get('area_sqm')}")
 
     if description_text:
-        lines.extend(["", "【异步标的物描述】", description_text])
+        lines.extend(["", "【异步标的物描述】", description_text[:20000]])
+
+    desc_div = soup.find(id="J_desc")
+    if desc_div is not None:
+        desc_inline = desc_div.get_text("\n", strip=True)
+        if desc_inline and desc_inline != "标的物详情加载中......":
+            lines.extend(["", "【页面标的物描述】", desc_inline[:20000]])
+
+    notice_div = soup.find(id="J_NoticeDetail")
+    if notice_div is not None:
+        notice_text = notice_div.get_text("\n", strip=True)
+        if notice_text:
+            lines.extend(["", "【竞买公告与须知】", notice_text[:25000]])
 
     analysis_text = "\n".join(lines).strip()
     return effective_seed, _redact_detail_analysis_text(analysis_text)

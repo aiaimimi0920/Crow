@@ -40,7 +40,14 @@ def wait_after_seed_run(
             continue
         if not isinstance(status, dict):
             continue
-        scopes = status.get("collection_scopes")
+        from tools.detail_worker_pause_state import (
+            collection_scope_statuses,
+            operator_pause_requested,
+        )
+
+        if operator_pause_requested(status):
+            continue
+        scopes = collection_scope_statuses(status)
         seed = scopes.get("seed") if isinstance(scopes, dict) else None
         detail = scopes.get("detail") if isinstance(scopes, dict) else None
         if status.get("paused") is not False and not (

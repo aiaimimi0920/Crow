@@ -141,6 +141,8 @@ class SettingsStore:
             row = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
             supplied_claim = str(payload["claim"]).encode("utf-8")
             stored_claim = str(row["claim"]).encode("utf-8") if row and row["claim"] else b""
+            if row and row["status"] == "expired" and not stored_claim:
+                raise RestartError("Settings claim is no longer active")
             if not row or not stored_claim or not hmac.compare_digest(supplied_claim, stored_claim):
                 raise RestartError("Invalid settings claim", 403)
             if row["result"] == result:
@@ -162,3 +164,28 @@ class SettingsStore:
                            (json.dumps(effective), now, int(payload["api_key_configured"])))
             return {"ok": True, "request": self.public_request(db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone())}
         return self.transaction(complete)
+
+    def reconcile_unknown(self, payload):
+        if set(payload) != {"request_id", "effective", "api_key_configured"} or type(payload["api_key_configured"]) is not bool:
+            raise RestartError("Invalid settings reconciliation fields", 400)
+        request_id = identifier(payload["request_id"])
+        effective = validate(payload["effective"])
+
+        def reconcile(db, now):
+            row = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
+            if not row or row["status"] != "unknown":
+                raise RestartError("Settings request is not awaiting reconciliation")
+            no_secret_change, _ = verify_fingerprint(row["fingerprint"], row["config"], None)
+            if not no_secret_change or json.loads(row["config"]) == json.loads(row["previous"]):
+                raise RestartError("Observed settings cannot distinguish this request from its previous revision")
+            if effective == json.loads(row["config"]):
+                status, result = "succeeded", "applied"
+            elif effective == json.loads(row["previous"]):
+                status, result = "failed", "rolled_back"
+            else:
+                raise RestartError("Observed settings match neither target nor previous revision")
+            db.execute("UPDATE requests SET status=?,result=?,updated=? WHERE id=?", (status, result, now, request_id))
+            db.execute("UPDATE state SET effective=?,desired=?,heartbeat=?,key_present=? WHERE id=1",
+                       (json.dumps(effective), json.dumps(effective), now, int(payload["api_key_configured"])))
+            return {"ok": True, "request": self.public_request(db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone())}
+        return self.transaction(reconcile)

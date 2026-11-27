@@ -19,7 +19,11 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
         _get_openai_compatible_config,
         _get_openai_compatible_proxies,
     )
-    from src.llm_qualification_pool import QualifiedModelPool, pool_enabled
+    from src.llm_qualification_pool import (
+        QualifiedModelPool,
+        eligible_model,
+        pool_enabled,
+    )
 
     config = _get_openai_compatible_config()
     if not config:
@@ -28,16 +32,14 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
     if pool_enabled():
         import sqlite3
 
-        allowed: list[str] | None = None
-        try:
-            pool = QualifiedModelPool(
-                config, proxies=_get_openai_compatible_proxies(config["base_url"])
+        configured_candidates = list(
+            dict.fromkeys(
+                name
+                for name in [config.get("model"), *config.get("models", [])]
+                if eligible_model(name)
             )
-            allowed = pool.allowed_models()
-            models = pool.refresh_in_background() if allowed else []
-        except (OSError, sqlite3.Error, ValueError):
-            models = []
-        if allowed == []:
+        )
+        if not configured_candidates:
             return {
                 "enabled": True,
                 "status_code": 403,
@@ -46,6 +48,19 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
                 "model_pool": "no_eligible_models",
                 "reason": "no_eligible_analysis_models",
             }
+        try:
+            pool = QualifiedModelPool(
+                config, proxies=_get_openai_compatible_proxies(config["base_url"])
+            )
+            allowed = pool.allowed_models()
+            if allowed:
+                models = pool.refresh_in_background()
+            else:
+                if getattr(pool, "_owns_session", False):
+                    pool.session.close()
+                models = []
+        except (OSError, sqlite3.Error, ValueError):
+            models = []
         return {
             "enabled": True,
             "status_code": 200 if models else 503,
@@ -61,85 +76,104 @@ def preflight_openai_compatible_backend(timeout=15.0, *, check_chat=False):
     if proxies:
         session.proxies = proxies
     try:
-        response = session.get(
-            url,
-            headers={"Authorization": f"Bearer {config['api_key']}"},
-            timeout=float(timeout),
-        )
-    except requests.RequestException as exc:
-        return {
+        try:
+            response = session.get(
+                url,
+                headers={"Authorization": f"Bearer {config['api_key']}"},
+                timeout=float(timeout),
+            )
+        except requests.RequestException as exc:
+            return {
+                "enabled": True,
+                "url": url,
+                "status_code": 0,
+                "error_type": type(exc).__name__,
+            }
+        result = {
             "enabled": True,
             "url": url,
-            "status_code": 0,
-            "error_type": type(exc).__name__,
+            "status_code": getattr(response, "status_code", None),
         }
-    result = {
-        "enabled": True,
-        "url": url,
-        "status_code": getattr(response, "status_code", None),
-    }
-    if check_chat:
-        chat_url = f"{config['base_url']}/chat/completions"
-        models = list(config.get("models") or [config["model"]])
-        chat_response = None
-        chat_model = None
-        policy_excluded = 0
-        for model in models:
-            try:
-                require_non_gpt_analysis_model(model, setting="OpenAI preflight model")
-                request_payload = {
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": '这是法拍房分析服务连通性检查。请仅返回 JSON：{"ok":true}',
+        if check_chat:
+            chat_url = f"{config['base_url']}/chat/completions"
+            models = list(config.get("models") or [config["model"]])
+            chat_response = None
+            chat_model = None
+            policy_excluded = 0
+            for model in models:
+                try:
+                    require_non_gpt_analysis_model(model, setting="OpenAI preflight model")
+                    request_payload = {
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": '这是法拍房分析服务连通性检查。请仅返回 JSON：{"ok":true}',
+                            }
+                        ],
+                        "temperature": 0,
+                        "max_tokens": 32,
+                    }
+                    if config.get("reasoning_effort"):
+                        request_payload["reasoning_effort"] = config["reasoning_effort"]
+                    chat_response = session.post(
+                        chat_url,
+                        headers={
+                            "Authorization": f"Bearer {config['api_key']}",
+                            "Content-Type": "application/json",
+                        },
+                        json=request_payload,
+                        timeout=float(timeout),
+                    )
+                    if (
+                        getattr(chat_response, "status_code", None) == 400
+                        and "reasoning_effort" in request_payload
+                    ):
+                        fallback_payload = {
+                            k: v for k, v in request_payload.items() if k != "reasoning_effort"
                         }
-                    ],
-                    "temperature": 0,
-                    "max_tokens": 32,
+                        chat_response = session.post(
+                            chat_url,
+                            headers={
+                                "Authorization": f"Bearer {config['api_key']}",
+                                "Content-Type": "application/json",
+                            },
+                            json=fallback_payload,
+                            timeout=float(timeout),
+                        )
+                except ValueError:
+                    policy_excluded += 1
+                    result.setdefault("probe_errors", []).append(
+                        {"model_name": model, "error_type": "PolicyExcluded"}
+                    )
+                    continue
+                except requests.RequestException as exc:
+                    chat_response = None
+                    result.setdefault("probe_errors", []).append(
+                        {"model_name": model, "error_type": type(exc).__name__}
+                    )
+                    continue
+                status_code = getattr(chat_response, "status_code", None)
+                if status_code is not None and status_code < 400:
+                    chat_model = model
+                    break
+                if status_code in (400, 401):
+                    break
+            chat_status = getattr(chat_response, "status_code", None)
+            if chat_status is None and policy_excluded == len(models) and models:
+                chat_status = 403
+                result["reason"] = "no_eligible_analysis_models"
+            result.update(
+                {
+                    "chat_url": chat_url,
+                    "chat_status_code": chat_status,
                 }
-                if config.get("reasoning_effort"):
-                    request_payload["reasoning_effort"] = config["reasoning_effort"]
-                chat_response = session.post(
-                    chat_url,
-                    headers={
-                        "Authorization": f"Bearer {config['api_key']}",
-                        "Content-Type": "application/json",
-                    },
-                    json=request_payload,
-                    timeout=float(timeout),
-                )
-            except ValueError:
-                policy_excluded += 1
-                result.setdefault("probe_errors", []).append(
-                    {"model_name": model, "error_type": "PolicyExcluded"}
-                )
-                continue
-            except requests.RequestException as exc:
-                chat_response = None
-                result.setdefault("probe_errors", []).append(
-                    {"model_name": model, "error_type": type(exc).__name__}
-                )
-                continue
-            status_code = getattr(chat_response, "status_code", None)
-            if status_code is not None and status_code < 400:
-                chat_model = model
-                break
-            if status_code in (400, 401):
-                break
-        chat_status = getattr(chat_response, "status_code", None)
-        if chat_status is None and policy_excluded == len(models) and models:
-            chat_status = 403
-            result["reason"] = "no_eligible_analysis_models"
-        result.update(
-            {
-                "chat_url": chat_url,
-                "chat_status_code": chat_status,
-            }
-        )
-        if len(models) > 1:
-            result["chat_model_name"] = chat_model
-    return result
+            )
+            if len(models) > 1:
+                result["chat_model_name"] = chat_model
+        return result
+    finally:
+        session.close()
 
 
 def preflight_llm_backend(timeout=15.0, *, check_chat=False):

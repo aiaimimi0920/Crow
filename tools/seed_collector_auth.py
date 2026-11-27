@@ -52,31 +52,43 @@ def _collection_pause_state(api_base_url: str) -> dict[str, Any]:
 
 
 def _normalize_collection_pause_state(payload: dict[str, Any], scope: str = "seed") -> dict[str, Any]:
+    from tools.detail_worker_pause_state import (
+        collection_scope_statuses,
+        operator_pause_requested,
+    )
+
     captcha_solver = payload.get("captcha_solver")
     if not isinstance(captcha_solver, dict):
         captcha_solver = {}
-    scope_statuses = payload.get("collection_scopes")
-    if not isinstance(scope_statuses, dict):
-        scope_statuses = captcha_solver.get("collection_scopes")
-    if not isinstance(scope_statuses, dict):
-        scope_statuses = captcha_solver.get("scopes")
+    if operator_pause_requested(payload):
+        return {
+            "paused": True,
+            "operator_paused": True,
+            "reason": "operator_paused",
+            "captcha_solver": dict(captcha_solver),
+            "scope": scope,
+        }
+    global_manual = bool(captcha_solver.get("global_manual_pause_active"))
+    scope_statuses = collection_scope_statuses(payload)
     scoped = scope_statuses.get(scope) if isinstance(scope_statuses, dict) else None
     if isinstance(scoped, dict):
         scoped_solver = dict(captcha_solver)
         scoped_solver.update(scoped)
         scoped_solver["last_request"] = scoped.get("last_request") or captcha_solver.get("last_request") or {}
         scoped_solver["running"] = bool(scoped.get("last_status") == "running")
-        scoped_solver["paused"] = bool(scoped.get("paused"))
-        scoped_solver["manual_required"] = bool(scoped.get("manual_required"))
-        scoped_solver["force_unlock_flag_exists"] = False
+        manual_required = bool(scoped.get("manual_required") or global_manual)
+        paused = bool(scoped.get("paused") or manual_required)
+        scoped_solver["paused"] = paused
+        scoped_solver["manual_required"] = manual_required
+        scoped_solver["force_unlock_flag_exists"] = global_manual
         return {
-            "paused": bool(scoped.get("paused") or scoped.get("manual_required")),
+            "paused": paused,
             "reason": "captcha_solver_manual_required"
-            if scoped.get("manual_required")
+            if manual_required
             else "captcha_solver_running"
             if scoped.get("paused") and scoped_solver["running"]
             else "collection_paused"
-            if scoped.get("paused")
+            if paused
             else None,
             "captcha_solver": scoped_solver,
             "scope": scope,
@@ -120,11 +132,15 @@ def _captcha_solver_targets_current_node(captcha_solver: dict[str, Any]) -> bool
 
 
 def _collection_pause_state_with_retry(api_base_url: str) -> dict[str, Any]:
+    from tools import worker_lifecycle
+
     pause_state = _collection_pause_state(api_base_url)
     if not str(api_base_url or "").strip() or pause_state.get("reason") != "status_unavailable":
         return pause_state
 
     for _attempt in range(1, STATUS_UNAVAILABLE_RETRY_ATTEMPTS):
+        if not worker_lifecycle.checkpoint("seed_status_retry"):
+            break
         time.sleep(STATUS_UNAVAILABLE_RETRY_SLEEP_SECONDS)
         retry_state = _collection_pause_state(api_base_url)
         pause_state = retry_state
@@ -195,6 +211,8 @@ def _pause_state_seed_probe_target_url(pause_state: dict[str, Any], *, allow_def
 def _pause_state_blocks_seed_stage(pause_state: dict[str, Any]) -> bool:
     if not pause_state.get("paused"):
         return False
+    if pause_state.get("operator_paused") or pause_state.get("reason") == "operator_paused":
+        return True
     if pause_state.get("scope") == "seed":
         return True
     return not _pause_state_targets_detail_page(pause_state)

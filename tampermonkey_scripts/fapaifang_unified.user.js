@@ -1182,6 +1182,7 @@
         GM_xmlhttpRequest({
             method: "GET",
             url: detailUrl,
+            timeout: 30000,
             headers: { "Referer": "https://sf.taobao.com/", "User-Agent": navigator.userAgent },
             onload: function(resp) {
                 if (resp.status === 200 && resp.responseText.length > 100) {
@@ -1221,6 +1222,11 @@
                 log(`[${task.id}] 网络错误`, 'error');
                 fastReviewState.activeCount--;
                 fastReviewState.stats.failed++;
+            },
+            ontimeout: function() {
+                log(`[${task.id}] 请求超时`, 'error');
+                fastReviewState.activeCount--;
+                fastReviewState.stats.failed++;
             }
         });
     }
@@ -1230,6 +1236,7 @@
         GM_xmlhttpRequest({
             method: "GET",
             url: url,
+            timeout: 20000,
             headers: { "Referer": "https://sf.taobao.com/" },
             onload: function(resp) {
                 try {
@@ -1239,7 +1246,8 @@
                     callback({});
                 }
             },
-            onerror: () => callback({})
+            onerror: () => callback({}),
+            ontimeout: () => callback({})
         });
     }
     
@@ -1254,7 +1262,7 @@
              if (content.indexOf('id="J_NoticeDetail"') !== -1) {
                  content = content.replace(
                     /<div[^>]*id="J_NoticeDetail"[^>]*>[\s\S]*?<\/div>/i,
-                    `<div id="J_NoticeDetail">${noticeData.content}</div>`
+                    () => `<div id="J_NoticeDetail">${noticeData.content}</div>`
                 );
              } else {
                  // Append to body if possible, or just end

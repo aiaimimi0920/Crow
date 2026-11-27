@@ -48,6 +48,11 @@ export function initializeRuntimeControls(options: Controls): void {
 
 export async function refreshEngineRestartStatus(force = false): Promise<void> {
   if (statusBusy || !document.getElementById("engineRestartButton")) return;
+  if (!force && typeof document !== "undefined" && document.hidden === true) {
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => void refreshEngineRestartStatus(), AUTO_REFRESH_INTERVAL_MS);
+    return;
+  }
   const base = controls.apiBase();
   if (!force && base === statusBase && Date.now() < nextStatusAt) return;
   if (base !== statusBase) { installedOrigin = null; originExpiresAt = 0; }

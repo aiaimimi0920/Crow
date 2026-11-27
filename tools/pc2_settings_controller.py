@@ -67,10 +67,17 @@ class SettingsController:
         try:
             result = self.runtime.apply(command)
             if result != "interrupted":
-                if hasattr(self.runtime, "invalidate_cache"):
-                    self.runtime.invalidate_cache()
-                snapshot = self.runtime.snapshot()
-                receipt.update(result=result, **snapshot)
+                for attempt in range(3):
+                    try:
+                        if hasattr(self.runtime, "invalidate_cache"):
+                            self.runtime.invalidate_cache()
+                        snapshot = self.runtime.snapshot()
+                        receipt.update(result=result, **snapshot)
+                        break
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                        if attempt == 2:
+                            raise
+                        getattr(self.runtime, "sleep", time.sleep)(1)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
             pass
         self.persist(receipt)

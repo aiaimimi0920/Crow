@@ -9,6 +9,18 @@ function Resolve-Pc1AuthPython {
         $candidate = (Get-CrowEnvironmentValue -Name 'CROW_DESKTOP_PYTHON_PATH' -PathValue)
     }
     if (-not $candidate) {
+        $repoRootCandidate = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..") -ErrorAction SilentlyContinue)
+        if ($repoRootCandidate) {
+            foreach ($venvRel in @("venv\Scripts\python.exe", ".venv\Scripts\python.exe")) {
+                $venvPython = Join-Path $repoRootCandidate.ProviderPath $venvRel
+                if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+                    $candidate = $venvPython
+                    break
+                }
+            }
+        }
+    }
+    if (-not $candidate) {
         $candidate = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     }
     if (-not [IO.Path]::IsPathRooted($candidate)) {

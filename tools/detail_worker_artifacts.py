@@ -6,6 +6,8 @@ from tools.detail_worker_context import *
 
 
 def _build_runtime_context(config: DetailWorkerConfig) -> RuntimeContext:
+    if config.analysis_only:
+        return None, {}
     cookies = export_cookies(config.cdp_endpoint)
     browser_pages = (
         {}

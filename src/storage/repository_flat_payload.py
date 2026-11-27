@@ -19,14 +19,18 @@ class RepositoryFlatPayloadMixin:
         item: Dict[str, Any],
         event_type: str,
         event_payload: Optional[Dict[str, Any]] = None,
+        *,
+        return_committed: bool = True,
     ) -> Dict[str, Any] | None:
         if not self.enabled:
-            return
+            return None
         self.initialize()
         record = self._build_collection_record(item)
         self.upsert_collection_record(
             record, event_type=event_type, event_payload=event_payload, aux_data=item
         )
+        if not return_committed:
+            return None
         committed = self.get_flat_item(record["source"]["item_id"])
         if committed is None:
             raise RuntimeError(

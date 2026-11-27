@@ -106,7 +106,10 @@ def analyze_raw_item(
         adapter.prepare_detail_record(extracted, existing=effective_seed, item_id=seed_id)
         risk = {}
         if do_risk and adapter.collects_avm_risk:
-            risk = llm_helper.extract_avm_risk_features(html, item_id=seed_id) or {}
+            cleaned_risk_input = _redact_detail_analysis_text(
+                analysis_text + "\n\n【详情页清洗正文】\n" + llm_helper.filter_content(html)[:60000]
+            )
+            risk = llm_helper.extract_avm_risk_features(cleaned_risk_input, item_id=seed_id) or {}
         if module_b_mode == "shadow" and module_b_shadow_selected:
             try:
                 module_b_result = _run_analysis_module_b(
@@ -158,6 +161,12 @@ def analyze_raw_item(
         combined["avm_risk_features"] = risk
         risk_aliases(combined)
 
+    raw_artifacts = as_dict(seed.get("_raw_detail_artifacts"))
+    archive_path = str(
+        seed.get("detail_archive_path") or raw_artifacts.get("detail_archive_path") or ""
+    ).strip()
+    if archive_path and not combined.get("detail_archive_path"):
+        combined["detail_archive_path"] = archive_path
     final_item = combined
     write_json(item_dir / "final.json", final_item)
     selected = selected_summary(

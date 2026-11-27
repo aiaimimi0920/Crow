@@ -270,6 +270,7 @@ def test_fetch_description_data_text_decodes_gbk_description(monkeypatch):
 
     class FakeResponse:
         content = desc_html.encode("gb18030")
+        status_code = 200
         text = ""
 
         def raise_for_status(self):
@@ -280,7 +281,8 @@ def test_fetch_description_data_text_decodes_gbk_description(monkeypatch):
             super().__init__()
             self.trust_env = True
 
-        def get(self, url: str, *, headers: dict[str, str], timeout: float):
+        def get(self, url: str, *, headers: dict[str, str], timeout: float, allow_redirects: bool):
+            assert not allow_redirects
             assert self.trust_env is False
             return FakeResponse()
 
@@ -337,6 +339,7 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
 
     class FakeResponse:
         content = desc_html.encode("utf-8")
+        status_code = 200
         text = desc_html
 
         def raise_for_status(self):
@@ -348,7 +351,8 @@ def test_extract_auction_data_backfills_area_from_description_data_link(monkeypa
             self.trust_env = True
             self.urls: list[str] = []
 
-        def get(self, url: str, *, headers: dict[str, str], timeout: float):
+        def get(self, url: str, *, headers: dict[str, str], timeout: float, allow_redirects: bool):
+            assert not allow_redirects
             self.urls.append(url)
             assert self.trust_env is False
             assert "itemcdn.tmall.com/desc/" in url
@@ -402,6 +406,7 @@ def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional
 
     class FakeResponse:
         content = desc_html.encode("utf-8")
+        status_code = 200
         text = desc_html
 
         def raise_for_status(self):
@@ -412,7 +417,8 @@ def test_extract_auction_data_uses_description_area_as_gross_area_for_fractional
             super().__init__()
             self.trust_env = True
 
-        def get(self, url: str, *, headers: dict[str, str], timeout: float):
+        def get(self, url: str, *, headers: dict[str, str], timeout: float, allow_redirects: bool):
+            assert not allow_redirects
             assert self.trust_env is False
             return FakeResponse()
 

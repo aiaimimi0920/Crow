@@ -49,15 +49,31 @@ fn encode(request: &SettingsRequest) -> Result<Vec<u8>, String> {
     Ok(raw)
 }
 
+fn is_read_only_action(action: &str) -> bool {
+    matches!(action, "config" | "get" | "restart_status")
+}
+
 fn execute(request: SettingsRequest) -> Result<Value, String> {
     let raw = encode(&request)?;
-    if ACTIVE
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("Settings operation is in progress".into());
-    }
-    let _guard = Guard;
+    let read_only = is_read_only_action(&request.action);
+    let _guard = if read_only {
+        None
+    } else {
+        if ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err("Settings operation is in progress".into());
+        }
+        Some(Guard)
+    };
+    let timeout_secs = if read_only {
+        20
+    } else if request.action == "apply" {
+        90
+    } else {
+        35
+    };
     let script = super::bundled_script_path("desktop-auth-challenge.ps1")
         .ok_or("Desktop settings components are not installed")?;
     let root = std::path::Path::new(&script)
@@ -79,11 +95,15 @@ fn execute(request: SettingsRequest) -> Result<Value, String> {
         .stderr(Stdio::null());
     #[cfg(windows)]
     command.creation_flags(0x08000000);
-    let output = super::helper_process::run(&mut command, raw, std::time::Duration::from_secs(35))
-        .map_err(|code| {
-            eprintln!("Settings helper failed: {code}");
-            format!("设置请求未完成（{code}）；请刷新状态确认，勿重复提交")
-        })?;
+    let output = super::helper_process::run(
+        &mut command,
+        raw,
+        std::time::Duration::from_secs(timeout_secs),
+    )
+    .map_err(|code| {
+        eprintln!("Settings helper failed: {code}");
+        format!("设置请求未完成（{code}）；请刷新状态确认，勿重复提交")
+    })?;
     if !output.status.success() || output.stdout.len() > 65536 {
         eprintln!(
             "Settings helper exit={:?}, stderr_bytes={}",

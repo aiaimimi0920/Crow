@@ -60,6 +60,9 @@ collector-desktop/src-tauri/gen/
 .codex-temp/
 .memsearch/
 .playwright-cli/
+.ruff_cache/
+.runtime-backups/
+.security-results/
 graphify-out/
 src/graphify-out/
 

@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,8 @@ def main():
     parser.add_argument("--suite", choices=SUITES, default="fast")
     parser.add_argument("--timing-report", type=Path, help="Optional phase timing JSON")
     args = parser.parse_args()
+    if args.suite == "postgres" and not os.environ.get("CROW_TEST_POSTGRES_URL"):
+        parser.error("The postgres gate requires a dedicated CROW_TEST_POSTGRES_URL")
     root = Path(__file__).resolve().parents[1]
     runtime = tempfile.mkdtemp(prefix="crow-quality-")
     env = dict(os.environ)
@@ -44,11 +47,12 @@ def main():
     for key in runtime_settings:
         if key.startswith("FAPAI_"):
             env.pop("CROW_" + key[len("FAPAI_") :], None)
+    # An explicit fallback file would override the isolated SOLVER_STATE_DIR.
+    for prefix in ("CROW_", "FAPAI_"):
+        env.pop(prefix + "SOLVER_FALLBACK_STATE_PATH", None)
     env.update(runtime_settings)
     if args.suite != "postgres":
         env["CROW_TEST_POSTGRES_URL"] = ""
-    elif not env.get("CROW_TEST_POSTGRES_URL"):
-        parser.error("The postgres gate requires a dedicated CROW_TEST_POSTGRES_URL")
     # One directory argument avoids repeated pytest directory collection per file.
     # The plugin rejects unselected paths before their collectors are constructed.
     env["CROW_QUALITY_SELECTION"] = json.dumps(
@@ -84,18 +88,25 @@ def main():
         command.extend(["-p", "scripts.quality_timing"])
     started = time.monotonic()
     try:
-        result = subprocess.run(command, cwd=runtime, env=env, check=False, timeout=180)
-    except subprocess.TimeoutExpired:
-        print("Quality gate exceeded its 180 second execution limit", file=sys.stderr)
-        return 1
-    elapsed = time.monotonic() - started
-    print(
-        f"Quality suite={args.suite} elapsed={elapsed:.2f}s isolated_storage={runtime}"
-    )
-    if args.suite == "fast" and elapsed >= 60:
-        print("Fast quality gate exceeded 60 seconds", file=sys.stderr)
-        return 1
-    return result.returncode
+        try:
+            result = subprocess.run(
+                command, cwd=runtime, env=env, check=False, timeout=180
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                "Quality gate exceeded its 180 second execution limit", file=sys.stderr
+            )
+            return 1
+        elapsed = time.monotonic() - started
+        print(
+            f"Quality suite={args.suite} elapsed={elapsed:.2f}s isolated_storage={runtime}"
+        )
+        if args.suite == "fast" and elapsed >= 60:
+            print("Fast quality gate exceeded 60 seconds", file=sys.stderr)
+            return 1
+        return result.returncode
+    finally:
+        shutil.rmtree(runtime, ignore_errors=True)
 
 
 if __name__ == "__main__":
