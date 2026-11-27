@@ -16,7 +16,10 @@ def open_background_page(cdp_endpoint: str, url: str) -> dict:
 
     targets = health.list_cdp_targets(cdp_endpoint)
     count = sum(target.get("type") == "page" for target in targets)
-    if count >= health.cdp_page_target_limit():
+    limit = health.cdp_page_target_limit()
+    # Stay strictly below pc2_solver_tab_guard's ceiling (limit - 1) with solver headroom.
+    cooperative_ceiling = max(1, limit - 2) if limit >= 4 else max(1, limit)
+    if count >= cooperative_ceiling:
         # Never compact another scope's live challenge to make room for a read.
         raise BackgroundPageCapacityError("Background collector page capacity reached")
     version = health.read_cdp_json(cdp_endpoint, "/json/version")

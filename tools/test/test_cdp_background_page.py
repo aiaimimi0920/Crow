@@ -120,3 +120,16 @@ def test_missing_browser_endpoint_does_not_create(monkeypatch, setup):
     with pytest.raises(RuntimeError, match="endpoint unavailable"):
         subject.open_background_page("http://fixture", "about:blank")
     assert not connection.sent and not closed
+
+
+def test_default_limit_reserves_headroom_below_solver_tab_guard(monkeypatch, setup):
+    connection, _, closed = setup
+    ten_pages = [
+        {"id": f"tab-{idx}", "type": "page", "webSocketDebuggerUrl": f"ws://tab-{idx}"}
+        for idx in range(10)
+    ]
+    monkeypatch.setattr(health, "list_cdp_targets", lambda *_: ten_pages)
+    monkeypatch.setattr(health, "cdp_page_target_limit", lambda: 12)
+    with pytest.raises(RuntimeError, match="capacity"):
+        subject.open_background_page("http://fixture", "about:blank")
+    assert not connection.sent and not closed

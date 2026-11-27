@@ -4,13 +4,29 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
+from src.project_environment import getenv as project_getenv
 from tools.pc2_solver_config import REPO_ROOT
 from tools.pc2_solver_transport import log_event
 
-FALLBACK_STATE_PATH = (
-    REPO_ROOT / ".codex-temp" / "bridge-control" / "solver-fallback-state.json"
-)
+
+def _resolve_default_fallback_state_path() -> Path:
+    explicit_file = str(project_getenv("CROW_SOLVER_FALLBACK_STATE_PATH") or "").strip()
+    if explicit_file:
+        return Path(explicit_file)
+    explicit_dir = str(project_getenv("CROW_SOLVER_STATE_DIR") or "").strip()
+    if explicit_dir:
+        return Path(explicit_dir) / "solver-fallback-state.json"
+    return (
+        Path(REPO_ROOT)
+        / ".codex-temp"
+        / "bridge-control"
+        / "solver-fallback-state.json"
+    )
+
+
+FALLBACK_STATE_PATH = _resolve_default_fallback_state_path()
 
 
 def _default_fallback_state() -> dict[str, object]:

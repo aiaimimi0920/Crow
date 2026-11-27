@@ -1,7 +1,7 @@
 """No browser or mouse: exercise solver cancellation, retries, and cleanup."""
+import json
 import threading
 import time
-import json
 
 import pytest
 
@@ -117,7 +117,7 @@ def test_drag_expiration_releases_pressed_cdp_button(monkeypatch):
     solver.ws = Socket()
     monkeypatch.setattr(solver, "_send_cdp", lambda _method, params: events.append(params) or {})
     monkeypatch.setattr("src.captcha_slider.random.uniform", lambda low, high: low)
-    budget = SolveBudget(deadline=1.0, cancel_event=AdvancingEvent(), clock=lambda: now[0])
+    budget = SolveBudget(deadline=0.13, cancel_event=AdvancingEvent(), clock=lambda: now[0])
     with pytest.raises(SolveStopped), budget.scope(solver):
         solver._do_drag(50, 60, 100)
     assert [event["type"] for event in events] == ["mouseMoved", "mouseMoved", "mousePressed", "mouseReleased"]

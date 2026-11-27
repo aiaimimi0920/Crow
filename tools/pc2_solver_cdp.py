@@ -386,6 +386,16 @@ def check_cdp_browser_for_slider(
         challenge_tab_ids = {str(tab.get("id") or "").strip() for tab in challenge_tabs}
         for target in challenge_tabs + page_tabs + other_tabs:
             ws_url = str(target.get("webSocketDebuggerUrl") or "").strip()
+            try:
+                ws_host = (urlsplit(ws_url).hostname or "").lower()
+            except ValueError:
+                ws_host = ""
+            if ws_host in {"127.0.0.1", "localhost", "::1"}:
+                from tools import browserless_seed_probe
+
+                ws_url = browserless_seed_probe.rewrite_cdp_websocket_url(
+                    cdp_endpoint, ws_url
+                )
             ws = None
             try:
                 ws = websocket.create_connection(
@@ -441,7 +451,6 @@ def check_cdp_browser_for_slider(
                     except Exception:  # noqa: BLE001,S110 -- best-effort foregrounding
                         pass
 
-                _send("Runtime.enable")
                 ret = _send(
                     "Runtime.evaluate", {"expression": js, "returnByValue": True}
                 )

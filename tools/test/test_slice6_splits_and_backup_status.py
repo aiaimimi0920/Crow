@@ -8,12 +8,22 @@ from datetime import datetime, timedelta, timezone
 
 def test_split_mixins_preserve_method_resolution(tmp_path) -> None:
     from src import server_hybrid_escalation_events, server_hybrid_events
+    from src.captcha_orchestration import CaptchaOrchestrationMixin
+    from src.captcha_orchestration_preflight import CaptchaOrchestrationPreflightMixin
+    from src.captcha_os_drag_profiles import CaptchaOSDragProfilesMixin
+    from src.captcha_os_input import CaptchaOSInputMixin
     from src.collection.detail_service import DetailCollectionService
     from src.collection.detail_service_maintenance import (
         DetailServiceMaintenanceMixin,
     )
 
+    assert issubclass(CaptchaOSInputMixin, CaptchaOSDragProfilesMixin)
+    assert hasattr(CaptchaOSInputMixin, "_os_drag_profile")
+    assert hasattr(CaptchaOSInputMixin, "_do_drag_os_target")
 
+    assert issubclass(CaptchaOrchestrationMixin, CaptchaOrchestrationPreflightMixin)
+    assert hasattr(CaptchaOrchestrationMixin, "_run_solve_preflight_and_fallbacks")
+    assert hasattr(CaptchaOrchestrationMixin, "solve")
 
     assert issubclass(DetailCollectionService, DetailServiceMaintenanceMixin)
     assert hasattr(DetailCollectionService, "run_maintenance")
@@ -88,7 +98,9 @@ def test_postgres_backup_status_surfaces_in_lightweight_and_full_status(
     assert corrupt == {"ok": False, "reason": "invalid_backup_status_json"}
 
 
-def test_health_receipt_identifies_one_owned_dump_and_requires_fresh_timestamp(tmp_path):
+def test_health_receipt_identifies_one_owned_dump_and_requires_fresh_timestamp(
+    tmp_path,
+):
     from src.postgres_backup_status import read_receipt
 
     marker = tmp_path / "postgres-backup-status.json"
@@ -101,7 +113,9 @@ def test_health_receipt_identifies_one_owned_dump_and_requires_fresh_timestamp(t
 
     def observe(hours, **changes):
         stamp = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-        marker.write_text(json.dumps({**row, "generated_at": stamp, **changes}), encoding="utf-8")
+        marker.write_text(
+            json.dumps({**row, "generated_at": stamp, **changes}), encoding="utf-8"
+        )
         return read_receipt(tmp_path, archive_dir=archives)
 
     assert observe(2)["ok"]

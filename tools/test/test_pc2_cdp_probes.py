@@ -124,3 +124,47 @@ def test_slider_probe_closes_failed_socket_before_trying_next_target(monkeypatch
             "error_type": "OSError",
         }
     ]
+
+
+def test_slider_probe_never_sends_runtime_enable_and_rewrites_loopback_ws(monkeypatch):
+    sent_methods = []
+    connected_urls = []
+
+    class Socket:
+        def __init__(self, url):
+            connected_urls.append(url)
+            self.last_id = 0
+
+        def settimeout(self, timeout):
+            assert 0 < timeout <= 5
+
+        def send(self, payload):
+            msg = json.loads(payload)
+            self.last_id = msg["id"]
+            sent_methods.append(msg["method"])
+
+        def recv(self):
+            return json.dumps(
+                {"id": self.last_id, "result": {"result": {"value": {"found": True}}}}
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(websocket, "create_connection", lambda url, **_kw: Socket(url))
+    monkeypatch.setattr(
+        cdp,
+        "fetch_json",
+        lambda *_args, **_kwargs: [
+            {
+                "id": "challenge-1",
+                "type": "page",
+                "url": "https://sec.taobao.com/query.htm?action=QueryAction",
+                "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/challenge-1",
+            }
+        ],
+    )
+    result = cdp.check_cdp_browser_for_slider("http://pc2-browser-solver:9224")
+    assert result["_target_id"] == "challenge-1"
+    assert connected_urls == ["ws://pc2-browser-solver:9224/devtools/page/challenge-1"]
+    assert "Runtime.enable" not in sent_methods

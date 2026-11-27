@@ -65,6 +65,8 @@ COPY tools/cdp_browser_identity.py /app/tools/cdp_browser_identity.py
 COPY tools/pc2_browser_graphics.py /app/tools/pc2_browser_graphics.py
 COPY tools/pc2_linux_healthcheck.py /app/tools/pc2_linux_healthcheck.py
 COPY tools/pc2_solver_watchdog.py /app/tools/pc2_solver_watchdog.py
+COPY tools/browserless_seed_probe*.py /app/tools/
+COPY src/captcha_*.py /app/src/
 COPY src/captcha_solver.py /app/src/captcha_solver.py
 COPY src/project_environment.py /app/src/project_environment.py
 RUN chmod 0755 /usr/local/bin/start-browser-solver

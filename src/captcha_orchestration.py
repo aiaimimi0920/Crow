@@ -3,17 +3,18 @@ from __future__ import annotations
 import logging
 import random
 
+from .captcha_challenge_binding import input_target_matches
 from .captcha_deferral import TargetNavigationUnconfirmed, preserve_unconfirmed_target
-from .captcha_nc_retry import NCRetryDeferred
 from .captcha_navigation_flow import retain_navigation_connection
+from .captcha_nc_retry import NCRetryDeferred
+from .captcha_orchestration_preflight import CaptchaOrchestrationPreflightMixin
 from .captcha_slider_geometry import SliderEndpointReached
 from .captcha_target_diagnostics import log_missing_slider, log_target_binding
-from .captcha_challenge_binding import input_target_matches
 
 logger = logging.getLogger(__name__)
 
 
-class CaptchaOrchestrationMixin:
+class CaptchaOrchestrationMixin(CaptchaOrchestrationPreflightMixin):
     def solve(
         self, max_attempts=50, nc_retry_replay_limit=None,
         slider_find_max_retries=None, drag_profile_offset=0, *,
@@ -65,59 +66,11 @@ class CaptchaOrchestrationMixin:
                     return False
                 return result
 
-            connected_for_first_attempt = False
-            if self._stop_if_cancelled():
-                return finish(False)
-
-            preflight = self._preflight_current_challenge()
-            if self._stop_if_cancelled():
-                return finish(False)
-            local_mock_target = self._is_local_mock_slider_target()
-            if preflight.get("manual_required"):
-                self.last_failure_reason = "manual_required"
-                return finish(False)
-            if preflight.get("already_authenticated"):
-                return finish(True)
-            if preflight.get("retryable_failure"):
-                return finish(False)
-            if preflight.get("connected"):
-                connected_for_first_attempt = True
-                if preflight.get("has_slider"):
-                    logger.info("[SOLVER] Active slider challenge detected; using CDP method first.")
-                else:
-                    logger.info("[SOLVER] Challenge target is connected; waiting for its slider over CDP.")
-            else:
-                if not local_mock_target and self._headed_playwright_enabled():
-                    if self._stop_if_cancelled():
-                        return finish(False)
-                    # Try ddddocr AI FIRST
-                    try:
-                        logger.info("[SOLVER] Attempting ddddocr AI识别...")
-                        if self._solve_with_ddddocr():
-                            return finish(True)
-                    except Exception as e:
-                        logger.exception("[SOLVER] ddddocr error")
-
-                    # Try Playwright Stealth
-                    if self._stop_if_cancelled():
-                        return finish(False)
-                    try:
-                        logger.info("[SOLVER] Attempting Playwright Stealth...")
-                        if self._solve_with_playwright_stealth():
-                            return finish(True)
-                    except Exception as e:
-                        logger.exception("[SOLVER] Playwright Stealth error")
-                else:
-                    if local_mock_target:
-                        logger.info("[SOLVER] Local mock target detected; skipping headed solver fallbacks.")
-                    else:
-                        logger.info("[SOLVER] Skipping headed Playwright solvers because no DISPLAY/WAYLAND_DISPLAY is available.")
-
-                if local_mock_target:
-                    logger.info("[SOLVER] Local mock target detected; using CDP solve path directly.")
-                else:
-                    # Userscript DOM events are isTrusted=false and burn the NC challenge.
-                    logger.info("[SOLVER] Skipping userscript fallback on live targets; using CDP drag.")
+            outcome, connected_for_first_attempt, local_mock_target = (
+                self._run_solve_preflight_and_fallbacks(finish)
+            )
+            if outcome is not None:
+                return outcome
 
             # CDP mouse drag (buttons bitmask + slow human path)
             logger.info("[SOLVER] Using CDP method...")
@@ -482,57 +435,19 @@ class CaptchaOrchestrationMixin:
                         self._wait_interruptibly(random.uniform(0.4, 0.9))
                         continue
                     if challenge_summary.get("explicitFailure"):
-                        if nc_retry_replays < nc_retry_replay_limit:
-                            restored = self._reset_failed_nc_challenge()
-                            if not restored and not local_mock_target:
-                                # Retry input may replace the document after its short poll.
-                                # Never classify that new document using the pre-click failure.
-                                if self._stop_if_cancelled():
-                                    return finish(False)
-                                challenge_summary = self._refresh_challenge_summary(challenge_summary)
-                                challenge_summary = self._wait_for_loading_document(challenge_summary)
-                                if challenge_summary.get("probeFailed"):
-                                    self._preflight_retryable_failure()
-                                    return finish(False, preserve_target=True)
-                                if challenge_summary.get("authenticatedPage"):
-                                    self._preflight_already_authenticated()
-                                    return finish(True)
-                                if challenge_summary.get("readyState") == "loading" and not challenge_summary.get("hasSlider"):
-                                    self._preflight_retryable_failure("challenge_loading")
-                                    return finish(False, preserve_target=True)
-                                if not challenge_summary.get("explicitFailure"):
-                                    restored = bool(
-                                        challenge_summary.get("hasSlider")
-                                        and input_target_matches(self, challenge_summary)
-                                    )
-                                    if not restored:
-                                        self._preflight_retryable_failure("slider_not_found")
-                                        return finish(False, preserve_target=True)
-                            if restored:
-                                nc_retry_replays += 1
-                                logger.info(
-                                    "[SOLVER] Challenge asked to retry; "
-                                    f"replaying drag without spending a main attempt "
-                                    f"({nc_retry_replays}/{nc_retry_replay_limit})."
-                                )
-                                if local_mock_target:
-                                    self._close_solver_ws()
-                                else:
-                                    connected_for_first_attempt = retain_navigation_connection(self, local_mock_target)
-                                attempt = max(attempt - 1, 0)
-                                continue
-                        if not local_mock_target and challenge_summary.get("retryableFailure"):
-                            logger.warning(
-                                "[SOLVER] Retryable challenge attempts exhausted; "
-                                "returning to the bounded retry/cooldown policy."
+                        action, result, nc_retry_replays, attempt, connected_for_first_attempt = (
+                            self._recover_explicit_nc_failure(
+                                challenge_summary=challenge_summary,
+                                local_mock_target=local_mock_target,
+                                nc_retry_replays=nc_retry_replays,
+                                nc_retry_replay_limit=nc_retry_replay_limit,
+                                attempt=attempt,
+                                finish=finish,
                             )
-                            self.last_failure_reason = "challenge_retry_exhausted"
-                            self._close_solver_ws()
-                            return finish(False)
-                        logger.warning("[SOLVER] Official challenge rejected the automated drag; manual verification required.")
-                        self.last_failure_reason = "manual_required"
-                        self._close_solver_ws()
-                        return finish(False)
+                        )
+                        if action == "continue":
+                            continue
+                        return result
                     self._reload_page()
                     self._bring_to_front()
                     self._wait_interruptibly(0.2 if local_mock_target else random.uniform(1, 2))
